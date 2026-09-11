@@ -30,6 +30,77 @@
 - Try it in the desktop app: ask, quit, relaunch, hover.
 - A way to forget a remembered ask (a small "Forget" in the pinned card).
 - The peek sets the highlight as well as the card; if that feels heavy, the highlight could be left to the pinned state only.
+## Session: 2026-09-11 — scrolled text fades out under the window chrome
+
+### Leading assumptions
+- Kevin's screenshot shows the reader scrolled with the tree closed: article text ran straight under the traffic lights and the tree toggle, because the panes reach the top of the window and nothing sat between them and the chrome.
+- The toggle's spot (right after the traffic lights, at the same spot whether the tree is open or closed) is the standard macOS placement (Finder, Notes, Mail), so it stays. The fix is a region the text does not enter, done as a fade rather than an opaque toolbar so the reader keeps its bare, edge-to-edge look.
+
+### World facts
+- `src/styles/app.css`: `.main::before` is a 64px strip across the top of the panes, solid `--bg` for 40px then fading to transparent, `pointer-events: none`, `z-index: 1`. The pane tools (z 2), the review strip (z 3) and the map (z 4) sit above it; the sidebar is outside `.main`, so its own background is untouched. Unscrolled pages start at 84px, so they never touch the fade.
+- The Tauri `.titlebar` drag region keeps working: the strip ignores the pointer.
+- `docs/architecture.md` has a paragraph on the strip after the sidebar-width paragraph.
+- Verified in headless Chromium against `vite preview` at 900px, 560px and 1000px wide, tree open and closed, and with a split pane: the scrolled heading fades under the chrome, the toggle reads cleanly, the split pane's expand and close buttons stay above the fade. `tsc` and `pnpm build` pass.
+
+### Timeline
+1. Kevin sent a screenshot of text running under the tree toggle and asked for whichever is best: move the icon or add a region text does not enter.
+2. Read the shell CSS (`.tl`, `.side-toggle`, `.titlebar`), the pane CSS and the overlay z-indexes.
+3. Added the fade strip, built, screenshotted the browser build in Playwright, nudged the solid part from 36px to 40px, committed and pushed to `claude/kind-mccarthy-3i38qd`.
+4. Kevin asked to merge into main. Main had not moved, so `main` was fast-forwarded to the branch commit (6774e0f) and pushed.
+
+### Possible next steps
+- Check the fade on a Mac in the Tauri build, in dark mode too: `--bg` is the app background, so it should match, but a tinted page background would show a seam.
+- If the fade hides too much of a short page, the strip height and the solid stop are the two numbers in `.main::before`.
+
+## Session: 2026-09-11 — Esc, ⌘W and click-outside close Settings
+
+### Leading assumptions
+- The browser build's embedded panel already closed on Esc and on a backdrop click; the gap was the native Tauri Settings window, where Esc did nothing, ⌘W was taken by File › Close Pane and sent to the reader, and clicking away left it open.
+- For a separate native window, "clicking outside" means the window losing focus. So the window closes on blur, whether the click lands on the reader or on another app. The one exception is the folder picker opened from Change…, which also steals focus; a flag around that call keeps the window up until the picker is done.
+- Esc inside a text box (the subfolder name, the number fields) keeps its old meaning of leaving the box; a second Esc closes the settings. Esc anywhere else closes at once.
+- ⌘W in the Tauri app is a menu accelerator, so the webview never sees it; the Rust menu handler now closes the settings window when Close Pane fires with that window in front. The webview also handles ⌘W as a fallback (and for the browser build, where the browser may still close the tab).
+
+### World facts
+- `SettingsApp.tsx`: `close()` calls `onClose` when embedded, else `getCurrentWindow().close()`. A keydown listener handles Esc and ⌘/Ctrl‑W; `onFocusChanged` closes the Tauri window on blur unless `dialogOpen` is set. `General` takes `dialogOpen` and sets it around `platform.pickFolder()`.
+- `lib.rs` menu handler: `close-pane` with the settings window focused closes that window instead of forwarding the command to the reader.
+- `capabilities/default.json` gained `core:window:allow-close`, needed for the JS close call.
+- Verified in headless Chromium against `vite preview`: ⌘, opens the panel; Esc, ⌘W and a backdrop click each close it; a click inside leaves it open; Esc in the subfolder box only leaves the box, then a second Esc closes. `tsc` and `pnpm build` pass. `cargo check` could not run here (no GTK dev libraries on the Linux box), so the nine-line Rust change is unverified by a compiler; it uses only `get_webview_window`, `is_focused` and `close`, all already in use in the file.
+- `docs/architecture.md` has a paragraph on closing Settings, above "Running it".
+
+### Timeline
+1. Kevin asked that Esc, ⌘W, or a click outside close the settings "window".
+2. Read `SettingsApp`, `App.tsx`'s modal, the Rust window and menu code, and the capabilities file.
+3. Added the three close paths, the dialog guard, the Rust menu case and the capability; checked the browser build with Playwright.
+4. Updated the docs, committed and pushed to `claude/determined-carson-c9ms82`.
+5. Kevin asked to merge into main. Main had moved (⌘O rework, app renamed Nested, bundle identifier migration); merged it in, resolved the PROGRESS.md conflict by keeping both entries, re-ran tsc, build and the browser checks, then fast-forwarded main.
+
+### Possible next steps
+- Run `pnpm tauri dev` on a Mac to confirm the native window closes on blur, that Change… survives its picker, and that ⌘W reaches the Rust handler.
+- If closing on ⌘Tab to another app feels wrong, limit the blur-close to focus moving to another window of this app (check `webview_windows()` on the Rust side).
+
+## Session: 2026-09-11 — a change tint across two table cells made a fifth column
+
+### Leading assumptions
+- The broken table in Kevin's screenshot is the Milestones table of an analysis-tool README shown with review tints: the M2 row's last cell sat empty and its text showed in a fifth column, with "DONE 2026-09-11" and the cell text tinted.
+- "First column not to wrap if it doesn't have to" is taken as a nowrap rule on the first column of every table. In auto table layout the browser squeezes every column in proportion, so a short label column wraps long before it needs to; nowrap makes the wider columns take the wrapping instead. A first cell that is genuinely longer than the reading column would overflow it, which is accepted because first columns are labels and IDs.
+
+### World facts
+- Cause, reproduced in headless Chromium with a probe page: `spansOf` in `src/lib/diff.ts` merges two changes separated by a gap of up to three punctuation or whitespace characters, and the newline between two `<td>`s is such a gap, so a status change and a description change in the same row became one change whose text ran across the cell boundary. `applyWraps` in `src/lib/wraps.ts` then wrapped the whitespace text node that sits between the cells, a direct child of `<tr>`; a `<span>` inside a table row renders as an anonymous extra cell.
+- Fix: `applyWraps` skips text nodes whose parent is `table`, `thead`, `tbody`, `tfoot`, `tr`, `ul`, `ol` or `dl`. Only inter-row and inter-item whitespace lives there, and it still counts toward the `textContent` offsets, so nothing else moves. The one merged change keeps one `data-change` id across both cells, so hover and revert still treat it as one change. Applies to `.chg`, `.oldchg`, `.sel` and `.fnd` alike.
+- New CSS in `src/styles/app.css`: `.article table` gets the same 22px bottom margin as every other block (it had none, so the next heading sat on the table), and `.article th:first-child, .article td:first-child { white-space: nowrap }`.
+- Verified with the probe: before the fix the M2 row had 5 children and one `tr > span`; after, every row has 4 and no stray span, and the Milestone column renders on one line. `tsc` and `pnpm build` pass. The probe files were removed before committing.
+- The branch `claude/funny-davinci-reuubs` was started from `main` at 9011d48 (the bundle-identifier commit).
+
+### Timeline
+1. Kevin sent a screenshot of the README's Milestones table with a fifth column and asked for the first column not to wrap.
+2. Read the renderer, the diff, the wrap code and the article CSS; found no table CSS at all.
+3. Reproduced the fifth column with a probe page under the dev server, fixed `applyWraps`, added the table CSS, re-ran the probe, then built and committed.
+4. Kevin asked to commit and merge into main. Fast-forwarded `main` to the branch commit (7de5f1d) and pushed it.
+
+### Possible next steps
+- Tables wider than the reading column overflow it; a horizontal scroll container around `.article table` would keep them inside the pane.
+- Dates such as `2026-09-04` break at their hyphens when a column is squeezed; `white-space: nowrap` on cells that hold only a status and a date, or `word-break: keep-all`, would stop that.
+- Header cells inherit the browser's centered alignment; left-aligning `th` would line them up with their columns.
 
 ## Session: 2026-09-11 — the bundle identifier follows nestedreader.app
 

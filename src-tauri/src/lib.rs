@@ -348,6 +348,15 @@ pub fn run() {
                     let _ = show_settings(app);
                     return;
                 }
+                // ⌘W with Settings in front closes that window rather than a pane in the reader.
+                if id == "close-pane" {
+                    if let Some(w) = app.get_webview_window("settings") {
+                        if w.is_focused().unwrap_or(false) {
+                            let _ = w.close();
+                            return;
+                        }
+                    }
+                }
                 // Send the command to the focused reader window, or the main one.
                 let target = app
                     .webview_windows()
