@@ -281,7 +281,7 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
         .item(&refine)
         .build()?;
 
-    let sidebar = MenuItemBuilder::with_id("toggle-sidebar", "Toggle Tree").accelerator("CmdOrCtrl+\\").build(app)?;
+    let sidebar = MenuItemBuilder::with_id("toggle-sidebar", "Toggle Tree").accelerator("CmdOrCtrl+B").build(app)?;
     let map = MenuItemBuilder::with_id("map", "Session Map").accelerator("CmdOrCtrl+K").build(app)?;
     let fullscreen = MenuItemBuilder::with_id("fullscreen-pane", "Fullscreen Pane").accelerator("CmdOrCtrl+Shift+F").build(app)?;
     let view_menu = SubmenuBuilder::new(app, "View")
