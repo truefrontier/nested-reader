@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "markdown-learner",
+  "productName": "Markdown Learner",
   "version": "0.1.0",
   "identifier": "com.truefrontier.markdown-learner",
   "build": {
@@ -12,9 +12,15 @@
   "app": {
     "windows": [
       {
-        "title": "markdown-learner",
-        "width": 800,
-        "height": 600
+        "label": "main",
+        "title": "Markdown Learner",
+        "width": 1120,
+        "height": 720,
+        "minWidth": 720,
+        "minHeight": 480,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": { "x": 16, "y": 16 }
       }
     ],
     "security": {
@@ -24,6 +30,9 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "macOS": {
+      "minimumSystemVersion": "12.0"
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

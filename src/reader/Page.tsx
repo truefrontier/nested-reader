@@ -83,12 +83,12 @@ export function Page({ path, role }: Props) {
         ),
       );
     }
-    if (selection && !ui.lookup) {
+    if (selection) {
       const list = out.get(selection.block) ?? [];
       out.set(selection.block, [...list, { start: selection.start, end: selection.end, className: "sel" }]);
     }
     return out;
-  }, [changesByBlock, selection, viewDiff, ui.lookup]);
+  }, [changesByBlock, selection, viewDiff]);
 
   const EMPTY: Wrap[] = useMemo(() => [], []);
 
@@ -131,23 +131,32 @@ export function Page({ path, role }: Props) {
     if (!sel || !root) return;
     if (sel.isCollapsed) return;
     const range = sel.getRangeAt(0);
-    const text = range.toString();
-    if (!text.trim()) return;
-    const startBlock = (range.startContainer instanceof Element ? range.startContainer : range.startContainer.parentElement)?.closest<HTMLElement>(".block");
-    const endBlock = (range.endContainer instanceof Element ? range.endContainer : range.endContainer.parentElement)?.closest<HTMLElement>(".block");
-    if (!startBlock || startBlock !== endBlock) return;
-    const index = Number(startBlock.dataset.index);
-    const offsets = rangeOffsets(startBlock, range);
+    const blockOf = (n: Node) => (n instanceof Element ? n : n.parentElement)?.closest<HTMLElement>(".block") ?? null;
+    const startBlock = blockOf(range.startContainer);
+    const endBlock = blockOf(range.endContainer);
+    const block = endBlock ?? startBlock;
+    if (!block) return;
+    // Clamp a drag that began or ended outside this block to the block itself.
+    if (startBlock !== block) range.setStart(block, 0);
+    if (endBlock !== block) range.setEnd(block, block.childNodes.length);
+    const index = Number(block.dataset.index);
+    const offsets = rangeOffsets(block, range);
     if (!offsets || Number.isNaN(index)) return;
-    const blockRect = startBlock.getBoundingClientRect();
+    const full = block.textContent ?? "";
+    let { start, end } = offsets;
+    while (start < end && /\s/.test(full[start])) start++;
+    while (end > start && /\s/.test(full[end - 1])) end--;
+    if (end <= start) return;
+    const text = full.slice(start, end);
+    const blockRect = block.getBoundingClientRect();
     const rects = range.getClientRects();
     const last = rects.length ? rects[rects.length - 1] : range.getBoundingClientRect();
     const selectionState: Selection = {
       block: index,
-      start: offsets.start,
-      end: offsets.end,
+      start,
+      end,
       text: text.replace(/\s+/g, " ").trim(),
-      paragraph: startBlock.textContent ?? "",
+      paragraph: full,
       caretX: last.right - blockRect.left,
     };
     sel.removeAllRanges();

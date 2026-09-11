@@ -57,16 +57,27 @@ function fakeAnswer(req: AiRequest): string {
     const title = q.replace(/\?+$/, "") || "A closer look";
     return `# ${title}\n\nBecause the ripple is the only window in which the hippocampal sequence is broadcast to cortex. Cut it short and the cortex receives a fragment, not enough to strengthen the distributed trace that later recall depends on.\n\nThe effect is specific: disrupting ripples that occur outside the post-learning window does nothing, and jittering the pulse by a few hundred milliseconds so it misses the ripple also does nothing.\n\nWhat survives is the general shape of the day rather than its particulars. Each replay strengthens the cortical version a little, and after enough nights the memory no longer needs the hippocampus at all.\n`;
   }
-  if (req.system?.includes("Rewrite")) {
+  if (req.system?.includes("Rewrite") || req.system?.includes("editing a markdown page")) {
     const m = /Text to rewrite:\n([\s\S]*)$/.exec(last);
     const text = (m?.[1] ?? last).trim();
-    return text
-      .replace(
-        "impairs memory for the route learned that day",
-        "erases the day's route from memory (Girardeau et al., 2009)",
-      )
-      .replace("compressed roughly twenty-fold", "sped up about twenty times")
-      .replace("It is the container in which replay happens", "It is where replay happens");
+    const rules: [RegExp, string][] = [
+      [/impairs memory for the route learned that day/, "erases the day's route from memory (Girardeau et al., 2009)"],
+      [/compressed roughly twenty-fold/, "sped up about twenty times"],
+      [/It is the container in which replay happens/, "It is where replay happens"],
+      [/roughly twenty-fold/, "about twenty times faster"],
+      [/quiet wakefulness/, "quiet rest"],
+    ];
+    let out = text;
+    let hits = 0;
+    for (const [re, rep] of rules) {
+      if (re.test(out)) {
+        out = out.replace(re, rep);
+        hits++;
+        if (hits >= 2) break;
+      }
+    }
+    if (hits === 0) out = out.replace(/^(\S+)/, "In plain terms, $1");
+    return out;
   }
   return "Selective disruption means firing a short electrical pulse the moment a ripple is detected, aborting it. Animals stay asleep, sleep architecture is unchanged, yet next-day recall of the route drops to near the level of rats that never slept.";
 }

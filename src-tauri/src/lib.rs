@@ -1,14 +1,312 @@
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+mod ai;
+mod error;
+mod files;
+
+use ai::tokio_util_lite::CancelToken;
+use ai::{AiRequest, PingResult, StreamEvent};
+use error::{AppError, Result};
+use files::{RawPage, VersionInfo};
+use serde_json::Value;
+use std::collections::HashMap;
+use std::sync::Mutex;
+use tauri::ipc::Channel;
+use tauri::menu::{AboutMetadata, MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
+use tauri_plugin_dialog::DialogExt;
+
+#[derive(Default)]
+struct Streams(Mutex<HashMap<String, CancelToken>>);
+
+// ---------- files ----------
+
 #[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
+async fn pick_folder(app: AppHandle) -> Result<Option<String>> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog().file().pick_folder(move |p| {
+        let _ = tx.send(p.map(|p| p.to_string()));
+    });
+    Ok(rx.await.map_err(|_| AppError::Message("dialog closed".into()))?)
+}
+
+#[tauri::command]
+fn list_pages(folder: String) -> Result<Vec<RawPage>> {
+    files::list_pages(&folder)
+}
+
+#[tauri::command]
+fn read_page(folder: String, path: String) -> Result<RawPage> {
+    files::read_page(&folder, &path)
+}
+
+#[tauri::command]
+fn write_page(folder: String, path: String, content: String) -> Result<()> {
+    files::write_page(&folder, &path, &content)
+}
+
+#[tauri::command]
+fn load_session(folder: String) -> Result<Option<Value>> {
+    files::load_session(&folder)
+}
+
+#[tauri::command]
+fn save_session(folder: String, session: Value) -> Result<()> {
+    files::save_session(&folder, &session)
+}
+
+#[tauri::command]
+fn list_versions(folder: String, path: String) -> Result<Vec<VersionInfo>> {
+    files::list_versions(&folder, &path)
+}
+
+#[tauri::command]
+fn read_version(folder: String, path: String, n: u32) -> Result<String> {
+    files::read_version(&folder, &path, n)
+}
+
+#[tauri::command]
+fn snapshot_version(folder: String, path: String) -> Result<u32> {
+    files::snapshot_version(&folder, &path)
+}
+
+#[tauri::command]
+fn restore_version(folder: String, path: String, n: u32) -> Result<()> {
+    files::restore_version(&folder, &path, n)
+}
+
+#[tauri::command]
+fn delete_version(folder: String, path: String, n: u32) -> Result<()> {
+    files::delete_version(&folder, &path, n)
+}
+
+// ---------- settings & keys ----------
+
+fn settings_path(app: &AppHandle) -> Result<std::path::PathBuf> {
+    let dir = app.path().app_config_dir()?;
+    Ok(dir.join("settings.json"))
+}
+
+#[tauri::command]
+fn get_settings(app: AppHandle) -> Result<Option<Value>> {
+    let path = settings_path(&app)?;
+    if !path.exists() {
+        return Ok(None);
+    }
+    Ok(Some(serde_json::from_str(&std::fs::read_to_string(path)?)?))
+}
+
+#[tauri::command]
+fn save_settings(app: AppHandle, settings: Value) -> Result<()> {
+    let path = settings_path(&app)?;
+    files::write_atomic(&path, &serde_json::to_string_pretty(&settings)?)?;
+    app.emit("settings-changed", &settings)?;
+    Ok(())
+}
+
+#[tauri::command]
+fn set_api_key(provider: String, key: String) -> Result<()> {
+    let entry = keyring::Entry::new(ai::KEYCHAIN_SERVICE, &provider)?;
+    if key.trim().is_empty() {
+        match entry.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(e) => Err(e.into()),
+        }
+    } else {
+        entry.set_password(key.trim())?;
+        Ok(())
+    }
+}
+
+#[tauri::command]
+fn has_api_key(provider: String) -> Result<bool> {
+    Ok(ai::api_key(&provider).is_ok())
+}
+
+// ---------- AI ----------
+
+#[tauri::command]
+async fn ai_stream(id: String, req: AiRequest, channel: Channel<StreamEvent>, streams: State<'_, Streams>) -> Result<()> {
+    let token = CancelToken::default();
+    streams.0.lock().unwrap().insert(id.clone(), token.clone());
+    let result = ai::stream(req, channel, token).await;
+    streams.0.lock().unwrap().remove(&id);
+    result
+}
+
+#[tauri::command]
+fn ai_cancel(id: String, streams: State<'_, Streams>) {
+    if let Some(t) = streams.0.lock().unwrap().remove(&id) {
+        t.cancel();
+    }
+}
+
+#[tauri::command]
+async fn ai_ping(provider: String, base_url: String, model: String) -> Result<PingResult> {
+    Ok(ai::ping(&provider, &base_url, &model).await)
+}
+
+// ---------- windows ----------
+
+fn show_settings(app: &AppHandle) -> Result<()> {
+    if let Some(w) = app.get_webview_window("settings") {
+        w.show()?;
+        w.set_focus()?;
+        return Ok(());
+    }
+    let builder = WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("index.html?window=settings".into()))
+        .title("Settings")
+        .inner_size(540.0, 600.0)
+        .resizable(false)
+        .minimizable(false);
+    #[cfg(target_os = "macos")]
+    let builder = builder
+        .title_bar_style(tauri::TitleBarStyle::Overlay)
+        .hidden_title(true)
+        .traffic_light_position(tauri::Position::Logical(tauri::LogicalPosition::new(16.0, 16.0)));
+    builder.build()?;
+    Ok(())
+}
+
+#[tauri::command]
+fn open_settings(app: AppHandle) -> Result<()> {
+    show_settings(&app)
+}
+
+#[tauri::command]
+fn open_page_window(app: AppHandle, folder: String, path: String) -> Result<()> {
+    let label = format!("page-{}", app.webview_windows().len());
+    let url = format!("index.html?page={}", urlencode(&path));
+    let _ = folder;
+    let builder = WebviewWindowBuilder::new(&app, label, WebviewUrl::App(url.into()))
+        .title("Markdown Learner")
+        .inner_size(900.0, 680.0)
+        .min_inner_size(640.0, 420.0);
+    #[cfg(target_os = "macos")]
+    let builder = builder
+        .title_bar_style(tauri::TitleBarStyle::Overlay)
+        .hidden_title(true)
+        .traffic_light_position(tauri::Position::Logical(tauri::LogicalPosition::new(16.0, 16.0)));
+    builder.build()?;
+    Ok(())
+}
+
+fn urlencode(s: &str) -> String {
+    let mut out = String::new();
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'/' => out.push(b as char),
+            _ => out.push_str(&format!("%{:02X}", b)),
+        }
+    }
+    out
+}
+
+fn build_menu(app: &AppHandle) -> tauri::Result<()> {
+    let about = PredefinedMenuItem::about(app, Some("About Markdown Learner"), Some(AboutMetadata::default()))?;
+    let settings = MenuItemBuilder::with_id("settings", "Settings…").accelerator("CmdOrCtrl+,").build(app)?;
+    let app_menu = SubmenuBuilder::new(app, "Markdown Learner")
+        .item(&about)
+        .separator()
+        .item(&settings)
+        .separator()
+        .services()
+        .separator()
+        .hide()
+        .hide_others()
+        .show_all()
+        .separator()
+        .quit()
+        .build()?;
+
+    let open_folder = MenuItemBuilder::with_id("open-folder", "Open Folder…").accelerator("CmdOrCtrl+O").build(app)?;
+    let close_pane = MenuItemBuilder::with_id("close-pane", "Close Pane").accelerator("CmdOrCtrl+W").build(app)?;
+    let file_menu = SubmenuBuilder::new(app, "File").item(&open_folder).separator().item(&close_pane).build()?;
+
+    let refine = MenuItemBuilder::with_id("refine", "Refine").accelerator("CmdOrCtrl+R").build(app)?;
+    let edit_menu = SubmenuBuilder::new(app, "Edit")
+        .undo()
+        .redo()
+        .separator()
+        .cut()
+        .copy()
+        .paste()
+        .select_all()
+        .separator()
+        .item(&refine)
+        .build()?;
+
+    let sidebar = MenuItemBuilder::with_id("toggle-sidebar", "Toggle Tree").accelerator("CmdOrCtrl+\\").build(app)?;
+    let map = MenuItemBuilder::with_id("map", "Session Map").accelerator("CmdOrCtrl+K").build(app)?;
+    let fullscreen = MenuItemBuilder::with_id("fullscreen-pane", "Fullscreen Pane").accelerator("CmdOrCtrl+Shift+F").build(app)?;
+    let view_menu = SubmenuBuilder::new(app, "View")
+        .item(&sidebar)
+        .item(&map)
+        .item(&fullscreen)
+        .separator()
+        .fullscreen()
+        .build()?;
+
+    let back = MenuItemBuilder::with_id("back", "Back").accelerator("CmdOrCtrl+[").build(app)?;
+    let forward = MenuItemBuilder::with_id("forward", "Forward").accelerator("CmdOrCtrl+]").build(app)?;
+    let go_menu = SubmenuBuilder::new(app, "Go").item(&back).item(&forward).build()?;
+
+    let window_menu = SubmenuBuilder::new(app, "Window").minimize().separator().close_window().build()?;
+
+    let menu = MenuBuilder::new(app)
+        .items(&[&app_menu, &file_menu, &edit_menu, &view_menu, &go_menu, &window_menu])
+        .build()?;
+    app.set_menu(menu)?;
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![greet])
+        .plugin(tauri_plugin_dialog::init())
+        .manage(Streams::default())
+        .setup(|app| {
+            build_menu(app.handle())?;
+            app.on_menu_event(|app, event| {
+                let id = event.id().0.clone();
+                if id == "settings" {
+                    let _ = show_settings(app);
+                    return;
+                }
+                // Send the command to the focused reader window, or the main one.
+                let target = app
+                    .webview_windows()
+                    .into_iter()
+                    .find(|(label, w)| label != "settings" && w.is_focused().unwrap_or(false))
+                    .map(|(_, w)| w)
+                    .or_else(|| app.get_webview_window("main"));
+                if let Some(w) = target {
+                    let _ = w.emit("command", id);
+                }
+            });
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            pick_folder,
+            list_pages,
+            read_page,
+            write_page,
+            load_session,
+            save_session,
+            list_versions,
+            read_version,
+            snapshot_version,
+            restore_version,
+            delete_version,
+            get_settings,
+            save_settings,
+            set_api_key,
+            has_api_key,
+            ai_stream,
+            ai_cancel,
+            ai_ping,
+            open_settings,
+            open_page_window,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
