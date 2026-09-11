@@ -26,6 +26,30 @@
 - Run `pnpm tauri dev` on a Mac to confirm the native window closes on blur, that Change… survives its picker, and that ⌘W reaches the Rust handler.
 - If closing on ⌘Tab to another app feels wrong, limit the blur-close to focus moving to another window of this app (check `webview_windows()` on the Rust side).
 
+## Session: 2026-09-11 — a change tint across two table cells made a fifth column
+
+### Leading assumptions
+- The broken table in Kevin's screenshot is the Milestones table of an analysis-tool README shown with review tints: the M2 row's last cell sat empty and its text showed in a fifth column, with "DONE 2026-09-11" and the cell text tinted.
+- "First column not to wrap if it doesn't have to" is taken as a nowrap rule on the first column of every table. In auto table layout the browser squeezes every column in proportion, so a short label column wraps long before it needs to; nowrap makes the wider columns take the wrapping instead. A first cell that is genuinely longer than the reading column would overflow it, which is accepted because first columns are labels and IDs.
+
+### World facts
+- Cause, reproduced in headless Chromium with a probe page: `spansOf` in `src/lib/diff.ts` merges two changes separated by a gap of up to three punctuation or whitespace characters, and the newline between two `<td>`s is such a gap, so a status change and a description change in the same row became one change whose text ran across the cell boundary. `applyWraps` in `src/lib/wraps.ts` then wrapped the whitespace text node that sits between the cells, a direct child of `<tr>`; a `<span>` inside a table row renders as an anonymous extra cell.
+- Fix: `applyWraps` skips text nodes whose parent is `table`, `thead`, `tbody`, `tfoot`, `tr`, `ul`, `ol` or `dl`. Only inter-row and inter-item whitespace lives there, and it still counts toward the `textContent` offsets, so nothing else moves. The one merged change keeps one `data-change` id across both cells, so hover and revert still treat it as one change. Applies to `.chg`, `.oldchg`, `.sel` and `.fnd` alike.
+- New CSS in `src/styles/app.css`: `.article table` gets the same 22px bottom margin as every other block (it had none, so the next heading sat on the table), and `.article th:first-child, .article td:first-child { white-space: nowrap }`.
+- Verified with the probe: before the fix the M2 row had 5 children and one `tr > span`; after, every row has 4 and no stray span, and the Milestone column renders on one line. `tsc` and `pnpm build` pass. The probe files were removed before committing.
+- The branch `claude/funny-davinci-reuubs` was started from `main` at 9011d48 (the bundle-identifier commit).
+
+### Timeline
+1. Kevin sent a screenshot of the README's Milestones table with a fifth column and asked for the first column not to wrap.
+2. Read the renderer, the diff, the wrap code and the article CSS; found no table CSS at all.
+3. Reproduced the fifth column with a probe page under the dev server, fixed `applyWraps`, added the table CSS, re-ran the probe, then built and committed.
+4. Kevin asked to commit and merge into main. Fast-forwarded `main` to the branch commit (7de5f1d) and pushed it.
+
+### Possible next steps
+- Tables wider than the reading column overflow it; a horizontal scroll container around `.article table` would keep them inside the pane.
+- Dates such as `2026-09-04` break at their hyphens when a column is squeezed; `white-space: nowrap` on cells that hold only a status and a date, or `word-break: keep-all`, would stop that.
+- Header cells inherit the browser's centered alignment; left-aligning `th` would line them up with their columns.
+
 ## Session: 2026-09-11 — the bundle identifier follows nestedreader.app
 
 ### Leading assumptions

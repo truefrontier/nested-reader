@@ -12,6 +12,14 @@ export type Wrap = {
 
 type Seg = { node: Text; start: number; end: number };
 
+/**
+ * Elements whose only text children are the whitespace between their rows,
+ * cells or items. A span placed there is not phrasing content: inside a
+ * table row it becomes an anonymous extra cell, so those nodes are never
+ * wrapped. Their offsets still count toward `el.textContent`.
+ */
+const NO_WRAP_PARENTS = new Set(["TABLE", "THEAD", "TBODY", "TFOOT", "TR", "UL", "OL", "DL"]);
+
 function textNodes(el: Element): Seg[] {
   const out: Seg[] = [];
   const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
@@ -35,6 +43,7 @@ export function applyWraps(el: Element, wraps: Wrap[]): void {
       const s = Math.max(w.start, seg.start);
       const e = Math.min(w.end, seg.end);
       if (e <= s) continue;
+      if (NO_WRAP_PARENTS.has(seg.node.parentElement?.tagName ?? "")) continue;
       let node = seg.node;
       if (s > seg.start) node = node.splitText(s - seg.start);
       if (e < seg.end) node.splitText(e - s);
