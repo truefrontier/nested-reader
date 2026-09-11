@@ -26,17 +26,29 @@ export function Sidebar() {
     else e.currentTarget.blur();
   };
   const filter = s.ui.filter.trim().toLowerCase();
+  // The two filter dots match the marks on the rows: unread (with pages still being written, or that
+  // failed) and changes to review. A dot is only offered while some page carries its mark, and a filter
+  // left on after its last page is gone is switched off, so the tree never sits empty behind it.
+  const unreadMark = (path: string) => s.session.unread.includes(path) || s.session.loading.includes(path) || !!s.pageErrors[path];
+  const changesMark = (path: string) => !!s.session.pending[path];
+  const paths = Object.keys(s.pages);
+  const anyUnread = paths.some(unreadMark);
+  const anyChanges = paths.some(changesMark);
+  const unreadOnly = s.ui.unreadOnly && anyUnread;
+  const changesOnly = s.ui.changesOnly && anyChanges;
+  useEffect(() => {
+    if (s.ui.unreadOnly && !anyUnread) store.clearTreeFilter("unread");
+    if (s.ui.changesOnly && !anyChanges) store.clearTreeFilter("changes");
+  }, [s.ui.unreadOnly, s.ui.changesOnly, anyUnread, anyChanges]);
   // While filtering, every folder is open and one with nothing to show is left out.
-  const filtering = !!filter || s.ui.unreadOnly;
+  const filtering = !!filter || unreadOnly || changesOnly;
   const collapsed = s.session.collapsed ?? [];
   const shows = (it: TreeItem) => {
     const p = s.pages[it.path];
     if (!p) return false;
     if (filter && !p.title.toLowerCase().includes(filter) && !it.path.toLowerCase().includes(filter)) return false;
-    if (s.ui.unreadOnly) {
-      const d = dotState(it.path, s.session);
-      return d === "unread" || d === "loading" || d === "pending" || !!s.pageErrors[it.path];
-    }
+    // With both dots on, a page showing either mark is listed.
+    if (unreadOnly || changesOnly) return (unreadOnly && unreadMark(it.path)) || (changesOnly && changesMark(it.path));
     return true;
   };
   // Dragging the right edge resizes the sidebar; the width is saved when the pointer is let go. Double-click resets it.
@@ -142,9 +154,16 @@ export function Sidebar() {
           onKeyDown={onFilterKey}
           spellCheck={false}
         />
-        <span className={`unread-btn${s.ui.unreadOnly ? " on" : ""}`} title="Unread only" onClick={() => store.toggleUnreadOnly()}>
-          <span className="udot" />
-        </span>
+        {anyUnread && (
+          <span className={`filter-btn${unreadOnly ? " on" : ""}`} title="Unread only" onClick={() => store.toggleUnreadOnly()}>
+            <span className="udot" />
+          </span>
+        )}
+        {anyChanges && (
+          <span className={`filter-btn${changesOnly ? " on" : ""}`} title="Changes to review only" onClick={() => store.toggleChangesOnly()}>
+            <span className="cdot" />
+          </span>
+        )}
       </div>
       <div className="tree">
         <div className="tree-inner">{folder(root)}</div>

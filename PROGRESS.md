@@ -1,5 +1,37 @@
 # Progress
 
+## Session: 2026-09-11 — answer card skeleton, cleared follow-up box, filter dots
+
+### Leading assumptions
+- "The same loading skeleton" includes the page's fade: the two bars stay until the first text arrives, fade out over 260 ms, and only then does the text show. The trailing cursor stays on text that is still streaming.
+- "Filter button for unread as it is currently" means the blue dot keeps its place and look; the new green ring beside it keeps only pages with changes to review. With both on, a page carrying either mark is listed (a union, not a narrowing).
+- The blue dot now matches the row marks exactly: unread, still being written, or failed to write. Pages with changes to review moved out of it to the green ring.
+- "Only show these dots when there are items" also means a filter whose last page is gone switches itself off, so the tree does not sit empty behind a dot that is no longer there.
+
+### World facts
+- `Skeleton` and `SKELETON_FADE_MS` live in `Popovers.tsx` (Page imports them; the constant could not stay in Page without a cycle). `useAnswerSkeleton` in the card makes the same render-time fade decision as the page.
+- `.card .skeleton div` uses `--hair`, since the page's bars use `--card`, which is the card's own colour.
+- `AnswerCard` clears its box in `submit`: the card stays mounted across a quick follow-up (same key, same block), so its input state would otherwise survive.
+- `ui.changesOnly` sits beside `ui.unreadOnly`; `toggleChangesOnly` and `clearTreeFilter` are in the store. The Sidebar computes `anyUnread` / `anyChanges` over `s.pages` and clears an empty filter in an effect. `.unread-btn` became `.filter-btn`.
+- The browser mock waits 350 ms before its first delta, so the skeleton shows for about that long. The refine pane box submits on ⌘↵ (page) or ⌘⇧↵ (session); a plain ↵ does nothing there.
+
+### Timeline
+1. Kevin reported the follow-up text staying in the box after a quick ask, and asked for the page's loading skeleton in place of the bare cursor.
+2. Moved the skeleton into a shared component, added the fade state to the card, cleared the box on submit.
+3. Drove the browser build with page scripts: skeleton at 28 ms, fading from 394 ms, text from 682 ms, cursor gone at stream end. After a follow-up the box was empty and the skeleton sat under the new question. Checked the bars in both themes.
+4. Kevin asked for a changes-to-review dot beside the unread dot, each shown only while something matches.
+5. Added `changesOnly`, the second dot, the conditional dots and the self-clearing filters; updated `docs/architecture.md`.
+6. Drove it: no dots with nothing marked; marking a page unread showed the blue dot and filtered to it; a refine showed the green ring and filtered to the page; both on listed both; Done dropped the ring and its filter while unread stayed on; unmarking dropped the last dot and brought the whole tree back.
+
+### Verification
+- `tsc` and `pnpm build` pass.
+- Browser mock on `pnpm dev` (sample folder, a model set in the mock's settings), driven as above. Screenshots of the card skeleton in light and dark, and of the filter bar with both dots on.
+- Not checked: the desktop app.
+
+### Possible next steps
+- A keyboard way to flip the filter dots; today they are click only.
+- The Web map's rows could take the same two filters.
+
 ## Session: 2026-09-11 — quick asks stay on the page after Esc
 
 ### Leading assumptions

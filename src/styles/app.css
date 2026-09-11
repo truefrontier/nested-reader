@@ -276,7 +276,8 @@ button {
 .side-filter input::placeholder {
   color: var(--mute);
 }
-.unread-btn {
+/* The filter dots beside the Filter box: one per mark, shown only while a page carries that mark. */
+.filter-btn {
   width: 18px;
   height: 18px;
   border-radius: 4px;
@@ -285,7 +286,7 @@ button {
   justify-content: center;
   cursor: pointer;
 }
-.unread-btn.on {
+.filter-btn.on {
   background: var(--hair);
 }
 .gdot {
@@ -708,7 +709,7 @@ button {
   display: grid;
   gap: 9px;
   margin-top: 8px;
-  transition: opacity 0.26s ease-out; /* keep in step with SKELETON_FADE_MS in Page.tsx */
+  transition: opacity 0.26s ease-out; /* keep in step with SKELETON_FADE_MS in Popovers.tsx */
 }
 .skeleton.fading {
   opacity: 0;
@@ -726,6 +727,13 @@ button {
   .skeleton div {
     animation: none;
   }
+}
+/* Inside an answer card the bars need a shade more than the card's own tint to show. */
+.card .skeleton {
+  margin: 4px 0 6px;
+}
+.card .skeleton div {
+  background: var(--hair);
 }
 
 /* ---------- in-flow popovers & cards ---------- */

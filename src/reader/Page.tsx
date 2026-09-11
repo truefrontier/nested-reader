@@ -4,14 +4,11 @@ import type { Ask } from "../platform";
 import { flexiblePattern, isStubBody, lexBlocks, resolveWikiTarget, type Block } from "../lib/markdown";
 import { diffBodies, type Change, type PageDiff } from "../lib/diff";
 import { applyWraps, rangeOffsets, type Wrap } from "../lib/wraps";
-import { AnswerCard, AskPopover, BeforeCard, FailedCard, NowCard, RefinePopover, RefineStatus } from "./Popovers";
+import { AnswerCard, AskPopover, BeforeCard, FailedCard, NowCard, RefinePopover, RefineStatus, SKELETON_FADE_MS, Skeleton } from "./Popovers";
 import { TopStrip } from "./TopStrip";
 import { FindBar } from "./FindBar";
 
 type LinkState = "loading" | "unread" | "read" | "missing";
-
-/** How long the skeleton takes to fade before the first streamed text shows. Matches `.skeleton` in app.css. */
-const SKELETON_FADE_MS = 260;
 
 /** How long the pointer may be off a remembered ask and its card before the peeked card closes. */
 const PEEK_GRACE_MS = 220;
@@ -516,7 +513,7 @@ export function Page({ path, role }: Props) {
             {source.title}
           </div>
         )}
-        {body === undefined && <div className="skeleton"><div /><div style={{ width: "78%" }} /></div>}
+        {body === undefined && <Skeleton />}
         {blocks.map((b, i) => (
           <div key={i}>
             {b.type === "space" ? null : (
@@ -525,12 +522,7 @@ export function Page({ path, role }: Props) {
             {renderAfter(i)}
           </div>
         ))}
-        {(waiting || fading) && (
-          <div className={`skeleton${fading ? " fading" : ""}`}>
-            <div />
-            <div style={{ width: "78%" }} />
-          </div>
-        )}
+        {(waiting || fading) && <Skeleton fading={fading} />}
         {unwritten && (
           <FailedCard
             title={pageError ? "This page couldn't be written" : "This page hasn't been written yet"}
