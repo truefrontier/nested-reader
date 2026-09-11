@@ -315,6 +315,12 @@ export function Page({ path, role }: Props) {
 
   const onCrumb = () => {
     if (!meta?.source) return;
+    // In the split pane, going back to a parent the main pane already shows means "refocus on the parent":
+    // closing this pane does that, and leaves the trail and read marks alone.
+    if (!isMain && s.session.current === meta.source) {
+      store.closeSplit();
+      return;
+    }
     void store.navigate(meta.source);
   };
 
