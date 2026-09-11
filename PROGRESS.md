@@ -20,7 +20,7 @@
 2. Kevin asked for ⌘O as the only open shortcut, taking folders and files. Replaced the two dialog-plugin commands with the NSOpenPanel command, rewired the store, key handler, Home and docs.
 3. Kevin asked to pull before committing; `main` had gained pull request #5 (folders in the sidebar). Pulled under the working changes with no conflicts.
 4. Kevin asked for the app to be called Nested. Renamed every visible name.
-5. Committed on `feature/open-panel-and-nested-name`.
+5. Committed on `feature/open-panel-and-nested-name`, then fast-forwarded `main` to it and pushed at Kevin's request.
 
 ### Verification
 - `tsc` and `pnpm build` pass; the Rust side rebuilds with no warnings.
