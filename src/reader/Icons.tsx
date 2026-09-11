@@ -23,6 +23,32 @@ export function FullscreenIcon() {
   );
 }
 
+export function ChevronLeft() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M8.5 3.5 5 7l3.5 3.5" />
+    </svg>
+  );
+}
+
+export function PlusIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+      <path d="M6 2v8M2 6h8" />
+    </svg>
+  );
+}
+
+export function MoreIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+      <circle cx="7" cy="3" r="1.1" />
+      <circle cx="7" cy="7" r="1.1" />
+      <circle cx="7" cy="11" r="1.1" />
+    </svg>
+  );
+}
+
 export function ChevronDown() {
   return (
     <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">

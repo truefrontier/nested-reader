@@ -148,3 +148,15 @@ export function layoutWeb(pages: Record<string, PageMeta>, focus: string | undef
   }
   return { nodes, edges };
 }
+
+/** True when `path` is `root` or was grown from it, however many steps down. */
+export function growsFrom(path: string, root: string, pages: Record<string, PageMeta>): boolean {
+  let cur: string | undefined = path;
+  const seen = new Set<string>();
+  while (cur && !seen.has(cur)) {
+    if (cur === root) return true;
+    seen.add(cur);
+    cur = pages[cur]?.source;
+  }
+  return false;
+}

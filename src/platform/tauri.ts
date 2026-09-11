@@ -54,8 +54,8 @@ export const tauriPlatform: Platform = {
 
   writePage: (folder, path, content) => invoke("write_page", { folder, path, content }),
 
-  loadSession: (folder) => invoke<Session | null>("load_session", { folder }),
-  saveSession: (folder, session) => invoke("save_session", { folder, session }),
+  loadSession: (folder, file) => invoke<Session | null>("load_session", { folder, file }),
+  saveSession: (folder, session, file) => invoke("save_session", { folder, session, file }),
 
   listVersions: (folder, path) => invoke<VersionInfo[]>("list_versions", { folder, path }),
   readVersion: (folder, path, n) => invoke<string>("read_version", { folder, path, n }),

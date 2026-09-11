@@ -7,6 +7,7 @@ import {
   type ChatMessage,
   type PageMeta,
   type Placement,
+  type RecentSession,
   type Session,
   type Settings,
   type StreamHandle,
@@ -19,7 +20,7 @@ import { serializePage, titleFromBody } from "../lib/frontmatter";
 import { slugify, titleFromQuestion, uniquePath } from "../lib/slug";
 import { nowIso } from "../lib/time";
 import { newPageMessages, quickAnswerMessages, refineMessages, type AskContext, type RefineScope } from "../lib/prompts";
-import { sessionPages } from "../lib/tree";
+import { growsFrom, sessionPages } from "../lib/tree";
 
 export type Selection = {
   block: number;
@@ -57,13 +58,20 @@ export type UiState = {
   unreadOnly: boolean;
   refining?: RefineScope;
   error?: string;
+  /** Something is being dragged over the window. */
+  dragging: boolean;
 };
 
 export type ReviewBase = { path: string; n: number; body: string };
 
 export type ReaderState = {
   ready: boolean;
+  /** The Home screen is showing instead of the session. It also shows whenever no folder is open. */
+  home: boolean;
+  recents: RecentSession[];
   folder?: string;
+  /** Set when the session was opened from a single file: only that page and the pages grown from it are shown. */
+  rootFile?: string;
   folderName: string;
   pages: Record<string, PageMeta>;
   bodies: Record<string, string>;
@@ -76,7 +84,7 @@ export type ReaderState = {
   ui: UiState;
 };
 
-const initialUi: UiState = { panePopover: false, history: false, confirmRestore: false, fullscreen: false, filter: "", unreadOnly: false };
+const initialUi: UiState = { panePopover: false, history: false, confirmRestore: false, fullscreen: false, filter: "", unreadOnly: false, dragging: false };
 
 function prettyFolderName(folder: string): string {
   const base = folder.replace(/[/\\]+$/, "").split(/[/\\]/).pop() ?? folder;
@@ -86,6 +94,8 @@ function prettyFolderName(folder: string): string {
 export class ReaderStore {
   state: ReaderState = {
     ready: false,
+    home: false,
+    recents: [],
     folderName: "",
     pages: {},
     bodies: {},
@@ -101,6 +111,8 @@ export class ReaderStore {
   private saveTimer: number | undefined;
   private writeTimers = new Map<string, number>();
   private initialized = false;
+  /** The folder (and file) an in-flight openFolder is loading, so a later open can supersede it. */
+  private opening?: { folder: string; file?: string };
 
   get = () => this.state;
 
@@ -133,7 +145,9 @@ export class ReaderStore {
     if (!this.state.folder) return;
     window.clearTimeout(this.saveTimer);
     this.saveTimer = window.setTimeout(() => {
-      if (this.state.folder) platform.saveSession(this.state.folder, this.state.session).catch(() => undefined);
+      if (this.state.folder) platform.saveSession(this.state.folder, this.state.session, this.state.rootFile).catch(() => undefined);
+      const unread = this.state.session.unread.length;
+      if (this.currentRecent()?.unread !== unread) this.touchRecent({ unread });
     }, 250);
   }
 
@@ -151,32 +165,38 @@ export class ReaderStore {
     if (this.initialized) return;
     this.initialized = true;
     try {
-      const settings = await platform.getSettings();
-      this.set({ settings });
+      const [settings, recents] = await Promise.all([platform.getSettings(), platform.getRecents().catch(() => [] as RecentSession[])]);
+      this.set({ settings, recents });
       this.applyTheme(settings);
       platform.onSettingsChanged((s) => {
         this.set({ settings: s });
         this.applyTheme(s);
-        if (s.folder && s.folder !== this.state.folder) void this.openFolder(s.folder);
+        if (s.folder && s.folder !== (this.opening?.folder ?? this.state.folder)) void this.openFolder(s.folder);
       });
       platform.onCommand((id) => this.command(id));
+      platform.onDragDrop((e) => {
+        if (e.type === "drop") {
+          this.setUi({ dragging: false });
+          void this.openDropped(e.paths);
+        } else if (e.type === "leave") {
+          if (this.state.ui.dragging) this.setUi({ dragging: false });
+        } else if (!this.state.ui.dragging) {
+          this.setUi({ dragging: true });
+        }
+      });
       const url = new URL(location.href);
       const page = url.searchParams.get("page");
+      const last = recents[0];
       if (page && settings.folder) {
-        await this.openFolder(settings.folder, page);
+        await this.openFolder(settings.folder, { initialPage: page, file: last?.folder === settings.folder ? last.file : undefined });
       } else if (settings.openAtLaunch === "ask") {
         const folder = await platform.pickFolder();
-        if (folder) {
-          const next = { ...settings, folder };
-          await platform.saveSettings(next);
-          this.set({ settings: next });
-          await this.openFolder(folder);
-        } else if (settings.folder) {
-          await this.openFolder(settings.folder);
-        }
-      } else if (settings.folder && settings.openAtLaunch !== "nothing") {
-        await this.openFolder(settings.folder);
+        if (folder) await this.openFolder(folder);
+      } else if (settings.openAtLaunch === "last-session") {
+        if (last) await this.openFolder(last.folder, { file: last.file });
+        else if (settings.folder) await this.openFolder(settings.folder);
       }
+      // "nothing", a cancelled picker or a first launch: the Home screen shows.
     } catch (e) {
       this.fail(e);
     } finally {
@@ -195,38 +215,177 @@ export class ReaderStore {
   async pickFolder() {
     try {
       const folder = await platform.pickFolder();
-      if (!folder) return;
-      const settings = { ...this.state.settings, folder };
-      await platform.saveSettings(settings);
-      this.set({ settings });
-      await this.openFolder(folder);
+      if (folder) await this.openFolder(folder);
     } catch (e) {
       this.fail(e);
     }
   }
 
-  async openFolder(folder: string, initialPage?: string) {
+  async pickFile() {
+    try {
+      const path = await platform.pickFile();
+      if (path) await this.openFile(path);
+    } catch (e) {
+      this.fail(e);
+    }
+  }
+
+  /** Opens one .md as a session: that page and the pages grown from it, saved beside it. */
+  async openFile(path: string) {
+    const i = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+    if (i <= 0) return this.fail(`Could not find the folder of ${path}`);
+    await this.openFolder(path.slice(0, i), { file: path.slice(i + 1) });
+  }
+
+  /** Paths dropped on the window: a folder or a .md file starts a session. */
+  async openDropped(paths: string[]) {
+    const path = paths[0];
+    if (!path) return this.fail("Drop a folder or a .md file.");
+    try {
+      const kind = await platform.pathKind(path);
+      if (kind === "folder") await this.openFolder(path);
+      else if (kind === "file") await this.openFile(path);
+      else this.fail("Drop a folder or a .md file.");
+    } catch (e) {
+      this.fail(e);
+    }
+  }
+
+  /**
+   * Loads a folder as the session. With `file`, only that page and the pages grown from it
+   * are shown. The folder's saved session is restored, so you land where you left off.
+   */
+  async openFolder(folder: string, opts: { initialPage?: string; file?: string } = {}) {
+    const { initialPage, file } = opts;
+    const target = { folder, file };
+    this.opening = target;
     try {
       const list = await platform.listPages(folder);
+      if (this.opening !== target) return; // a later open superseded this one
+      const all: Record<string, PageMeta> = {};
+      for (const p of list) all[p.path] = p;
+      if (file && !all[file]) throw new Error(`Not a Markdown page: ${file}`);
       const pages: Record<string, PageMeta> = {};
-      for (const p of list) pages[p.path] = p;
-      const stored = await platform.loadSession(folder);
+      for (const p of list) if (!file || growsFrom(p.path, file, all)) pages[p.path] = p;
+      const stored = await platform.loadSession(folder, file);
+      if (this.opening !== target) return;
       const session: Session = { ...emptySession(), ...(stored ?? {}) };
       session.loading = session.loading.filter((p) => pages[p]);
       session.unread = session.unread.filter((p) => pages[p]);
       for (const key of Object.keys(session.pending)) if (!pages[key]) delete session.pending[key];
       if (session.split && !pages[session.split]) session.split = undefined;
-      this.set({ folder, folderName: prettyFolderName(folder), pages, bodies: {}, session, versions: [], versionBodies: {}, reviewBase: undefined, ui: { ...initialUi } });
+      // Pages deleted outside the app drop out of the trail.
+      const before = session.trail.slice(0, session.trailIndex + 1).filter((p) => pages[p]);
+      session.trail = session.trail.filter((p) => pages[p]);
+      session.trailIndex = before.length - 1;
+      const recent = this.findRecent(folder, file);
+      const folderName = session.name || recent?.name || (file ? pages[file].title : prettyFolderName(folder));
+      this.set({ folder, rootFile: file, folderName, pages, bodies: {}, session, versions: [], versionBodies: {}, reviewBase: undefined, home: false, ui: { ...initialUi } });
       let current = initialPage && pages[initialPage] ? initialPage : session.current;
       if (!current || !pages[current]) {
-        const sorted = [...list].sort((a, b) => Date.parse(b.created ?? b.modified ?? "") - Date.parse(a.created ?? a.modified ?? ""));
-        current = sorted[0]?.path;
+        const sorted = Object.values(pages).sort((a, b) => Date.parse(b.created ?? b.modified ?? "") - Date.parse(a.created ?? a.modified ?? ""));
+        current = file ?? sorted[0]?.path;
       }
       if (current) await this.navigate(current, { push: session.trail.length === 0 });
       if (session.split) await this.loadBody(session.split);
+      this.rememberSession();
+      if (this.state.settings.folder !== folder) {
+        const settings = { ...this.state.settings, folder };
+        this.set({ settings });
+        await platform.saveSettings(settings);
+      }
+    } catch (e) {
+      this.fail(e);
+    } finally {
+      if (this.opening === target) this.opening = undefined;
+    }
+  }
+
+  // ---------- home & recent sessions ----------
+
+  private sameSession(r: RecentSession, folder: string | undefined, file: string | undefined): boolean {
+    return r.folder === folder && (r.file ?? "") === (file ?? "");
+  }
+
+  private findRecent(folder: string, file?: string): RecentSession | undefined {
+    return this.state.recents.find((r) => this.sameSession(r, folder, file));
+  }
+
+  private currentRecent(): RecentSession | undefined {
+    return this.state.folder ? this.findRecent(this.state.folder, this.state.rootFile) : undefined;
+  }
+
+  private setRecents(recents: RecentSession[]) {
+    this.set({ recents });
+    platform.saveRecents(recents).catch(() => undefined);
+  }
+
+  /** Puts the open session at the top of the recents list. */
+  private rememberSession() {
+    const { folder, rootFile, folderName, session } = this.state;
+    if (!folder) return;
+    const entry: RecentSession = { folder, file: rootFile, name: folderName, openedAt: nowIso(), unread: session.unread.length };
+    this.setRecents([entry, ...this.state.recents.filter((r) => !this.sameSession(r, folder, rootFile))].slice(0, 30));
+  }
+
+  private touchRecent(patch: Partial<RecentSession>) {
+    const cur = this.currentRecent();
+    if (cur) this.setRecents(this.state.recents.map((r) => (r === cur ? { ...r, ...patch } : r)));
+  }
+
+  /** Steps up to the Home screen. The session stays loaded, so leaving Home returns to it as it was. */
+  goHome() {
+    this.setUi({ popover: undefined, selection: undefined, panePopover: false, map: undefined, history: false, confirmRestore: false });
+    this.set({ home: true });
+  }
+
+  leaveHome() {
+    if (this.state.folder) this.set({ home: false });
+  }
+
+  toggleHome() {
+    if (this.state.home) this.leaveHome();
+    else this.goHome();
+  }
+
+  async openRecent(r: RecentSession) {
+    if (this.sameSession(r, this.state.folder, this.state.rootFile)) return this.leaveHome();
+    await this.openFolder(r.folder, { file: r.file });
+  }
+
+  removeRecent(r: RecentSession) {
+    this.setRecents(this.state.recents.filter((x) => x !== r));
+  }
+
+  /** Renames a session on Home and in its own session.json, so the name travels with the folder. */
+  async renameSession(r: RecentSession, name: string) {
+    const trimmed = name.trim();
+    if (!trimmed || trimmed === r.name) return;
+    this.setRecents(this.state.recents.map((x) => (x === r ? { ...x, name: trimmed } : x)));
+    if (this.sameSession(r, this.state.folder, this.state.rootFile)) {
+      this.set({ folderName: trimmed });
+      this.setSession({ name: trimmed });
+      return;
+    }
+    try {
+      const stored = await platform.loadSession(r.folder, r.file);
+      await platform.saveSession(r.folder, { ...emptySession(), ...(stored ?? {}), name: trimmed }, r.file);
     } catch (e) {
       this.fail(e);
     }
+  }
+
+  async revealSession(r: RecentSession) {
+    try {
+      await platform.revealInFinder(r.file ? `${r.folder}/${r.file}` : r.folder);
+    } catch (e) {
+      this.fail(e);
+    }
+  }
+
+  async mapSession(r: RecentSession) {
+    await this.openRecent(r);
+    if (this.sameSession(r, this.state.folder, this.state.rootFile)) this.openMap("web");
   }
 
   async loadBody(path: string): Promise<string> {
@@ -368,6 +527,7 @@ export class ReaderStore {
 
   escape() {
     const ui = this.state.ui;
+    if (this.state.home) return this.leaveHome();
     if (ui.confirmRestore) return this.setUi({ confirmRestore: false });
     if (ui.history) return this.setUi({ history: false });
     if (ui.viewing !== undefined) return this.backToCurrent();
@@ -786,9 +946,17 @@ export class ReaderStore {
   // ---------- commands from the menu bar ----------
 
   command(id: string) {
+    // Home replaces the window, so only the commands that make sense there get through.
+    if (this.state.home && !["open-folder", "open-file", "home", "settings"].includes(id)) return;
     switch (id) {
       case "open-folder":
         void this.pickFolder();
+        break;
+      case "open-file":
+        void this.pickFile();
+        break;
+      case "home":
+        this.toggleHome();
         break;
       case "toggle-sidebar":
         this.toggleSidebar();

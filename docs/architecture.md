@@ -16,7 +16,7 @@ src/                     React app (both windows)
     mock.ts              in-memory backend for the browser (pnpm dev)
   state/store.ts         the reader store: every action lives here
   lib/                   pure helpers: markdown, diff, front matter, tree, prompts
-  reader/                Sidebar, Page, TopStrip, Popovers, SplitPane, MapOverlay
+  reader/                Home, Sidebar, Page, TopStrip, Popovers, SplitPane, MapOverlay
   settings/              the Settings window (General / Appearance / AI)
   styles/                design tokens, fonts, reader and settings CSS
 src-tauri/src/
@@ -35,10 +35,19 @@ Everything about a session stays inside the folder you opened.
 | Path | Purpose |
 | --- | --- |
 | `*.md` | Pages. New pages carry front matter: `title`, `source`, `question`, `created`, `mode`. |
-| `.reader/session.json` | Current page, read/unread state, trail, split, pending reviews. |
+| `.reader/session.json` | Current page, read/unread state, trail, split, pending reviews, and a display name if the session was renamed. |
+| `.reader/session-<page>.json` | The same, for a session opened from a single file in this folder. |
 | `.reader/versions/<page>/vN.md` | Snapshots taken before each refine. The live file is always the newest version. |
 
-Settings are stored in the app config directory as `settings.json`. API keys are stored in the macOS Keychain under the service `com.truefrontier.markdown-learner`, one entry per provider. The frontend never holds a key after saving it; Rust reads it when it makes a request.
+Settings are stored in the app config directory as `settings.json`, and the Home screen's list of recent sessions as `recents.json` beside it (folder, optional file, name, last opened, unread count). API keys are stored in the macOS Keychain under the service `com.truefrontier.markdown-learner`, one entry per provider. The frontend never holds a key after saving it; Rust reads it when it makes a request.
+
+## Home and sessions
+
+Home replaces the window: recent sessions on the left, the ways to start one on the right. The ‹ beside the session title in the sidebar (⌘⇧H) steps up to it; the open session stays loaded, so leaving Home (Esc, or clicking that session) lands exactly where you were. Clicking another recent session loads that folder and restores its saved session.
+
+A session is either a **folder** (every `.md` under it, `pick_folder` or a dropped folder) or a **file** (`pick_file`, ⌘⇧O, or a dropped `.md`). A file session lists only that page and the pages whose `source` chain leads back to it (`growsFrom` in `src/lib/tree.ts`); new pages are still written beside the file, so the folder stays the unit on disk and the session keeps its own `session-<page>.json`. Drops arrive through the webview's drag-drop events; `path_kind` tells the frontend whether a path is a folder, a Markdown file, or neither.
+
+At launch, `openAtLaunch: "last-session"` reopens the first entry of `recents.json` (so a file session comes back as one), `"ask"` shows the folder picker, and `"nothing"` or a cancelled picker leaves you on Home.
 
 ## Front matter and links
 

@@ -14,6 +14,7 @@ use tauri::ipc::Channel;
 use tauri::menu::{AboutMetadata, MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
 use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_opener::OpenerExt;
 
 #[derive(Default)]
 struct Streams(Mutex<HashMap<String, CancelToken>>);
@@ -27,6 +28,25 @@ async fn pick_folder(app: AppHandle) -> Result<Option<String>> {
         let _ = tx.send(p.map(|p| p.to_string()));
     });
     Ok(rx.await.map_err(|_| AppError::Message("dialog closed".into()))?)
+}
+
+#[tauri::command]
+async fn pick_file(app: AppHandle) -> Result<Option<String>> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog().file().add_filter("Markdown", &["md", "markdown"]).pick_file(move |p| {
+        let _ = tx.send(p.map(|p| p.to_string()));
+    });
+    Ok(rx.await.map_err(|_| AppError::Message("dialog closed".into()))?)
+}
+
+#[tauri::command]
+fn path_kind(path: String) -> &'static str {
+    files::path_kind(&path)
+}
+
+#[tauri::command]
+fn reveal_in_finder(app: AppHandle, path: String) -> Result<()> {
+    app.opener().reveal_item_in_dir(&path).map_err(|e| AppError::Message(e.to_string()))
 }
 
 #[tauri::command]
@@ -45,13 +65,13 @@ fn write_page(folder: String, path: String, content: String) -> Result<()> {
 }
 
 #[tauri::command]
-fn load_session(folder: String) -> Result<Option<Value>> {
-    files::load_session(&folder)
+fn load_session(folder: String, file: Option<String>) -> Result<Option<Value>> {
+    files::load_session(&folder, file.as_deref())
 }
 
 #[tauri::command]
-fn save_session(folder: String, session: Value) -> Result<()> {
-    files::save_session(&folder, &session)
+fn save_session(folder: String, session: Value, file: Option<String>) -> Result<()> {
+    files::save_session(&folder, &session, file.as_deref())
 }
 
 #[tauri::command]
@@ -101,6 +121,26 @@ fn save_settings(app: AppHandle, settings: Value) -> Result<()> {
     files::write_atomic(&path, &serde_json::to_string_pretty(&settings)?)?;
     app.emit("settings-changed", &settings)?;
     Ok(())
+}
+
+// ---------- recent sessions ----------
+
+fn recents_path(app: &AppHandle) -> Result<std::path::PathBuf> {
+    Ok(app.path().app_config_dir()?.join("recents.json"))
+}
+
+#[tauri::command]
+fn get_recents(app: AppHandle) -> Result<Option<Value>> {
+    let path = recents_path(&app)?;
+    if !path.exists() {
+        return Ok(None);
+    }
+    Ok(Some(serde_json::from_str(&std::fs::read_to_string(path)?)?))
+}
+
+#[tauri::command]
+fn save_recents(app: AppHandle, recents: Value) -> Result<()> {
+    files::write_atomic(&recents_path(&app)?, &serde_json::to_string_pretty(&recents)?)
 }
 
 #[tauri::command]
@@ -219,8 +259,14 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
         .build()?;
 
     let open_folder = MenuItemBuilder::with_id("open-folder", "Open Folder…").accelerator("CmdOrCtrl+O").build(app)?;
+    let open_file = MenuItemBuilder::with_id("open-file", "Open File…").accelerator("CmdOrCtrl+Shift+O").build(app)?;
     let close_pane = MenuItemBuilder::with_id("close-pane", "Close Pane").accelerator("CmdOrCtrl+W").build(app)?;
-    let file_menu = SubmenuBuilder::new(app, "File").item(&open_folder).separator().item(&close_pane).build()?;
+    let file_menu = SubmenuBuilder::new(app, "File")
+        .item(&open_folder)
+        .item(&open_file)
+        .separator()
+        .item(&close_pane)
+        .build()?;
 
     let refine = MenuItemBuilder::with_id("refine", "Refine (⌘R)").build(app)?;
     let edit_menu = SubmenuBuilder::new(app, "Edit")
@@ -246,9 +292,10 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
         .fullscreen()
         .build()?;
 
+    let home = MenuItemBuilder::with_id("home", "Home").accelerator("CmdOrCtrl+Shift+H").build(app)?;
     let back = MenuItemBuilder::with_id("back", "Back").accelerator("CmdOrCtrl+[").build(app)?;
     let forward = MenuItemBuilder::with_id("forward", "Forward").accelerator("CmdOrCtrl+]").build(app)?;
-    let go_menu = SubmenuBuilder::new(app, "Go").item(&back).item(&forward).build()?;
+    let go_menu = SubmenuBuilder::new(app, "Go").item(&home).separator().item(&back).item(&forward).build()?;
 
     let window_menu = SubmenuBuilder::new(app, "Window").minimize().separator().close_window().build()?;
 
@@ -288,6 +335,11 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             pick_folder,
+            pick_file,
+            path_kind,
+            reveal_in_finder,
+            get_recents,
+            save_recents,
             list_pages,
             read_page,
             write_page,

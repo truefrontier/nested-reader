@@ -141,12 +141,12 @@ export const mockPlatform: Platform = {
     files.set(key(path), { raw: content, modified: now, created: prev?.created ?? now });
   },
 
-  async loadSession() {
-    return session;
+  async loadSession(folder, file) {
+    return sessions.get(`${folder}#${file ?? ""}`) ?? null;
   },
 
-  async saveSession(_folder, s) {
-    session = JSON.parse(JSON.stringify(s));
+  async saveSession(folder, s, file) {
+    sessions.set(`${folder}#${file ?? ""}`, JSON.parse(JSON.stringify(s)));
   },
 
   async listVersions(_folder, path): Promise<VersionInfo[]> {
@@ -257,6 +257,38 @@ export const mockPlatform: Platform = {
   onSettingsChanged(handler) {
     settingsListeners.add(handler);
     return () => settingsListeners.delete(handler);
+  },
+
+  /** A dropped .md file is read into the in-memory folder; browsers give no path for folders. */
+  onDragDrop(handler) {
+    const over = (e: DragEvent) => {
+      e.preventDefault();
+      handler({ type: "over", paths: [] });
+    };
+    const leave = (e: DragEvent) => {
+      if (!e.relatedTarget) handler({ type: "leave", paths: [] });
+    };
+    const drop = (e: DragEvent) => {
+      e.preventDefault();
+      void (async () => {
+        const paths: string[] = [];
+        for (const f of Array.from(e.dataTransfer?.files ?? [])) {
+          if (!MARKDOWN.test(f.name)) continue;
+          const now = new Date().toISOString();
+          files.set(f.name, { raw: await f.text(), modified: now, created: now });
+          paths.push(`${SAMPLE_FOLDER}/${f.name}`);
+        }
+        handler({ type: "drop", paths });
+      })();
+    };
+    window.addEventListener("dragover", over);
+    window.addEventListener("dragleave", leave);
+    window.addEventListener("drop", drop);
+    return () => {
+      window.removeEventListener("dragover", over);
+      window.removeEventListener("dragleave", leave);
+      window.removeEventListener("drop", drop);
+    };
   },
 };
 

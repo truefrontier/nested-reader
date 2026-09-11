@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { isTauri, platform } from "./platform";
 import { store, useReader } from "./state/store";
 import { Sidebar } from "./reader/Sidebar";
+import { Home } from "./reader/Home";
 import { Page } from "./reader/Page";
 import { SplitPane } from "./reader/SplitPane";
 import { MapOverlay } from "./reader/MapOverlay";
@@ -38,13 +39,13 @@ export default function App() {
       const k = e.key.toLowerCase();
       if (k === "r" && !inInput) {
         e.preventDefault();
-        store.toggleRefine();
+        store.command("refine");
         return;
       }
       if (menuHandled) return;
       if (e.key === "\\") {
         e.preventDefault();
-        store.toggleSidebar();
+        store.command("toggle-sidebar");
       } else if (k === "k") {
         e.preventDefault();
         store.command("map");
@@ -53,13 +54,19 @@ export default function App() {
         store.command("fullscreen-pane");
       } else if (e.key === "[") {
         e.preventDefault();
-        store.back();
+        store.command("back");
       } else if (e.key === "]") {
         e.preventDefault();
-        store.forward();
+        store.command("forward");
+      } else if (k === "o" && e.shiftKey) {
+        e.preventDefault();
+        store.command("open-file");
       } else if (k === "o") {
         e.preventDefault();
-        void store.pickFolder();
+        store.command("open-folder");
+      } else if (k === "h" && e.shiftKey) {
+        e.preventDefault();
+        store.command("home");
       } else if (e.key === ",") {
         e.preventDefault();
         void platform.openSettings();
@@ -72,6 +79,8 @@ export default function App() {
   const current = s.session.current;
   const split = s.session.split;
   const showMainPane = !(s.ui.fullscreen && split);
+  // Home replaces the whole window: on request, and whenever nothing is open.
+  const showHome = s.home || (s.ready && !s.folder);
 
   return (
     <div className="app">
@@ -83,32 +92,38 @@ export default function App() {
         </div>
       )}
       {isTauri && <div className="titlebar" data-tauri-drag-region />}
-      <button className="tbtn side-toggle" title="Toggle tree ⌘\" onClick={() => store.toggleSidebar()}>
-        <SidebarIcon />
-      </button>
-      {s.session.sidebar && <Sidebar />}
-      <div className={`main ${s.session.splitDirection}`}>
-        {current && s.pages[current] ? (
-          <div className={`pane${showMainPane ? "" : " hidden"}`}>
-            <Page path={current} role="main" />
-          </div>
-        ) : (
-          s.ready && (
-            <div className="empty-state">
-              <div>
-                {s.folder ? "This folder has no Markdown pages yet." : "Open a folder of Markdown notes to start a session."}
-                <button onClick={() => void store.pickFolder()}>Choose a folder…</button>
+      {showHome ? (
+        <Home />
+      ) : (
+        <>
+          <button className="tbtn side-toggle" title="Toggle tree ⌘\" onClick={() => store.toggleSidebar()}>
+            <SidebarIcon />
+          </button>
+          {s.session.sidebar && <Sidebar />}
+          <div className={`main ${s.session.splitDirection}`}>
+            {current && s.pages[current] ? (
+              <div className={`pane${showMainPane ? "" : " hidden"}`}>
+                <Page path={current} role="main" />
               </div>
-            </div>
-          )
-        )}
-        {split && <SplitPane />}
-        {s.ui.panePopover && current && (
-          <RefinePopover pane onSubmit={(text, scope) => void store.refine(text, scope)} onEsc={() => store.closePopover()} onToggle={() => store.toggleRefine()} />
-        )}
-        {s.ui.refining && <div className="busy">Refining {s.ui.refining === "corpus" ? "corpus" : s.ui.refining}…</div>}
-        {s.ui.map && <MapOverlay />}
-      </div>
+            ) : (
+              s.ready && (
+                <div className="empty-state">
+                  <div>
+                    This folder has no Markdown pages yet.
+                    <button onClick={() => store.goHome()}>Home</button>
+                  </div>
+                </div>
+              )
+            )}
+            {split && <SplitPane />}
+            {s.ui.panePopover && current && (
+              <RefinePopover pane onSubmit={(text, scope) => void store.refine(text, scope)} onEsc={() => store.closePopover()} onToggle={() => store.toggleRefine()} />
+            )}
+            {s.ui.refining && <div className="busy">Refining {s.ui.refining === "corpus" ? "corpus" : s.ui.refining}…</div>}
+            {s.ui.map && <MapOverlay />}
+          </div>
+        </>
+      )}
       {s.ui.error && <div className="toast">{s.ui.error}</div>}
       {mockSettings && (
         <div className="modal-back" onMouseDown={(e) => e.target === e.currentTarget && setMockSettings(false)}>

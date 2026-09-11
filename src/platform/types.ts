@@ -162,8 +162,9 @@ export interface Platform {
   readPage(folder: string, path: string): Promise<Page>;
   /** Writes the full file content (front matter included). */
   writePage(folder: string, path: string, content: string): Promise<void>;
-  loadSession(folder: string): Promise<Session | null>;
-  saveSession(folder: string, session: Session): Promise<void>;
+  /** A folder's session, or with `file`, the separate session kept for a single-file session in that folder. */
+  loadSession(folder: string, file?: string): Promise<Session | null>;
+  saveSession(folder: string, session: Session, file?: string): Promise<void>;
   listVersions(folder: string, path: string): Promise<VersionInfo[]>;
   readVersion(folder: string, path: string, n: number): Promise<string>;
   /** Copies the page's current content into a new numbered snapshot. */

@@ -57,11 +57,7 @@ pub fn list_pages(folder: &str) -> Result<Vec<RawPage>> {
             continue;
         }
         let path = entry.path();
-        let is_md = path
-            .extension()
-            .map(|e| e.eq_ignore_ascii_case("md") || e.eq_ignore_ascii_case("markdown"))
-            .unwrap_or(false);
-        if !is_md {
+        if !is_markdown(path) {
             continue;
         }
         let Some(rel) = rel_string(root, path) else { continue };
@@ -114,8 +110,26 @@ fn reader_dir(folder: &str) -> PathBuf {
     Path::new(folder).join(READER_DIR)
 }
 
-pub fn load_session(folder: &str) -> Result<Option<serde_json::Value>> {
-    let path = reader_dir(folder).join("session.json");
+/// A page path flattened into one file-name segment: `notes/a.md` -> `notes__a`.
+fn page_key(rel: &str) -> String {
+    rel.trim_end_matches(".md").replace(['/', '\\'], "__")
+}
+
+/// `.reader/session.json` for a folder session; a session opened from one file
+/// inside the folder keeps its own state in `.reader/session-<page>.json`.
+fn session_path(folder: &str, file: Option<&str>) -> Result<PathBuf> {
+    let dir = reader_dir(folder);
+    Ok(match file {
+        None => dir.join("session.json"),
+        Some(rel) => {
+            safe_join(folder, rel)?;
+            dir.join(format!("session-{}.json", page_key(rel)))
+        }
+    })
+}
+
+pub fn load_session(folder: &str, file: Option<&str>) -> Result<Option<serde_json::Value>> {
+    let path = session_path(folder, file)?;
     if !path.exists() {
         return Ok(None);
     }
@@ -123,15 +137,32 @@ pub fn load_session(folder: &str) -> Result<Option<serde_json::Value>> {
     Ok(Some(serde_json::from_str(&text)?))
 }
 
-pub fn save_session(folder: &str, session: &serde_json::Value) -> Result<()> {
-    let path = reader_dir(folder).join("session.json");
+pub fn save_session(folder: &str, session: &serde_json::Value, file: Option<&str>) -> Result<()> {
+    let path = session_path(folder, file)?;
     write_atomic(&path, &serde_json::to_string_pretty(session)?)
 }
 
 fn versions_dir(folder: &str, rel: &str) -> Result<PathBuf> {
     safe_join(folder, rel)?;
-    let key = rel.trim_end_matches(".md").replace(['/', '\\'], "__");
-    Ok(reader_dir(folder).join("versions").join(key))
+    Ok(reader_dir(folder).join("versions").join(page_key(rel)))
+}
+
+/// Whether a dropped path is a folder, a Markdown file, or something the reader cannot open.
+pub fn path_kind(path: &str) -> &'static str {
+    let p = Path::new(path);
+    if p.is_dir() {
+        "folder"
+    } else if p.is_file() && is_markdown(p) {
+        "file"
+    } else {
+        "other"
+    }
+}
+
+fn is_markdown(path: &Path) -> bool {
+    path.extension()
+        .map(|e| e.eq_ignore_ascii_case("md") || e.eq_ignore_ascii_case("markdown"))
+        .unwrap_or(false)
 }
 
 pub fn list_versions(folder: &str, rel: &str) -> Result<Vec<VersionInfo>> {

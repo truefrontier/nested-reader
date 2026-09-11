@@ -1,6 +1,7 @@
 import { useMemo, type MouseEvent } from "react";
 import { store, useReader } from "../state/store";
 import { buildTree, dotState } from "../lib/tree";
+import { ChevronLeft } from "./Icons";
 
 export function Sidebar() {
   const s = useReader();
@@ -23,12 +24,15 @@ export function Sidebar() {
   return (
     <aside className="side">
       <div className="side-head">
-        <span>{s.folderName || "Library"}</span>
-        {s.folder && (
-          <span className="link" onClick={() => store.openMap("web")}>
-            Map
-          </span>
-        )}
+        <span className="home-btn" title="Home ⌘⇧H" onClick={() => store.goHome()}>
+          <ChevronLeft />
+        </span>
+        <span className="name" title={s.folderName}>
+          {s.folderName || "Library"}
+        </span>
+        <span className="link" onClick={() => store.openMap("web")}>
+          Map
+        </span>
       </div>
       <div className="side-filter">
         <input placeholder="Filter" value={s.ui.filter} onChange={(e) => store.setFilter(e.target.value)} spellCheck={false} />
@@ -37,12 +41,6 @@ export function Sidebar() {
         </span>
       </div>
       <div className="tree">
-        {!s.folder && (
-          <div className="side-empty">
-            No folder open.
-            <button onClick={() => void store.pickFolder()}>Choose a folder…</button>
-          </div>
-        )}
         <div className="tree-inner">
           {visible.length > 1 && <div className="tree-line" />}
           {visible.map((it) => {
