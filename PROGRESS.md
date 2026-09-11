@@ -1,5 +1,34 @@
 # Progress
 
+## Session: 2026-09-11 — folders in the sidebar, and a draggable sidebar width
+
+### Leading assumptions
+- "Folders" means the directories on disk under the session folder. The sidebar keeps its session tree (pages hung under their sources) but now inside each directory, so the folders are the outer structure and the source tree the inner one. A page whose source is in another directory is a root of its own directory.
+- Subfolders come before pages in each directory, by name (numeric-aware, case-insensitive), as in most file trees. Only directories holding pages are shown, because the page list is the only thing the backend reports.
+- Closed folders belong to the session (`session.collapsed`), like `session.sidebar`, so they come back on reopen. The sidebar width is an app-wide setting (`settings.sidebarWidth`), like text size, because a width is a taste rather than a fact about one session.
+- While filtering or in Unread only, every folder is open and empty ones are left out; a folder the user closed stays closed once the filter is cleared.
+- The width is dragged only; there is no Appearance row for it. Double-click on the edge resets to 224px.
+
+### World facts
+- `buildFolders`, `dirOf` and `folderChain` in `src/lib/tree.ts`. `FolderNode = { path, name, folders, items }`, `items` being `buildTree` over that directory's pages.
+- `Session.collapsed?: string[]`; `store.toggleFolder(dir)` and `store.revealInTree(path)`. The Sidebar calls `revealInTree` whenever `session.current` changes, so a page opened from a link inside a closed folder makes its folder open.
+- The filter now matches title or path, so a folder name finds its pages.
+- `Settings.sidebarWidth` (default 224, clamped 180–480 by `sidebarWidthPx`), applied by `applyTheme` as `--side-width`; `.side` takes `width: var(--side-width)`. `store.previewSidebarWidth` sets the variable live during a drag; `store.setSidebarWidth` saves once on pointer up. No Rust change: settings and sessions are stored as untyped JSON.
+- New CSS: `.rows` (a directory's page block with its own `.tree-line`), `.folder`, `.frow` (chevron rotates when `.folder.open`), `.fbody` (15px indent per level), `.side-grip` (7px strip on the sidebar's right edge, accent line on hover).
+- The Web and Timeline maps still use `buildTree` and are unchanged.
+- Verified in headless Chromium with a temporary sample that had `notes/`, `notes/deeper/` and `archive/`: nesting and ordering right; closing `deeper` then `notes` hides their rows; filter "ripple" opens folders and drops `archive`; filter "deeper" matches by path; clearing the filter brings back the remembered closed state; opening Ripple count reopens `notes` and `deeper`. Drag: +60 previews without saving, +120 saves 344, +900 clamps to 480, −900 clamps to 180, the width survives a reload, double-click restores 224. `tsc` and `pnpm build` pass. The sample fixtures were removed before committing.
+
+### Timeline
+1. Kevin asked for folders in the sidebar so a big session is not one long list, then added that the sidebar width should be draggable.
+2. Read Sidebar, tree.ts, the store, the Rust page walker (already recursive, paths relative with `/`) and the settings plumbing.
+3. Added the folder tree, the session field, the store methods, the sidebar rendering and CSS; then the width setting, grip and store methods.
+4. Checked both in the browser build, updated `docs/architecture.md`, committed and pushed to `claude/sweet-einstein-q75jqd`.
+
+### Possible next steps
+- Show folder headers in the Timeline map too, if the long list is a problem there as well.
+- A right-click or ⌥-click on a folder chevron to close or open every folder at once.
+- Let ⌘N or New Page pick a target folder; today new pages go beside their source (or into `newPagesSubfolder`).
+
 ## Session: 2026-09-11 — page width in Appearance
 
 ### Leading assumptions
