@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics><link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500&display=swap" rel="stylesheet"><style>body{margin:0;background:#e6e3de}a{color:inherit}a:hover{color:inherit}@keyframes rise{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}</style></helmet>
+<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:40px;box-sizing:border-box;font-family:'Instrument Sans',system-ui,sans-serif">
+<div data-screen-label="Settings" style="--bg:{{bg}};--fg:{{fg}};--mute:{{mute}};--hair:{{hair}};--acc:{{acc}};--card:{{card}};position:relative;width:540px;border-radius:12px;overflow:hidden;background:var(--bg,#faf9f7);color:var(--fg,#1e1c19);box-shadow:0 30px 80px rgba(0,0,0,.22),0 0 0 1px rgba(0,0,0,.08);font-size:13px">
+ <div style="height:52px;display:flex;align-items:center;justify-content:center;position:relative;font-weight:500">
+  <div style="position:absolute;top:16px;left:16px;display:flex;gap:8px"><span style="width:12px;height:12px;border-radius:50%;background:#ff5f57"></span><span style="width:12px;height:12px;border-radius:50%;background:#febc2e"></span><span style="width:12px;height:12px;border-radius:50%;background:#28c840"></span></div>
+  Settings
+ </div>
+ <div style="display:flex;justify-content:center;gap:6px;padding:0 0 14px;border-bottom:1px solid var(--hair,rgba(30,28,25,.09))">
+  <div onClick="{{ goGeneral }}" style="width:72px;padding:6px 0 5px;border-radius:8px;display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;font-size:11px;background:{{ generalBg }};color:{{ generalFg }}" style-hover="background:var(--card)"><svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 7h16M3 15h16"></path><circle cx="8" cy="7" r="2.5" fill="var(--bg,#faf9f7)"></circle><circle cx="14" cy="15" r="2.5" fill="var(--bg,#faf9f7)"></circle></svg>General</div>
+  <div onClick="{{ goAppearance }}" style="width:72px;padding:6px 0 5px;border-radius:8px;display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;font-size:11px;background:{{ appearanceBg }};color:{{ appearanceFg }}" style-hover="background:var(--card)"><svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"></circle><path d="M11 3a8 8 0 0 1 0 16z" fill="currentColor"></path></svg>Appearance</div>
+  <div onClick="{{ goAI }}" style="width:72px;padding:6px 0 5px;border-radius:8px;display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;font-size:11px;background:{{ aiBg }};color:{{ aiFg }}" style-hover="background:var(--card)"><svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M11 3c.6 4.6 3.4 7.4 8 8-4.6.6-7.4 3.4-8 8-.6-4.6-3.4-7.4-8-8 4.6-.6 7.4-3.4 8-8z"></path></svg>AI</div>
+ </div>
+
+ <div style="padding:28px 40px 36px;display:grid;gap:36px">
+
+  <sc-if value="{{ isAI }}" hint-placeholder-val="{{ true }}">
+  <div style="display:grid;gap:14px;animation:rise .15s ease-out">
+   <div style="display:grid;grid-template-columns:120px 1fr;gap:14px 20px;align-items:center">
+    <div style="color:var(--mute,#8e887e)">Provider</div>
+    <div style="display:inline-flex;padding:2px;border-radius:7px;background:var(--card,rgba(30,28,25,.035));justify-self:start">
+     <span onClick="{{ pickOurs }}" style="padding:5px 12px;border-radius:5px;cursor:pointer;background:{{ oursBg }};color:{{ oursFg }};box-shadow:{{ oursShadow }}">Built in</span>
+     <span onClick="{{ pickOpenAI }}" style="padding:5px 12px;border-radius:5px;cursor:pointer;background:{{ openaiBg }};color:{{ openaiFg }};box-shadow:{{ openaiShadow }}">OpenAI</span>
+     <span onClick="{{ pickAnthropic }}" style="padding:5px 12px;border-radius:5px;cursor:pointer;background:{{ anthropicBg }};color:{{ anthropicFg }};box-shadow:{{ anthropicShadow }}">Anthropic</span>
+     <span onClick="{{ pickCustom }}" style="padding:5px 12px;border-radius:5px;cursor:pointer;background:{{ customBg }};color:{{ customFg }};box-shadow:{{ customShadow }}">Custom</span>
+    </div>
+
+    <sc-if value="{{ isOurs }}" hint-placeholder-val="{{ false }}">
+    <div style="color:var(--mute,#8e887e)">Plan</div>
+    <div style="display:flex;justify-content:space-between;align-items:center"><span>Research · 1,240 lookups left this month</span><span style="color:var(--mute,#8e887e);cursor:pointer" style-hover="color:var(--fg)">Manage</span></div>
+    </sc-if>
+
+    <sc-if value="{{ isExternal }}" hint-placeholder-val="{{ true }}">
+    <sc-if value="{{ isCustom }}" hint-placeholder-val="{{ true }}">
+    <div style="color:var(--mute,#8e887e)">Base URL</div>
+    <input placeholder="https://api.example.com/v1" style="height:30px;padding:0 10px;border:1px solid var(--hair,rgba(30,28,25,.09));border-radius:6px;background:transparent;font:inherit;color:var(--fg,#1e1c19);outline:0" style-focus="border-color:var(--mute)">
+    </sc-if>
+    <div style="color:var(--mute,#8e887e)">API key</div>
+    <div style="display:flex;gap:8px;align-items:center"><input type="password" value="sk-ant-api03-••••••••••••••••••••••••" style="flex:1;min-width:0;height:30px;padding:0 10px;border:1px solid var(--hair,rgba(30,28,25,.09));border-radius:6px;background:transparent;font:inherit;color:var(--fg,#1e1c19);outline:0" style-focus="border-color:var(--mute)"><span style="color:var(--mute,#8e887e);font-size:12px;white-space:nowrap">Stored in Keychain</span></div>
+    <div style="color:var(--mute,#8e887e)">Model</div>
+    <div style="display:flex;gap:8px;align-items:center"><input value="{{ modelName }}" style="flex:1;min-width:0;height:30px;padding:0 10px;border:1px solid var(--hair,rgba(30,28,25,.09));border-radius:6px;background:transparent;font:inherit;color:var(--fg,#1e1c19);outline:0" style-focus="border-color:var(--mute)"><span style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--mute,#8e887e);white-space:nowrap"><span style="width:6px;height:6px;border-radius:50%;background:var(--acc,#3e8a5a)"></span>Connected · 410 ms</span></div>
+    </sc-if>
+
+    <div style="color:var(--mute,#8e887e);align-self:start;padding-top:2px">Context sent</div>
+    <div style="display:grid;gap:8px">
+     <label style="display:flex;gap:10px;align-items:center;cursor:pointer"><span style="width:14px;height:14px;border-radius:4px;background:var(--fg,#1e1c19);flex:none;display:flex;align-items:center;justify-content:center"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--bg,#faf9f7)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 5.2 4.2 7.4 8 3"></path></svg></span>Highlight and its paragraph</label>
+     <label style="display:flex;gap:10px;align-items:center;cursor:pointer"><span style="width:14px;height:14px;border-radius:4px;background:var(--fg,#1e1c19);flex:none;display:flex;align-items:center;justify-content:center"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--bg,#faf9f7)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 5.2 4.2 7.4 8 3"></path></svg></span>Pages in this session</label>
+     <label style="display:flex;gap:10px;align-items:center;cursor:pointer;color:var(--mute,#8e887e)"><span style="width:14px;height:14px;border-radius:4px;border:1px solid var(--mute,#8e887e);box-sizing:border-box;flex:none"></span>Whole folder</label>
+    </div>
+   </div>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ isGeneral }}" hint-placeholder-val="{{ false }}">
+  <div style="display:grid;gap:14px;animation:rise .15s ease-out">
+   <div style="display:grid;grid-template-columns:120px 1fr;gap:14px 20px;align-items:center">
+    <div style="color:var(--mute,#8e887e)">Folder</div>
+    <div style="display:flex;justify-content:space-between;align-items:center"><span>~/notes/sleep-memory</span><span style="color:var(--mute,#8e887e);cursor:pointer" style-hover="color:var(--fg)">Change…</span></div>
+    <div style="color:var(--mute,#8e887e)">New pages</div>
+    <div style="display:flex;justify-content:space-between;align-items:center"><span>Saved next to their source as .md</span><span style="color:var(--mute,#8e887e);cursor:pointer" style-hover="color:var(--fg)">Subfolder…</span></div>
+    <div style="color:var(--mute,#8e887e)">Open at launch</div>
+    <div style="display:flex;justify-content:space-between;align-items:center"><span>Last session</span><span style="color:var(--mute,#8e887e);cursor:pointer" style-hover="color:var(--fg)">Change…</span></div>
+   </div>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ isAppearance }}" hint-placeholder-val="{{ false }}">
+  <div style="display:grid;gap:14px;animation:rise .15s ease-out">
+   <div style="display:grid;grid-template-columns:120px 1fr;gap:14px 20px;align-items:center">
+    <div style="color:var(--mute,#8e887e)">Theme</div>
+    <div style="display:inline-flex;padding:2px;border-radius:7px;background:var(--card,rgba(30,28,25,.035));justify-self:start">
+     <span style="padding:5px 12px;border-radius:5px;background:var(--bg,#faf9f7);box-shadow:0 1px 2px rgba(0,0,0,.08)">System</span><span style="padding:5px 12px;color:var(--mute,#8e887e);cursor:pointer">Light</span><span style="padding:5px 12px;color:var(--mute,#8e887e);cursor:pointer">Dark</span>
+    </div>
+    <div style="color:var(--mute,#8e887e)">Text size</div>
+    <div style="display:flex;align-items:center;gap:12px"><span style="font-family:Literata,Georgia,serif;font-size:13px;color:var(--mute,#8e887e)">A</span><div style="flex:1;height:2px;background:var(--hair,rgba(30,28,25,.09));border-radius:1px;position:relative"><div style="position:absolute;left:0;top:0;height:2px;width:45%;background:var(--fg,#1e1c19);border-radius:1px"></div><div style="position:absolute;left:45%;top:50%;width:14px;height:14px;border-radius:50%;background:var(--bg,#faf9f7);border:1px solid var(--hair,rgba(30,28,25,.09));box-shadow:0 1px 3px rgba(0,0,0,.12);transform:translate(-50%,-50%)"></div></div><span style="font-family:Literata,Georgia,serif;font-size:19px;color:var(--mute,#8e887e)">A</span></div>
+    <div style="color:var(--mute,#8e887e)">Reading font</div>
+    <div style="display:inline-flex;padding:2px;border-radius:7px;background:var(--card,rgba(30,28,25,.035));justify-self:start">
+     <span style="padding:5px 12px;border-radius:5px;background:var(--bg,#faf9f7);box-shadow:0 1px 2px rgba(0,0,0,.08);font-family:Literata,Georgia,serif">Serif</span><span style="padding:5px 12px;color:var(--mute,#8e887e);cursor:pointer">Sans</span>
+    </div>
+    <div style="grid-column:1/-1;height:1px;background:var(--hair,rgba(30,28,25,.09));margin:6px 0"></div>
+    <div style="color:var(--mute,#8e887e)">New Page opens</div>
+    <div style="display:inline-flex;align-items:center;gap:8px;height:28px;padding:0 8px 0 10px;border:1px solid var(--hair,rgba(30,28,25,.09));border-radius:6px;justify-self:start;cursor:pointer;min-width:150px;justify-content:space-between" style-hover="background:var(--card)">Beside<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3.5 5 1 7.5 3.5M2.5 6.5 5 9l2.5-2.5"></path></svg></div>
+    <div style="color:var(--mute,#8e887e)">Deep Dive opens</div>
+    <div style="display:inline-flex;align-items:center;gap:8px;height:28px;padding:0 8px 0 10px;border:1px solid var(--hair,rgba(30,28,25,.09));border-radius:6px;justify-self:start;cursor:pointer;min-width:150px;justify-content:space-between" style-hover="background:var(--card)">In background<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3.5 5 1 7.5 3.5M2.5 6.5 5 9l2.5-2.5"></path></svg></div>
+    <div style="grid-column:2;position:relative;margin-top:-6px">
+     <div style="position:absolute;top:0;left:0;width:150px;padding:4px;border-radius:8px;background:var(--bg,#faf9f7);border:1px solid var(--hair,rgba(30,28,25,.09));box-shadow:0 8px 24px rgba(0,0,0,.12);display:grid;gap:1px;z-index:3;animation:rise .15s ease-out">
+      <div style="padding:5px 8px;border-radius:5px">Beside</div>
+      <div style="padding:5px 8px;border-radius:5px">Below</div>
+      <div style="padding:5px 8px;border-radius:5px">Active pane</div>
+      <div style="padding:5px 8px;border-radius:5px;background:var(--fg,#1e1c19);color:var(--bg,#faf9f7)">In background</div>
+      <div style="padding:5px 8px;border-radius:5px">New window</div>
+     </div>
+    </div>
+    <div style="grid-column:2;color:var(--mute,#8e887e);font-size:12px;margin-top:130px">Hold ⌥ while pressing a shortcut to use the other placement.</div>
+   </div>
+  </div>
+  </sc-if>
+
+ </div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:640,&quot;height&quot;:760},&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;light&quot;,&quot;options&quot;:[&quot;light&quot;,&quot;dark&quot;],&quot;tsType&quot;:&quot;'light'|'dark'&quot;},&quot;tab&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;ai&quot;,&quot;options&quot;:[&quot;general&quot;,&quot;appearance&quot;,&quot;ai&quot;],&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;State&quot;},&quot;provider&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;anthropic&quot;,&quot;options&quot;:[&quot;ours&quot;,&quot;openai&quot;,&quot;anthropic&quot;,&quot;custom&quot;],&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;State&quot;}}">
+class Component extends DCLogic {
+  state = { provider: null, tab: null };
+  renderVals() {
+    const dark = (this.props.theme ?? 'light') === 'dark';
+    const t = dark
+      ? { bg: '#171614', fg: '#e8e4dd', mute: '#7f7a71', hair: 'rgba(232,228,221,.1)', acc: 'oklch(0.76 0.1 150)', card: 'rgba(232,228,221,.05)' }
+      : { bg: '#faf9f7', fg: '#1e1c19', mute: '#8e887e', hair: 'rgba(30,28,25,.09)', acc: 'oklch(0.55 0.1 150)', card: 'rgba(30,28,25,.035)' };
+    const p = this.state.provider ?? this.props.provider ?? 'anthropic';
+    const seg = k => ({ [k+'Bg']: p===k ? t.bg : 'transparent', [k+'Fg']: p===k ? t.fg : t.mute, [k+'Shadow']: p===k ? '0 1px 2px rgba(0,0,0,.08)' : 'none' });
+    const models = { openai: 'gpt-5', anthropic: 'claude-sonnet-4-5', custom: 'llama-3.3-70b' };
+    const pick = k => () => this.setState({ provider: k });
+    const tab = this.state.tab ?? this.props.tab ?? 'ai';
+    const tabSeg = k => ({ [k+'Bg']: tab===k ? t.card : 'transparent', [k+'Fg']: tab===k ? t.fg : t.mute });
+    const titles = { general: 'General', appearance: 'Appearance', ai: 'AI' };
+    const go = k => () => this.setState({ tab: k });
+    return { ...t, ...tabSeg('general'), ...tabSeg('appearance'), ...tabSeg('ai'), tabTitle: titles[tab], isGeneral: tab==='general', isAppearance: tab==='appearance', isAI: tab==='ai', goGeneral: go('general'), goAppearance: go('appearance'), goAI: go('ai'), ...seg('ours'), ...seg('openai'), ...seg('anthropic'), ...seg('custom'),
+      isOurs: p==='ours', isExternal: p!=='ours', isCustom: p==='custom', modelName: models[p] ?? '',
+      pickOurs: pick('ours'), pickOpenAI: pick('openai'), pickAnthropic: pick('anthropic'), pickCustom: pick('custom') };
+  }
+}
+</script>
+</body>
+</html>

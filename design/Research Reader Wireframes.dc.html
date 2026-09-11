@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics><meta name="design_doc_mode" content="canvas"><link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&display=swap" rel="stylesheet"><style>body{margin:0;background:#f0eee9;font-family:system-ui,sans-serif}a{color:#1a1a1a}a:hover{color:#2a78d6}.dv-turn{padding:40px 44px 32px;border-bottom:1px solid rgba(0,0,0,.08);scroll-margin-top:16px}.dv-thd{display:flex;align-items:baseline;gap:10px;margin:0 0 20px}.dv-tid{font:600 10px ui-monospace,Menlo,monospace;padding:3px 7px;background:#1a1a1a;color:#fff;border-radius:4px;text-decoration:none}.dv-tname{font:600 13px/1.2 system-ui,sans-serif;color:#1a1a1a}.dv-opts{display:flex;flex-wrap:wrap;gap:28px;align-items:flex-start}.dv-opt{flex:none;display:flex;flex-direction:column;gap:9px;scroll-margin-top:16px}.dv-oid{font:600 10.5px ui-monospace,Menlo,monospace;padding:3px 7px;background:rgba(0,0,0,.08);color:#1a1a1a;border-radius:5px;text-decoration:none}.dv-olabel{display:flex;align-items:baseline;gap:8px;font:400 11px/1.3 system-ui,sans-serif;color:rgba(0,0,0,.55)}.dv-card{max-width:100%;background:#fff;border:1px solid rgba(0,0,0,.08);border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.06);overflow:hidden}.dv-opt:target .dv-oid{background:#2a78d6;color:#fff}.dv-next{margin:22px 0 0;font:12px/1.5 system-ui,sans-serif;color:rgba(0,0,0,.5)}.dv-note{max-width:720px;margin:0 0 24px;font:13px/1.55 system-ui,sans-serif;color:rgba(0,0,0,.65)}@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}</style></helmet>
+<section class="dv-turn" id="t3">
+<div class="dv-thd"><a class="dv-tid" href="#t3">3</a><span class="dv-tname">Refine mode: scope, instruction, and how a revision reads</span></div>
+<p class="dv-note">Learning grows the session (everything so far); <b>Refine</b> rewrites what's there. ⌘R turns the highlight popover into a Refine popover; ⌘R with nothing selected opens it on the active pane. Scope is the verb you press: selection, document, or corpus (every document in this session). A refinement never overwrites the .md until you accept; until then the page shows the revision in a readable diff. Three diff treatments below to pick from.</p>
+<div class="dv-opts">
+
+<div class="dv-opt" id="3a"><div class="dv-olabel"><a class="dv-oid" href="#3a">3a</a>⌘R after a highlight: the popover becomes Refine</div><div class="dv-card" style="width:560px">
+<div style="position:relative;width:560px;height:380px;background:#fff;font-family:'Patrick Hand',cursive;color:#222;overflow:hidden">
+ <div style="position:absolute;top:12px;left:12px;display:flex;gap:7px"><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span></div>
+  <div style="position:absolute;top:56px;left:96px;right:96px">
+  <div style="font-size:24px;line-height:1.1;margin-bottom:14px">Sharp-wave ripples</div>
+  <div style="font-size:14px;line-height:1.7;color:#333">Ripples cluster during slow-wave sleep and quiet wakefulness. <span style="background:#ffe98a;padding:1px 2px">Disrupting them selectively, without otherwise waking the animal, impairs memory for the route learned that day</span>, which is the strongest causal evidence…</div>
+  <div style="position:relative;margin-top:10px;margin-left:80px;width:330px;border:1.5px solid #333;border-radius:8px;background:#fff;box-shadow:3px 3px 0 #ddd;padding:10px 12px;font-size:13px">
+   <div style="position:absolute;top:-7px;left:40px;width:12px;height:12px;background:#fff;border-left:1.5px solid #333;border-top:1.5px solid #333;transform:rotate(45deg)"></div>
+   <div style="color:#999">make this plainer, cite the study</div>
+   <div style="margin-top:8px;font-size:11px;color:#999">↵ Refine selection · ⌘↵ Refine page · ⌘⇧↵ Refine corpus · Esc</div>
+  </div>
+ </div>
+ <div style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;color:#999">⌘R again flips back to Lookup · no mode toggle, no new chrome · corpus = every document in this session</div>
+</div></div></div>
+
+<div class="dv-opt" id="3b"><div class="dv-olabel"><a class="dv-oid" href="#3b">3b</a>⌘R with nothing selected: refine popover on the active pane</div><div class="dv-card" style="width:640px">
+<div style="position:relative;width:640px;height:380px;background:#fff;font-family:'Patrick Hand',cursive;color:#222;overflow:hidden;display:flex">
+ <div style="position:absolute;top:12px;left:12px;display:flex;gap:7px;z-index:2"><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span></div>
+ <div style="width:190px;border-right:1.5px dashed #999;padding:44px 14px 0;font-size:12px;position:relative">
+  <div style="color:#999;font-size:11px;margin-bottom:6px">Sleep &amp; memory</div>
+  <div style="line-height:2;color:#555">○ Same order<br>● Sharp-wave ripples <span style="color:#c98a1a">◆</span><br>○ Replay into cortex <span style="color:#c98a1a">◆</span><br>&nbsp;&nbsp;&nbsp;○ Other way?<br>&nbsp;&nbsp;&nbsp;○ Slow oscillations<br>○ Why the brain replays… <span style="color:#c98a1a">◆</span></div>
+  <div style="position:absolute;bottom:12px;left:14px;right:14px;font-size:10.5px;color:#999;line-height:1.35">◆ = has a pending revision · Refine corpus marks several at once</div>
+ </div>
+ <div style="flex:1;position:relative;padding:52px 40px 0">
+  <div style="font-size:18px;margin-bottom:8px">Sharp-wave ripples</div>
+  <div style="display:grid;gap:7px"><div style="height:6px;background:#e4e4e4;border-radius:3px"></div><div style="height:6px;background:#e4e4e4;border-radius:3px;width:80%"></div><div style="height:6px;background:#e4e4e4;border-radius:3px;width:60%"></div><div style="height:6px;background:#e4e4e4;border-radius:3px;width:90%"></div><div style="height:6px;background:#e4e4e4;border-radius:3px;width:70%"></div></div>
+  <div style="position:absolute;left:40px;right:40px;bottom:16px;border:1.5px solid #333;border-radius:8px;padding:8px 12px;font-size:13px;background:#fff;box-shadow:3px 3px 0 #ddd">
+   <div style="color:#999">unify terminology: "replay" not "reactivation", everywhere</div>
+   <div style="margin-top:6px;font-size:11px;color:#999"><span style="color:#ccc;text-decoration:line-through">↵ Refine selection</span> · ⌘↵ Refine page · ⌘⇧↵ Refine corpus · Esc</div>
+  </div>
+  <div style="position:absolute;top:110px;right:20px;width:110px;font-size:11px;color:#999;line-height:1.3">same popover as 3a, anchored to the pane instead of a selection; Esc dismisses</div>
+ </div>
+</div></div></div>
+
+<div class="dv-opt" id="3c"><div class="dv-olabel"><a class="dv-oid" href="#3c">3c</a>Diff A · inline marks: strike + tint, gutter dot per change</div><div class="dv-card" style="width:560px">
+<div style="position:relative;width:560px;height:380px;background:#fff;font-family:'Patrick Hand',cursive;color:#222;overflow:hidden">
+ <div style="position:absolute;top:12px;left:12px;display:flex;gap:7px"><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span></div>
+ <div style="position:absolute;top:10px;left:0;right:0;text-align:center;font-size:12px;color:#999">3 changes · <span style="color:#222">Accept all</span> · Revert · <span style="color:#c98a1a">◆</span> pending</div>
+ <div style="position:absolute;top:56px;left:96px;right:96px;font-size:14px;line-height:1.75;color:#333">
+  <div style="font-size:24px;line-height:1.1;margin-bottom:14px">Sharp-wave ripples</div>
+  <div style="position:relative">
+   <span style="position:absolute;left:-22px;top:6px;width:6px;height:6px;border-radius:50%;background:#c98a1a"></span>
+   Ripples cluster during slow-wave sleep and quiet wakefulness. <span style="color:#aaa;text-decoration:line-through;text-decoration-thickness:1px">Disrupting them selectively, without otherwise waking the animal, impairs memory for the route learned that day</span> <span style="background:#eaf3e6;padding:1px 2px">Cut a ripple short while the animal sleeps and it forgets the day's route (Girardeau 2009)</span>, which is the strongest causal evidence that replay is doing the consolidating.
+  </div>
+  <div style="position:relative;margin-top:14px">
+   <span style="position:absolute;left:-22px;top:6px;width:6px;height:6px;border-radius:50%;background:#c98a1a"></span>
+   Ripples are also where <span style="color:#aaa;text-decoration:line-through">reactivation</span> <span style="background:#eaf3e6;padding:1px 2px">replay</span> is most often observed to run in the same order it was run.
+   <div style="position:absolute;right:-80px;top:0;font-size:11px;color:#999;line-height:1.3;width:70px">hover a dot: ✓ accept · ✕ reject this change</div>
+  </div>
+ </div>
+ <div style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;color:#999">most literal · readable because removed text is muted, not red · keeps the rhythm of the page</div>
+</div></div></div>
+
+<div class="dv-opt" id="3d"><div class="dv-olabel"><a class="dv-oid" href="#3d">3d</a>Diff B · clean revision, changed spans tinted, original on hover</div><div class="dv-card" style="width:560px">
+<div style="position:relative;width:560px;height:380px;background:#fff;font-family:'Patrick Hand',cursive;color:#222;overflow:hidden">
+ <div style="position:absolute;top:12px;left:12px;display:flex;gap:7px"><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span></div>
+ <div style="position:absolute;top:8px;left:0;right:0;display:flex;justify-content:center;font-size:12px;color:#999"><span style="border:1.5px solid #333;border-radius:12px;padding:2px 10px;color:#222"><span style="color:#c98a1a">◆</span> Version 3 · current ▾</span></div>
+ <div style="position:absolute;top:34px;left:200px;width:180px;border:1.5px solid #333;border-radius:8px;background:#fff;box-shadow:3px 3px 0 #ddd;padding:6px 10px;font-size:12px;color:#777;line-height:1.8;z-index:2"><div style="color:#222">Version 3 · current</div><div>Version 2 <span style="float:right;font-size:11px">compare</span></div><div>Version 1 · original <span style="float:right;font-size:11px">compare</span></div></div>
+ <div style="position:absolute;top:56px;left:96px;right:96px;font-size:14px;line-height:1.75;color:#333">
+  <div style="font-size:24px;line-height:1.1;margin-bottom:14px">Sharp-wave ripples</div>
+  Ripples cluster during slow-wave sleep and quiet wakefulness. <span style="background:#eaf3e6;padding:1px 2px;border-bottom:1.5px dotted #6a9a5a">Cut a ripple short while the animal sleeps and it forgets the day's route (Girardeau 2009)</span>, which is the strongest causal evidence that replay is doing the consolidating.
+  <div style="position:relative;margin-top:6px;margin-left:60px;width:300px;border:1.5px solid #333;border-radius:8px;background:#fff;box-shadow:3px 3px 0 #ddd;padding:8px 12px;font-size:12px;color:#777;line-height:1.5">
+   <div style="position:absolute;top:-7px;left:40px;width:12px;height:12px;background:#fff;border-left:1.5px solid #333;border-top:1.5px solid #333;transform:rotate(45deg)"></div>
+   <span style="font-size:10.5px;color:#999">was</span><br>Disrupting them selectively, without otherwise waking the animal, impairs memory for the route learned that day
+   <div style="margin-top:6px;font-size:11px;color:#999;display:flex;gap:12px"><span style="color:#222">✓ keep</span><span>↶ restore</span></div>
+  </div>
+  <div style="margin-top:12px">Ripples are also where <span style="background:#eaf3e6;padding:1px 2px;border-bottom:1.5px dotted #6a9a5a">replay</span> is most often observed to run in the same order it was run.</div>
+ </div>
+ <div style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;color:#999">most readable · you read the new text, the old is one hover away · tint fades once kept</div>
+</div></div></div>
+
+<div class="dv-opt" id="3e"><div class="dv-olabel"><a class="dv-oid" href="#3e">3e</a>Diff C · side-by-side split, paragraphs aligned</div><div class="dv-card" style="width:640px">
+<div style="position:relative;width:640px;height:380px;background:#fff;font-family:'Patrick Hand',cursive;color:#222;overflow:hidden;display:flex">
+ <div style="position:absolute;top:12px;left:12px;display:flex;gap:7px;z-index:2"><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span></div>
+ <div style="position:absolute;top:10px;left:0;right:0;text-align:center;font-size:12px;color:#999">Original · Revised &nbsp;&nbsp; <span style="color:#222">Accept all</span> · Revert</div>
+ <div style="flex:1;padding:52px 28px 0 44px;font-size:13px;line-height:1.6;color:#777;border-right:1.5px dashed #999"><div>
+  <div style="font-size:18px;color:#222;margin-bottom:8px">Sharp-wave ripples</div>
+  Ripples cluster during slow-wave sleep and quiet wakefulness. <span style="background:#f1f1f1">Disrupting them selectively, without otherwise waking the animal, impairs memory for the route learned that day</span>, which is the strongest…
+  <div style="margin-top:10px">Ripples are also where <span style="background:#f1f1f1">reactivation</span> is most often observed…</div>
+ </div></div>
+ <div style="flex:1;padding:52px 44px 0 28px;font-size:13px;line-height:1.6;color:#333;position:relative"><div>
+  <div style="font-size:18px;margin-bottom:8px">Sharp-wave ripples</div>
+  Ripples cluster during slow-wave sleep and quiet wakefulness. <span style="background:#eaf3e6">Cut a ripple short while the animal sleeps and it forgets the day's route (Girardeau 2009)</span>, which is the strongest…
+  <div style="margin-top:10px">Ripples are also where <span style="background:#eaf3e6">replay</span> is most often observed…</div></div>
+  <div style="position:absolute;right:8px;top:100px;font-size:11px;color:#999;width:34px;line-height:1.3">✓<br>✕</div>
+ </div>
+ <div style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;color:#999">best for big rewrites (page/session scope) · reuses the split pane you already have · scroll-locked</div>
+</div></div></div>
+
+<div class="dv-opt" id="3f"><div class="dv-olabel"><a class="dv-oid" href="#3f">3f</a>Session-scope review: one list, every touched page</div><div class="dv-card" style="width:560px">
+<div style="position:relative;width:560px;height:380px;background:#fff;font-family:'Patrick Hand',cursive;color:#222;overflow:hidden">
+ <div style="position:absolute;top:12px;left:12px;display:flex;gap:7px"><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span></div>
+ <div style="position:absolute;top:10px;left:0;right:0;text-align:center;font-size:12px;color:#999">Refined 3 pages · "replay not reactivation" · <span style="color:#222">Accept all</span> · Revert all</div>
+ <div style="position:absolute;top:56px;left:80px;right:80px;font-size:13px">
+  <div style="border:1.5px solid #333;border-radius:8px;padding:10px 14px;margin-bottom:10px"><div style="display:flex;justify-content:space-between"><span>Why the brain replays the day</span><span style="color:#999">4 changes</span></div><div style="font-size:12px;color:#777;margin-top:4px;line-height:1.5">…the same sequences it produced while awake. This <span style="color:#aaa;text-decoration:line-through">reactivation</span> <span style="background:#eaf3e6">replay</span> is thought to move…</div><div style="font-size:11px;color:#999;margin-top:6px">open ▸ · ✓ · ✕</div></div>
+  <div style="border:1.5px solid #333;border-radius:8px;padding:10px 14px;margin-bottom:10px"><div style="display:flex;justify-content:space-between"><span>Replay into cortex</span><span style="color:#999">1 change</span></div><div style="font-size:12px;color:#777;margin-top:4px">…cortex can cue which traces get <span style="color:#aaa;text-decoration:line-through">reactivated</span> <span style="background:#eaf3e6">replayed</span>…</div></div>
+  <div style="border:1.5px solid #333;border-radius:8px;padding:10px 14px"><div style="display:flex;justify-content:space-between"><span>Sharp-wave ripples</span><span style="color:#999">1 change</span></div></div>
+ </div>
+ <div style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;color:#999">lives in the Map (Timeline layout) so review = the tree you already know · accepted pages lose their ◆</div>
+</div></div></div>
+
+</div>
+<p class="dv-next">Try next: "hi-fi Refine with diff <a class="dv-oid" href="#3d">3d</a> for selection scope and <a class="dv-oid" href="#3e">3e</a> for page/session" · "drop the mode toggle in <a class="dv-oid" href="#3a">3a</a>, infer Refine from the verb instead" · "show what the .md looks like on disk while a revision is pending"</p>
+</section>
+<section class="dv-turn" id="t2">
+<div class="dv-thd"><a class="dv-tid" href="#t2">2</a><span class="dv-tname">Revisions from your notes on <a class="dv-oid" href="#1c">1c</a>–<a class="dv-oid" href="#1h">1h</a></span></div>
+<p class="dv-note">Session corpus = a local folder (all .md now, .html later). Sidebar is a collapsible git-style tree; the session map's timeline layout uses the same tree so the two feel like one thing at two zoom levels. Link clicks follow browser defaults: click = here, ⌘click = new tab (background), ⌘⇧click = new tab (foreground), ⌥click = open beside.</p>
+<div class="dv-opts">
+
+<div class="dv-opt" id="2a"><div class="dv-olabel"><a class="dv-oid" href="#2a">2a</a>Start a session from a folder</div><div class="dv-card" style="width:560px">
+<div style="position:relative;width:560px;height:380px;background:#fff;font-family:'Patrick Hand',cursive;color:#222;overflow:hidden">
+ <div style="position:absolute;top:12px;left:12px;display:flex;gap:7px"><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span></div>
+ <div style="position:absolute;top:90px;left:120px;right:120px;text-align:center">
+  <div style="border:1.5px dashed #999;border-radius:12px;padding:34px 20px;font-size:15px;color:#555">Drop a folder<div style="font-size:12px;color:#999;margin-top:6px">or ⌘O · every .md inside becomes the session's corpus</div></div>
+  <div style="margin-top:22px;text-align:left;font-size:13px;color:#999">Recent</div>
+  <div style="text-align:left;font-size:14px;line-height:1.9"><div style="display:flex;justify-content:space-between"><span>~/notes/sleep-memory</span><span style="color:#999">14 files · 6 pages</span></div><div style="display:flex;justify-content:space-between"><span>~/reading/compilers</span><span style="color:#999">3 files · 22 pages</span></div></div>
+ </div>
+ <div style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;color:#999">new pages are written back into the same folder as plain .md</div>
+</div></div></div>
+
+<div class="dv-opt" id="2b"><div class="dv-olabel"><a class="dv-oid" href="#2b">2b</a><a class="dv-oid" href="#1c">1c</a> revised: card verbs match the popover</div><div class="dv-card" style="width:560px">
+<div style="position:relative;width:560px;height:380px;background:#fff;font-family:'Patrick Hand',cursive;color:#222;overflow:hidden">
+ <div style="position:absolute;top:12px;left:12px;display:flex;gap:7px"><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span></div>
+ <div style="position:absolute;top:56px;left:96px;right:96px">
+  <div style="font-size:14px;line-height:1.7;color:#333">…This <span style="background:#ffe98a;padding:1px 2px">replay is thought to move fragile memories into the cortex</span>, where they can survive years of interference.</div>
+  <div style="margin:10px 0;border-left:2px solid #333;padding:8px 14px;background:#fafafa;font-size:13px;line-height:1.5">
+   <div>Replay runs about 10–20× faster than waking speed: a 10-second run replays in under a second, usually inside a sharp-wave ripple.</div>
+   <div style="margin-top:8px;display:flex;gap:14px;font-size:12px;color:#666"><span>Open <span style="color:#aaa">⌘2</span></span><span>Later <span style="color:#aaa">⌘3</span></span><span style="margin-left:auto">Esc</span></div>
+  </div>
+  <div style="font-size:14px;line-height:1.7;color:#333">Rats running a maze show the pattern most clearly: cells that fired in order along the track fire again in the same order during rest.</div>
+  <div style="margin-top:12px;display:grid;gap:7px"><div style="height:6px;background:#e4e4e4;border-radius:3px"></div><div style="height:6px;background:#e4e4e4;border-radius:3px;width:85%"></div></div>
+ </div>
+ <div style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;color:#999">answer restates the question, so no Q label needed</div>
+</div></div></div>
+
+<div class="dv-opt" id="2c"><div class="dv-olabel"><a class="dv-oid" href="#2c">2c</a><a class="dv-oid" href="#1d">1d</a> revised: just the page + one reply-to link (dark)</div><div class="dv-card" style="width:640px">
+<div style="position:relative;width:640px;height:380px;background:#1b1b1d;font-family:'Patrick Hand',cursive;color:#e8e8e8;overflow:hidden;display:flex">
+ <div style="position:absolute;top:12px;left:12px;display:flex;gap:7px;z-index:2"><span style="width:10px;height:10px;border:1.5px solid #888;border-radius:50%"></span><span style="width:10px;height:10px;border:1.5px solid #888;border-radius:50%"></span><span style="width:10px;height:10px;border:1.5px solid #888;border-radius:50%"></span></div>
+ <div style="flex:1;padding:56px 36px 0 48px;border-right:1.5px dashed #444;font-size:13px;line-height:1.7;color:#999">
+  <div style="font-size:18px;color:#ccc;margin-bottom:10px">Why the brain replays the day</div>
+  During deep sleep the hippocampus fires the same sequences… This <span style="background:#5a4d12;color:#fff;padding:1px 2px">replay is thought to move fragile memories into the cortex</span>, where they can survive years of interference.
+  <div style="margin-top:12px;display:grid;gap:7px"><div style="height:6px;background:#2e2e31;border-radius:3px"></div><div style="height:6px;background:#2e2e31;border-radius:3px;width:80%"></div><div style="height:6px;background:#2e2e31;border-radius:3px;width:60%"></div></div>
+ </div>
+ <div style="flex:1;padding:56px 40px 0 32px;position:relative">
+  <div style="position:absolute;top:14px;right:14px;font-size:11px;color:#777;display:flex;gap:10px"><span>⤢</span><span>✕</span></div>
+  <div style="font-size:12px;color:#8ab4ff;margin-bottom:10px">↩ Why the brain replays the day</div>
+  <div style="font-size:20px;line-height:1.1;margin-bottom:12px">Does replay ever run the other way?</div>
+  <div style="font-size:13px;line-height:1.6;color:#ddd">Mostly no. Replay pushes hippocampal traces toward the cortex, but during slow oscillations the cortex can cue which traces get replayed, so the loop is two-way even if the transfer is one-way.</div>
+  <div style="margin-top:10px;display:grid;gap:7px"><div style="height:6px;background:#2e2e31;border-radius:3px"></div><div style="height:6px;background:#2e2e31;border-radius:3px;width:70%"></div><div style="height:6px;background:#2e2e31;border-radius:3px;width:85%"></div></div>
+  <div style="position:absolute;bottom:12px;left:32px;font-size:11px;color:#666">↩ hover shows the exact highlight · click jumps to it</div>
+ </div>
+</div></div></div>
+
+<div class="dv-opt" id="2d"><div class="dv-olabel"><a class="dv-oid" href="#2d">2d</a><a class="dv-oid" href="#1e">1e</a> revised: shimmer while loading, dot = unread (dark)</div><div class="dv-card" style="width:560px">
+<div style="position:relative;width:560px;height:380px;background:#1b1b1d;font-family:'Patrick Hand',cursive;color:#e8e8e8;overflow:hidden">
+ <div style="position:absolute;top:12px;left:12px;display:flex;gap:7px"><span style="width:10px;height:10px;border:1.5px solid #888;border-radius:50%"></span><span style="width:10px;height:10px;border:1.5px solid #888;border-radius:50%"></span><span style="width:10px;height:10px;border:1.5px solid #888;border-radius:50%"></span></div>
+ <div style="position:absolute;top:56px;left:96px;right:96px">
+  <div style="font-size:24px;line-height:1.1;margin-bottom:14px">Why the brain replays the day</div>
+  <div style="font-size:14px;line-height:1.7;color:#bbb">During deep sleep the hippocampus fires the same sequences it produced while awake, only faster. This <span style="border-bottom:1.5px solid #8ab4ff;color:#eee">replay is thought to move fragile memories into the cortex</span><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#8ab4ff;margin:0 0 6px 3px"></span>, where they can survive years of interference.<br><br>Rats running a maze show the pattern most clearly: cells that fired in order along the track fire again in the <span style="background:linear-gradient(90deg,#666 0%,#eee 50%,#666 100%);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;border-bottom:1.5px dashed #8ab4ff;animation:shimmer 1.6s linear infinite">same order</span> during rest, often nested in <span style="border-bottom:1.5px solid #8ab4ff;color:#eee">sharp-wave ripples</span>.</div>
+ </div>
+ <div style="position:absolute;top:104px;right:6px;width:88px;font-size:11px;color:#777;line-height:1.35">● unread<br>shimmer = loading<br>no dot = read</div>
+ <div style="position:absolute;bottom:14px;left:60px;right:60px;font-size:11px;color:#666;text-align:center;line-height:1.5">click → here · ⌘click → background tab · ⌘⇧click → foreground tab · ⌥click → beside<br>clicking mid-load opens the page in its loading state</div>
+</div></div></div>
+
+<div class="dv-opt" id="2e"><div class="dv-olabel"><a class="dv-oid" href="#2e">2e</a><a class="dv-oid" href="#1f">1f</a> revised: collapsible git-tree sidebar</div><div class="dv-card" style="width:640px">
+<div style="position:relative;width:640px;height:380px;background:#fff;font-family:'Patrick Hand',cursive;color:#222;overflow:hidden;display:flex">
+ <div style="position:absolute;top:12px;left:12px;display:flex;gap:7px;z-index:2"><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span></div>
+ <div style="width:210px;border-right:1.5px dashed #999;padding:44px 0 0 0;font-size:12.5px;position:relative">
+  <div style="padding:0 14px 8px;color:#999;font-size:11px;display:flex;justify-content:space-between"><span>Sleep &amp; memory</span><span>⌘\</span></div>
+  <div style="position:relative;padding-left:14px">
+   <div style="position:absolute;left:19px;top:8px;bottom:8px;width:1.5px;background:#999"></div>
+   <div style="display:flex;align-items:center;gap:8px;height:24px"><span style="width:9px;height:9px;border:1.5px solid #333;border-radius:50%;background:#fff;flex:none;position:relative;z-index:1"></span><span>Why the brain replays…</span></div>
+   <div style="position:relative;display:flex;align-items:center;gap:8px;height:24px"><span style="width:9px;height:9px;border:1.5px solid #333;border-radius:50%;background:#fff;flex:none;position:relative;z-index:1"></span><span>Replay into cortex</span></div>
+   <div style="position:relative;margin-left:22px;display:flex;align-items:center;gap:8px;height:24px"><span style="position:absolute;left:-18px;top:-12px;width:18px;height:24px;border-left:1.5px solid #999;border-bottom:1.5px solid #999;border-radius:0 0 0 8px"></span><span style="width:9px;height:9px;border:1.5px solid #333;border-radius:50%;background:#fff;flex:none;position:relative;z-index:1"></span><span>Other way?</span></div>
+   <div style="position:relative;margin-left:22px;display:flex;align-items:center;gap:8px;height:24px"><span style="width:9px;height:9px;border:1.5px solid #333;border-radius:50%;background:#fff;flex:none;position:relative;z-index:1"></span><span style="color:#999">Slow oscillations</span><span style="width:5px;height:5px;border-radius:50%;background:#2a78d6"></span></div>
+   <div style="display:flex;align-items:center;gap:8px;height:24px"><span style="width:9px;height:9px;border:1.5px solid #333;border-radius:50%;background:#333;flex:none;position:relative;z-index:1"></span><span style="font-weight:700">Sharp-wave ripples</span></div>
+   <div style="display:flex;align-items:center;gap:8px;height:24px"><span style="width:9px;height:9px;border:1.5px dashed #999;border-radius:50%;flex:none;position:relative;z-index:1;background:#fff"></span><span style="color:#999">Same order</span><span style="font-size:10px;color:#999">loading</span></div>
+  </div>
+  <div style="position:absolute;bottom:10px;left:14px;right:10px;font-size:10.5px;color:#999;line-height:1.35">branch = where you forked · ▸ collapses a branch · filled = current · blue dot = unread</div>
+ </div>
+ <div style="flex:1;padding:56px 60px 0 50px">
+  <div style="font-size:12px;color:#2a78d6;margin-bottom:8px">↩ Replay into cortex</div>
+  <div style="font-size:22px;line-height:1.1;margin-bottom:12px">Sharp-wave ripples</div>
+  <div style="display:grid;gap:7px"><div style="height:6px;background:#e4e4e4;border-radius:3px"></div><div style="height:6px;background:#e4e4e4;border-radius:3px;width:92%"></div><div style="height:6px;background:#e4e4e4;border-radius:3px;width:70%"></div><div style="height:6px;background:#e4e4e4;border-radius:3px;width:88%"></div><div style="height:6px;background:#e4e4e4;border-radius:3px;width:50%"></div></div>
+ </div>
+</div></div></div>
+
+<div class="dv-opt" id="2f"><div class="dv-olabel"><a class="dv-oid" href="#2f">2f</a><a class="dv-oid" href="#1g">1g</a> layout 1: web / mind-map view</div><div class="dv-card" style="width:560px">
+<div style="position:relative;width:560px;height:380px;background:#fff;font-family:'Patrick Hand',cursive;color:#222;overflow:hidden">
+ <div style="position:absolute;top:12px;left:12px;display:flex;gap:7px"><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span></div>
+ <div style="position:absolute;top:12px;left:0;right:0;text-align:center;font-size:12px;color:#999">Sleep &amp; memory · <span style="border:1.5px solid #333;border-radius:10px;padding:0 8px;color:#222">Web</span> <span style="padding:0 8px">Timeline</span></div>
+ <svg width="560" height="380" style="position:absolute;inset:0" fill="none" stroke="#999" stroke-width="1.5">
+  <line x1="280" y1="200" x2="170" y2="130"></line><line x1="280" y1="200" x2="400" y2="120"></line><line x1="280" y1="200" x2="300" y2="300"></line>
+  <line x1="170" y1="130" x2="90" y2="90"></line><line x1="170" y1="130" x2="110" y2="200"></line><line x1="400" y1="120" x2="470" y2="70"></line>
+  <line x1="300" y1="300" x2="420" y2="320" stroke-dasharray="4 4"></line>
+ </svg>
+ <div style="position:absolute;left:220px;top:184px;width:120px;text-align:center;border:1.5px solid #333;border-radius:16px;padding:5px 8px;background:#fff;font-size:12px">Why the brain replays…</div>
+ <div style="position:absolute;left:120px;top:118px;width:100px;text-align:center;border:1.5px solid #333;border-radius:16px;padding:4px 8px;background:#fff;font-size:12px">Replay into cortex</div>
+ <div style="position:absolute;left:50px;top:78px;width:80px;text-align:center;border:1.5px solid #333;border-radius:16px;padding:4px 8px;background:#fff;font-size:12px">Other way?</div>
+ <div style="position:absolute;left:60px;top:188px;width:100px;text-align:center;border:1.5px solid #333;border-radius:16px;padding:4px 8px;background:#f4f4f4;font-size:12px;color:#777">Slow oscillations ●</div>
+ <div style="position:absolute;left:350px;top:108px;width:100px;text-align:center;border:1.5px solid #333;border-radius:16px;padding:4px 8px;background:#333;color:#fff;font-size:12px">Sharp-wave ripples</div>
+ <div style="position:absolute;left:430px;top:58px;width:80px;text-align:center;border:1.5px solid #333;border-radius:16px;padding:4px 8px;background:#fff;font-size:12px">Ripple freq</div>
+ <div style="position:absolute;left:260px;top:288px;width:80px;text-align:center;border:1.5px solid #333;border-radius:16px;padding:4px 8px;background:#fff;font-size:12px">Same order</div>
+ <div style="position:absolute;left:380px;top:308px;width:80px;text-align:center;border:1.5px dashed #999;border-radius:16px;padding:4px 8px;background:#fff;font-size:12px;color:#999">loading…</div>
+ <div style="position:absolute;bottom:12px;left:0;right:0;text-align:center;font-size:11px;color:#999">source at center · distance = depth · same tree as <a class="dv-oid" href="#2e">2e</a>, just laid out radially · scroll to zoom, Esc to close</div>
+</div></div></div>
+
+<div class="dv-opt" id="2g"><div class="dv-olabel"><a class="dv-oid" href="#2g">2g</a><a class="dv-oid" href="#1g">1g</a> layout 2: timeline = the sidebar tree, expanded</div><div class="dv-card" style="width:560px">
+<div style="position:relative;width:560px;height:380px;background:#fff;font-family:'Patrick Hand',cursive;color:#222;overflow:hidden">
+ <div style="position:absolute;top:12px;left:12px;display:flex;gap:7px"><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span></div>
+ <div style="position:absolute;top:12px;left:0;right:0;text-align:center;font-size:12px;color:#999">Sleep &amp; memory · <span style="padding:0 8px">Web</span> <span style="border:1.5px solid #333;border-radius:10px;padding:0 8px;color:#222">Timeline</span></div>
+ <div style="position:absolute;top:50px;left:90px;right:70px;font-size:13px">
+  <div style="position:absolute;left:5px;top:10px;bottom:10px;width:1.5px;background:#999"></div>
+  <div style="display:flex;gap:14px;align-items:flex-start;margin-bottom:10px"><span style="width:11px;height:11px;border:1.5px dashed #999;border-radius:50%;flex:none;margin-top:6px"></span><div style="flex:1;border:1.5px dashed #999;border-radius:6px;padding:6px 10px;color:#999"><div style="display:flex;justify-content:space-between"><span>Same order</span><span style="font-size:11px">loading…</span></div></div></div>
+  <div style="display:flex;gap:14px;align-items:flex-start;margin-bottom:10px"><span style="width:11px;height:11px;border:1.5px solid #333;border-radius:50%;background:#333;flex:none;margin-top:6px"></span><div style="flex:1;border:1.5px solid #333;border-radius:6px;padding:6px 10px;background:#f7f7f7"><div style="display:flex;justify-content:space-between"><span style="font-weight:700">Sharp-wave ripples</span><span style="color:#999;font-size:11px">now</span></div><div style="margin-top:6px;display:flex;gap:6px;font-size:11px"><span style="border:1.5px solid #333;border-radius:10px;padding:0 8px">Ripple freq</span></div></div></div>
+  <div style="display:flex;gap:14px;align-items:flex-start;margin-bottom:10px"><span style="width:11px;height:11px;border:1.5px solid #333;border-radius:50%;background:#fff;flex:none;margin-top:6px"></span><div style="flex:1;border:1.5px solid #333;border-radius:6px;padding:6px 10px"><div style="display:flex;justify-content:space-between"><span>Replay into cortex</span><span style="color:#999;font-size:11px">9:20</span></div><div style="margin-top:6px;display:flex;gap:6px;font-size:11px"><span style="border:1.5px solid #333;border-radius:10px;padding:0 8px">Other way?</span><span style="border:1.5px solid #999;border-radius:10px;padding:0 8px;color:#999">Slow oscillations ●</span></div></div></div>
+  <div style="display:flex;gap:14px;align-items:flex-start"><span style="width:11px;height:11px;border:1.5px solid #333;border-radius:50%;background:#fff;flex:none;margin-top:6px"></span><div style="flex:1;border:1.5px solid #333;border-radius:6px;padding:6px 10px"><div style="display:flex;justify-content:space-between"><span>Why the brain replays the day</span><span style="color:#999;font-size:11px">Tue 9:12</span></div><div style="font-size:11px;color:#999">source · 41 ¶ · 3 highlights</div></div></div>
+ </div>
+ <div style="position:absolute;bottom:12px;left:0;right:0;text-align:center;font-size:11px;color:#999">newest first · chips = sub-pages forked from that page · same nodes as <a class="dv-oid" href="#2e">2e</a> so the sidebar is this, collapsed</div>
+</div></div></div>
+
+<div class="dv-opt" id="2h"><div class="dv-olabel"><a class="dv-oid" href="#2h">2h</a><a class="dv-oid" href="#1h">1h</a> extended: one drag, three targets</div><div class="dv-card" style="width:640px">
+<div style="position:relative;width:640px;height:380px;background:#fff;font-family:'Patrick Hand',cursive;color:#222;overflow:hidden;display:flex">
+ <div style="position:absolute;top:12px;left:12px;display:flex;gap:7px;z-index:2"><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span></div>
+ <div style="width:170px;border-right:1.5px dashed #999;padding:44px 12px 0;font-size:12px;position:relative">
+  <div style="color:#999;font-size:11px;margin-bottom:6px">Tree</div>
+  <div style="line-height:1.9;color:#555">○ Why the brain…<br>○ Replay into cortex<br>● Sharp-wave ripples</div>
+    <div style="position:absolute;bottom:0;left:0;right:0;border-top:1.5px dashed #999;padding:8px 12px;color:#999;font-size:11px">Later <span style="float:right">2</span><div style="margin-top:6px;border:1.5px dashed #2a78d6;border-radius:6px;padding:4px 8px;color:#2a78d6;background:#eef4ff">drop → read later · marks unread ●</div></div>
+ </div>
+ <div style="flex:1;position:relative;padding:52px 40px 0">
+  <div style="font-size:18px;margin-bottom:8px">Sharp-wave ripples</div>
+  <div style="display:grid;gap:7px;width:55%"><div style="height:6px;background:#e4e4e4;border-radius:3px"></div><div style="height:6px;background:#e4e4e4;border-radius:3px;width:80%"></div><div style="height:6px;background:#e4e4e4;border-radius:3px;width:60%"></div></div>
+  <div style="position:absolute;top:90px;right:0;bottom:44px;width:38%;border:1.5px dashed #2a78d6;border-radius:8px 0 0 8px;background:rgba(42,120,214,.06);display:flex;align-items:center;justify-content:center;color:#2a78d6;font-size:12px;text-align:center;line-height:1.4">drop → split beside<br><span style="font-size:11px;color:#6a92c9">bottom edge → split below</span></div>
+  <div style="position:absolute;top:150px;left:120px;width:140px;border:1.5px solid #333;border-radius:6px;padding:6px 10px;background:#fff;box-shadow:4px 4px 0 #ddd;font-size:12px;transform:rotate(-3deg)">Slow oscillations<div style="font-size:10px;color:#999">dragging…</div></div>
+  <div style="position:absolute;bottom:12px;left:40px;right:40px;font-size:11px;color:#999;text-align:center">anything draggable: a tree node, a link in text, a Later item, a map node · targets only glow while dragging</div>
+ </div>
+</div></div></div>
+
+</div>
+<p class="dv-next">Try next: "go hi-fi on <a class="dv-oid" href="#2e">2e</a> with the light/dark palette" · "show the sidebar collapsed state and how the tree peeks on hover" · "animate the shimmer→solid transition in <a class="dv-oid" href="#2d">2d</a>"</p>
+</section>
+<section class="dv-turn" id="t1">
+<div class="dv-thd"><a class="dv-tid" href="#t1">1</a><span class="dv-tname">Wireframes: the reading flow, highlight actions, sessions</span></div>
+<p class="dv-note">Assumptions: no sidebar, no toolbar; the window is the page. A <b>Learning Session</b> is the unit of context (a set of md pages grown from one source). Highlighting text is the only "creation" gesture; it offers exactly three verbs: <b>Lookup</b> (inline card), <b>Open</b> (split beside), <b>Later</b> (inserts a link in the source, loads in background). Tabs are shown as a trail, not a tab bar. Read left to right as one story.</p>
+<div class="dv-opts">
+
+<div class="dv-opt" id="1a"><div class="dv-olabel"><a class="dv-oid" href="#1a">1a</a>Calm default: one page, zero chrome</div><div class="dv-card" style="width:560px">
+<div style="position:relative;width:560px;height:380px;background:#fff;font-family:'Patrick Hand',cursive;color:#222;overflow:hidden">
+ <div style="position:absolute;top:12px;left:12px;display:flex;gap:7px"><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span></div>
+ <div style="position:absolute;top:10px;left:0;right:0;text-align:center;font-size:12px;color:#999">Session: Sleep &amp; memory · 1 page</div>
+ <div style="position:absolute;top:56px;left:96px;right:96px">
+  <div style="font-size:24px;line-height:1.1;margin-bottom:14px">Why the brain replays the day</div>
+  <div style="font-size:14px;line-height:1.7;color:#333">During deep sleep the <u>hippocampus</u> fires the same sequences it produced while awake, only faster. This <b>replay</b> is thought to move fragile memories into the cortex, where they can survive years of interference.<br><br>Rats running a maze show the pattern most clearly: cells that fired in order along the track fire again in the same order during rest.</div>
+  <div style="margin-top:16px;display:grid;gap:7px"><div style="height:6px;background:#e4e4e4;border-radius:3px"></div><div style="height:6px;background:#e4e4e4;border-radius:3px;width:92%"></div><div style="height:6px;background:#e4e4e4;border-radius:3px;width:70%"></div></div>
+ </div>
+ <div style="position:absolute;bottom:10px;left:0;right:0;text-align:center;font-size:11px;color:#bbb">¶ 3 of 41 · appears on hover only</div>
+</div></div></div>
+
+<div class="dv-opt" id="1b"><div class="dv-olabel"><a class="dv-oid" href="#1b">1b</a>Highlight → three verbs + optional question</div><div class="dv-card" style="width:560px">
+<div style="position:relative;width:560px;height:380px;background:#fff;font-family:'Patrick Hand',cursive;color:#222;overflow:hidden">
+ <div style="position:absolute;top:12px;left:12px;display:flex;gap:7px"><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span></div>
+ <div style="position:absolute;top:56px;left:96px;right:96px">
+  <div style="font-size:24px;line-height:1.1;margin-bottom:14px">Why the brain replays the day</div>
+  <div style="font-size:14px;line-height:1.7;color:#333">During deep sleep the hippocampus fires the same sequences it produced while awake, only faster. This <span style="background:#ffe98a;padding:1px 2px">replay is thought to move fragile memories into the cortex</span>, where they can survive years of interference.</div>
+  <div style="position:relative;margin-top:10px;margin-left:120px;width:250px;border:1.5px solid #333;border-radius:8px;background:#fff;box-shadow:3px 3px 0 #ddd;padding:10px 12px;font-size:13px">
+   <div style="position:absolute;top:-7px;left:40px;width:12px;height:12px;background:#fff;border-left:1.5px solid #333;border-top:1.5px solid #333;transform:rotate(45deg)"></div>
+   <div style="display:flex;gap:8px;margin-bottom:8px"><span style="border:1.5px solid #333;border-radius:5px;padding:2px 8px">Lookup</span><span style="border:1.5px solid #333;border-radius:5px;padding:2px 8px">Open ⇥</span><span style="border:1.5px solid #333;border-radius:5px;padding:2px 8px">Later</span></div>
+   <div style="border-bottom:1.5px dashed #999;color:#999;padding:2px 0">Ask something… (optional)</div>
+   <div style="margin-top:6px;font-size:11px;color:#999">⌘1 · ⌘2 · ⌘3 · Esc</div>
+  </div>
+  <div style="margin-top:14px;display:grid;gap:7px"><div style="height:6px;background:#e4e4e4;border-radius:3px"></div><div style="height:6px;background:#e4e4e4;border-radius:3px;width:80%"></div></div>
+ </div>
+ <div style="position:absolute;top:80px;right:14px;width:80px;font-size:11px;color:#999;line-height:1.3">← popover follows the selection; question field is where the verbs get their prompt</div>
+</div></div></div>
+
+<div class="dv-opt" id="1c"><div class="dv-olabel"><a class="dv-oid" href="#1c">1c</a>Lookup: inline card, page pushes down</div><div class="dv-card" style="width:560px">
+<div style="position:relative;width:560px;height:380px;background:#fff;font-family:'Patrick Hand',cursive;color:#222;overflow:hidden">
+ <div style="position:absolute;top:12px;left:12px;display:flex;gap:7px"><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span></div>
+ <div style="position:absolute;top:56px;left:96px;right:96px">
+  <div style="font-size:14px;line-height:1.7;color:#333">…This <span style="background:#ffe98a;padding:1px 2px">replay is thought to move fragile memories into the cortex</span>, where they can survive years of interference.</div>
+  <div style="margin:10px 0;border-left:2px solid #333;padding:8px 14px;background:#fafafa;font-size:13px;line-height:1.5">
+   <div style="color:#999;font-size:11px">Q · how fast is "faster"?</div>
+   <div style="margin-top:4px">Replay runs ~10–20× compressed vs. waking speed; a 10 s run replays in under a second, often nested in sharp-wave ripples.</div>
+   <div style="margin-top:8px;display:flex;gap:14px;font-size:12px;color:#666"><span>Save as page →</span><span>Open beside ⇥</span><span style="margin-left:auto">✕</span></div>
+  </div>
+  <div style="font-size:14px;line-height:1.7;color:#333">Rats running a maze show the pattern most clearly: cells that fired in order along the track fire again in the same order during rest.</div>
+  <div style="margin-top:12px;display:grid;gap:7px"><div style="height:6px;background:#e4e4e4;border-radius:3px"></div><div style="height:6px;background:#e4e4e4;border-radius:3px;width:85%"></div></div>
+ </div>
+ <div style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;color:#999">nothing leaves the page; dismissing leaves no trace unless saved</div>
+</div></div></div>
+
+<div class="dv-opt" id="1d"><div class="dv-olabel"><a class="dv-oid" href="#1d">1d</a>Open: split beside, new md page (dark)</div><div class="dv-card" style="width:640px">
+<div style="position:relative;width:640px;height:380px;background:#1b1b1d;font-family:'Patrick Hand',cursive;color:#e8e8e8;overflow:hidden;display:flex">
+ <div style="position:absolute;top:12px;left:12px;display:flex;gap:7px;z-index:2"><span style="width:10px;height:10px;border:1.5px solid #888;border-radius:50%"></span><span style="width:10px;height:10px;border:1.5px solid #888;border-radius:50%"></span><span style="width:10px;height:10px;border:1.5px solid #888;border-radius:50%"></span></div>
+ <div style="flex:1;padding:56px 36px 0 48px;border-right:1.5px dashed #444;font-size:13px;line-height:1.7;color:#bbb;position:relative">
+  <div style="font-size:18px;color:#eee;margin-bottom:10px">Why the brain replays the day</div>
+  During deep sleep the hippocampus fires the same sequences… This <span style="background:#5a4d12;color:#fff;padding:1px 2px">replay is thought to move fragile memories into the cortex</span>, where they can survive years of interference.
+  <div style="margin-top:12px;display:grid;gap:7px"><div style="height:6px;background:#2e2e31;border-radius:3px"></div><div style="height:6px;background:#2e2e31;border-radius:3px;width:80%"></div><div style="height:6px;background:#2e2e31;border-radius:3px;width:60%"></div></div>
+  <div style="position:absolute;bottom:12px;left:48px;font-size:11px;color:#666">source dims slightly · drag divider · ⌘⇧F fullscreen right</div>
+ </div>
+ <div style="flex:1;padding:56px 40px 0 32px;position:relative">
+  <div style="position:absolute;top:14px;right:14px;font-size:11px;color:#777;display:flex;gap:10px"><span>⤢</span><span>⇤ merge</span><span>✕</span></div>
+  <div style="font-size:11px;color:#777;margin-bottom:6px">replay-into-cortex.md · new</div>
+  <div style="font-size:20px;line-height:1.1;margin-bottom:12px">Replay into cortex</div>
+  <div style="border-left:2px solid #555;padding-left:10px;font-size:12px;color:#aaa;line-height:1.5">"replay is thought to move fragile memories into the cortex"<br><span style="font-size:11px;color:#666">↩ from Why the brain replays the day</span></div>
+  <div style="margin-top:12px;font-size:12px;color:#777">Q · does replay ever move things the other way?</div>
+  <div style="margin-top:8px;font-size:13px;line-height:1.6;color:#ddd">Some evidence for cortex→hippocampus cueing during slow oscillations…</div>
+  <div style="margin-top:10px;display:grid;gap:7px"><div style="height:6px;background:#2e2e31;border-radius:3px"></div><div style="height:6px;background:#2e2e31;border-radius:3px;width:70%"></div></div>
+ </div>
+</div></div></div>
+
+<div class="dv-opt" id="1e"><div class="dv-olabel"><a class="dv-oid" href="#1e">1e</a>Later: link written into the source, loads in background (dark)</div><div class="dv-card" style="width:560px">
+<div style="position:relative;width:560px;height:380px;background:#1b1b1d;font-family:'Patrick Hand',cursive;color:#e8e8e8;overflow:hidden">
+ <div style="position:absolute;top:12px;left:12px;display:flex;gap:7px"><span style="width:10px;height:10px;border:1.5px solid #888;border-radius:50%"></span><span style="width:10px;height:10px;border:1.5px solid #888;border-radius:50%"></span><span style="width:10px;height:10px;border:1.5px solid #888;border-radius:50%"></span></div>
+ <div style="position:absolute;top:56px;left:96px;right:96px">
+  <div style="font-size:24px;line-height:1.1;margin-bottom:14px">Why the brain replays the day</div>
+  <div style="font-size:14px;line-height:1.7;color:#bbb">During deep sleep the hippocampus fires the same sequences it produced while awake, only faster. This <span style="border-bottom:1.5px solid #8ab4ff;color:#eee">replay is thought to move fragile memories into the cortex</span><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#8ab4ff;margin:0 0 6px 3px;opacity:.7"></span>, where they can survive years of interference.<br><br>Rats running a maze show the pattern most clearly: cells that fired in order along the track fire again in the <span style="border-bottom:1.5px solid #8ab4ff;color:#eee">same order</span><span style="display:inline-block;width:6px;height:6px;border-radius:50%;border:1.5px solid #8ab4ff;margin:0 0 6px 3px"></span> during rest.</div>
+ </div>
+ <div style="position:absolute;top:110px;right:10px;width:82px;font-size:11px;color:#777;line-height:1.3">filled dot = ready<br>hollow dot = still loading</div>
+ <div style="position:absolute;bottom:0;left:0;right:0;height:34px;border-top:1.5px dashed #444;display:flex;align-items:center;padding:0 16px;gap:16px;font-size:12px;color:#999">
+  <span style="color:#666">Later ·</span><span style="color:#ddd">● Replay into cortex</span><span>● Same order</span><span>○ Sharp-wave ripples</span><span style="margin-left:auto;color:#666">click = open beside · ⌥click = tab</span>
+ </div>
+ <div style="position:absolute;bottom:44px;left:0;right:0;text-align:center;font-size:11px;color:#666">the md file literally gains [[replay-into-cortex]] · tray shows only on hover/⌘L</div>
+</div></div></div>
+
+<div class="dv-opt" id="1f"><div class="dv-olabel"><a class="dv-oid" href="#1f">1f</a>Session trail: tabs as a rabbit-hole path</div><div class="dv-card" style="width:560px">
+<div style="position:relative;width:560px;height:380px;background:#fff;font-family:'Patrick Hand',cursive;color:#222;overflow:hidden">
+ <div style="position:absolute;top:12px;left:12px;display:flex;gap:7px"><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span></div>
+ <div style="position:absolute;top:34px;left:0;right:0;height:40px;display:flex;align-items:center;justify-content:center;gap:0;font-size:13px">
+  <span style="color:#999;padding:4px 8px">Why the brain replays…</span><span style="color:#bbb">›</span>
+  <span style="color:#999;padding:4px 8px">Replay into cortex</span><span style="color:#bbb">›</span>
+  <span style="border:1.5px solid #333;border-radius:14px;padding:4px 12px">Sharp-wave ripples</span>
+  <span style="color:#bbb;margin-left:8px">+2 branches</span>
+ </div>
+ <div style="position:absolute;top:96px;left:96px;right:96px">
+  <div style="font-size:24px;line-height:1.1;margin-bottom:14px">Sharp-wave ripples</div>
+  <div style="border-left:2px solid #333;padding-left:10px;font-size:12px;color:#777;line-height:1.5">"often nested in sharp-wave ripples" <span style="color:#aaa">↩ Replay into cortex</span></div>
+  <div style="margin-top:14px;display:grid;gap:7px"><div style="height:6px;background:#e4e4e4;border-radius:3px"></div><div style="height:6px;background:#e4e4e4;border-radius:3px;width:92%"></div><div style="height:6px;background:#e4e4e4;border-radius:3px;width:70%"></div><div style="height:6px;background:#e4e4e4;border-radius:3px;width:88%"></div></div>
+ </div>
+ <div style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;color:#999">trail = the path you took, not every open page · ⌘[ ⌘] walk it · hover a node to peek</div>
+</div></div></div>
+
+<div class="dv-opt" id="1g"><div class="dv-olabel"><a class="dv-oid" href="#1g">1g</a>Session map: ⌘K-style overview of the whole rabbit hole</div><div class="dv-card" style="width:560px">
+<div style="position:relative;width:560px;height:380px;background:#fff;font-family:'Patrick Hand',cursive;color:#222;overflow:hidden">
+ <div style="position:absolute;top:12px;left:12px;display:flex;gap:7px"><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span></div>
+ <div style="position:absolute;inset:0;background:rgba(255,255,255,.7)"></div>
+ <div style="position:absolute;top:40px;left:70px;right:70px;bottom:40px;border:1.5px solid #333;border-radius:10px;background:#fff;box-shadow:4px 4px 0 #ddd;padding:16px 20px;font-size:13px">
+  <div style="display:flex;justify-content:space-between;color:#999;font-size:12px;margin-bottom:12px"><span>Sleep &amp; memory · 6 pages · started Tue</span><span>Sessions ▾</span></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;align-items:start">
+   <div style="border:1.5px solid #333;border-radius:6px;padding:8px 10px"><div>Why the brain replays…</div><div style="font-size:11px;color:#999">source · 41 ¶</div></div>
+   <div style="display:grid;gap:10px">
+    <div style="border:1.5px solid #333;border-radius:6px;padding:8px 10px"><div>Replay into cortex</div><div style="font-size:11px;color:#999">from ¶3</div></div>
+    <div style="border:1.5px solid #333;border-radius:6px;padding:8px 10px"><div>Same order</div><div style="font-size:11px;color:#999">from ¶4</div></div>
+    <div style="border:1.5px dashed #999;border-radius:6px;padding:8px 10px;color:#999"><div>Sharp-wave ripples</div><div style="font-size:11px">loading…</div></div>
+   </div>
+   <div style="display:grid;gap:10px;margin-top:0">
+    <div style="border:1.5px solid #333;border-radius:6px;padding:8px 10px"><div>Cortex → hippocampus?</div><div style="font-size:11px;color:#999">from Replay into cortex</div></div>
+    <div style="border:1.5px solid #333;border-radius:6px;padding:8px 10px;background:#f4f4f4"><div>Slow oscillations</div><div style="font-size:11px;color:#999">unread</div></div>
+   </div>
+  </div>
+  <div style="margin-top:14px;color:#999;font-size:11px">columns = depth · drag a card onto another to open both side by side · Esc back to reading</div>
+ </div>
+</div></div></div>
+
+<div class="dv-opt" id="1h"><div class="dv-olabel"><a class="dv-oid" href="#1h">1h</a>Custom layout: three panes from one gesture</div><div class="dv-card" style="width:640px">
+<div style="position:relative;width:640px;height:380px;background:#fff;font-family:'Patrick Hand',cursive;color:#222;overflow:hidden;display:grid;grid-template-columns:1.2fr 1fr;grid-template-rows:1fr 1fr">
+ <div style="position:absolute;top:12px;left:12px;display:flex;gap:7px;z-index:2"><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span><span style="width:10px;height:10px;border:1.5px solid #333;border-radius:50%"></span></div>
+ <div style="grid-row:1/3;border-right:1.5px dashed #999;padding:52px 30px 0 40px;font-size:13px;line-height:1.7;color:#333">
+  <div style="font-size:18px;margin-bottom:8px">Why the brain replays the day</div>
+  …only faster. This <span style="border-bottom:1.5px solid #333">replay is thought to move fragile memories into the cortex</span>, where they can survive…
+  <div style="margin-top:10px;display:grid;gap:7px"><div style="height:6px;background:#e4e4e4;border-radius:3px"></div><div style="height:6px;background:#e4e4e4;border-radius:3px;width:80%"></div><div style="height:6px;background:#e4e4e4;border-radius:3px;width:60%"></div><div style="height:6px;background:#e4e4e4;border-radius:3px;width:90%"></div></div>
+ </div>
+ <div style="border-bottom:1.5px dashed #999;padding:20px 24px;font-size:13px;position:relative">
+  <div style="font-size:11px;color:#999">Replay into cortex</div>
+  <div style="margin-top:6px;display:grid;gap:7px"><div style="height:6px;background:#e4e4e4;border-radius:3px"></div><div style="height:6px;background:#e4e4e4;border-radius:3px;width:70%"></div><div style="height:6px;background:#e4e4e4;border-radius:3px;width:85%"></div></div>
+  <div style="position:absolute;top:12px;right:14px;font-size:11px;color:#999">⤢ ✕</div>
+ </div>
+ <div style="padding:20px 24px;font-size:13px;position:relative">
+  <div style="font-size:11px;color:#999">Sharp-wave ripples</div>
+  <div style="margin-top:6px;display:grid;gap:7px"><div style="height:6px;background:#e4e4e4;border-radius:3px"></div><div style="height:6px;background:#e4e4e4;border-radius:3px;width:60%"></div></div>
+  <div style="position:absolute;top:12px;right:14px;font-size:11px;color:#999">⤢ ✕</div>
+  <div style="position:absolute;bottom:12px;left:24px;right:24px;font-size:11px;color:#999;line-height:1.3">drag a Later-dot or trail node to any edge to dock it · layout saved with the session</div>
+ </div>
+</div></div></div>
+
+</div>
+<p class="dv-next">Try next: "hi-fi <a class="dv-oid" href="#1a">1a</a> + <a class="dv-oid" href="#1d">1d</a> light and dark" · "merge the trail from <a class="dv-oid" href="#1f">1f</a> into the Later tray in <a class="dv-oid" href="#1e">1e</a>" · "show the empty state / first launch of a session"</p>
+</section>
+</x-dc>
+</body>
+</html>

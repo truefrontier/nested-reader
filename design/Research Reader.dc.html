@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics><link href="https://fonts.googleapis.com/css2?family=Literata:opsz,wght@7..72,400;7..72,500&family=Instrument+Sans:wght@400;500&display=swap" rel="stylesheet"><style>body{margin:0;background:#e6e3de}a{color:inherit}a:hover{color:inherit}@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}@keyframes rise{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}</style></helmet>
+<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:40px;box-sizing:border-box;font-family:'Instrument Sans',system-ui,sans-serif">
+<div data-screen-label="Reader" style="--bg:{{bg}};--fg:{{fg}};--mute:{{mute}};--hair:{{hair}};--acc:{{acc}};--hl:{{hl}};--card:{{card}};--side:{{side}};--rev:{{rev}};--old:{{old}};--warn:{{warn}};position:relative;width:1120px;height:720px;border-radius:12px;overflow:hidden;background:var(--bg,#faf9f7);color:var(--fg,#1e1c19);box-shadow:0 30px 80px rgba(0,0,0,.22),0 0 0 1px rgba(0,0,0,.08);display:flex">
+
+ <div style="position:absolute;top:16px;left:16px;display:flex;gap:8px;z-index:5"><span style="width:12px;height:12px;border-radius:50%;background:#ff5f57"></span><span style="width:12px;height:12px;border-radius:50%;background:#febc2e"></span><span style="width:12px;height:12px;border-radius:50%;background:#28c840"></span></div>
+ <div onClick="{{ toggleSidebar }}" title="Toggle tree ⌘\" style="position:absolute;top:8px;left:84px;z-index:5;width:28px;height:28px;border-radius:6px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--mute,#8e887e)" style-hover="color:var(--fg);background:var(--card)"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><rect x="2" y="3" width="12" height="10" rx="2"></rect><path d="M6 3v10"></path></svg></div>
+
+ <sc-if value="{{ sidebarOpen }}" hint-placeholder-val="{{ true }}">
+ <div style="width:224px;flex:none;background:var(--side,#f2f0ec);padding:58px 0 16px;display:flex;flex-direction:column;font-size:12.5px;box-sizing:border-box">
+  <div style="padding:0 18px 12px;display:flex;justify-content:space-between;align-items:baseline;color:var(--mute,#8e887e);font-size:11.5px;letter-spacing:.02em"><span>Sleep &amp; memory</span><span onClick="{{ openMap }}" style="cursor:pointer" style-hover="color:var(--fg)">Map</span></div>
+  <div style="margin:0 14px 12px;display:flex;align-items:center;gap:8px;height:26px;padding:0 4px 0 9px;border-radius:6px;background:var(--card,rgba(0,0,0,.035))"><input placeholder="Filter" style="flex:1;min-width:0;border:0;outline:0;background:transparent;font:inherit;font-size:12px;color:var(--fg,#1e1c19)"><span onClick="{{ toggleUnread }}" title="Unread only" style="width:18px;height:18px;border-radius:4px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:{{ unreadBtnBg }}"><span style="width:5px;height:5px;border-radius:50%;background:var(--acc,#3e8a5a)"></span></span></div>
+  <div style="padding-left:18px;flex:1"><div style="position:relative">
+   <sc-if value="{{ showAll }}" hint-placeholder-val="{{ true }}"><div style="position:absolute;left:3px;top:14px;bottom:14px;width:1px;background:var(--hair,rgba(0,0,0,.09))"></div>
+   <div onClick="{{ goReading }}" style="display:flex;align-items:center;gap:12px;height:28px;cursor:pointer;color:var(--mute,#8e887e)"><span style="width:7px;height:7px;border-radius:50%;flex:none;position:relative;z-index:1;box-sizing:border-box;border:1px dashed var(--mute,#8e887e);background:var(--side,#f2f0ec)"></span><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:linear-gradient(90deg,var(--mute) 0%,var(--fg) 50%,var(--mute) 100%);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:shimmer 1.8s linear infinite">Same order</span></div>
+   <div onClick="{{ goReading }}" style="display:flex;align-items:center;gap:12px;height:28px;cursor:pointer"><span style="width:7px;height:7px;border-radius:50%;flex:none;position:relative;z-index:1;box-sizing:border-box;background:var(--fg,#1e1c19)"></span><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500">Sharp-wave ripples</span><sc-if value="{{ isReview }}"><span style="width:5px;height:5px;border-radius:50%;background:var(--acc,#3e8a5a);flex:none;margin-left:auto;margin-right:16px"></span></sc-if></div>
+   <div onClick="{{ goReading }}" style="display:flex;align-items:center;gap:12px;height:28px;cursor:pointer;color:var(--mute,#8e887e)" style-hover="color:var(--fg)"><span style="width:7px;height:7px;border-radius:50%;flex:none;position:relative;z-index:1;box-sizing:border-box;border:1px solid var(--mute,#8e887e);background:var(--side,#f2f0ec)"></span><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Replay into cortex</span></div>
+   <div style="position:relative;margin-left:20px;display:flex;align-items:center;gap:12px;height:28px;cursor:pointer;color:var(--mute,#8e887e)" style-hover="color:var(--fg)"><span style="position:absolute;left:-16.5px;top:50%;width:16.5px;height:1px;background:var(--hair,rgba(0,0,0,.09))"></span><span style="width:7px;height:7px;border-radius:50%;flex:none;position:relative;z-index:1;box-sizing:border-box;border:1px solid var(--mute,#8e887e);background:var(--side,#f2f0ec)"></span><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Does replay run the other way?</span></div></sc-if>
+   <div style="position:relative;margin-left:20px;display:flex;align-items:center;gap:12px;height:28px;cursor:pointer;color:var(--mute,#8e887e)" style-hover="color:var(--fg)"><sc-if value="{{ showAll }}" hint-placeholder-val="{{ true }}"><span style="position:absolute;left:-16.5px;top:50%;width:16.5px;height:1px;background:var(--hair,rgba(0,0,0,.09))"></span></sc-if><span style="width:7px;height:7px;border-radius:50%;flex:none;position:relative;z-index:1;box-sizing:border-box;border:1px solid var(--mute,#8e887e);background:var(--side,#f2f0ec)"></span><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Slow oscillations</span><span style="width:5px;height:5px;border-radius:50%;background:var(--acc,#3e8a5a);flex:none;margin-left:auto;margin-right:16px"></span></div>
+   <sc-if value="{{ showAll }}" hint-placeholder-val="{{ true }}"><div onClick="{{ goReading }}" style="display:flex;align-items:center;gap:12px;height:28px;cursor:pointer;color:var(--mute,#8e887e)" style-hover="color:var(--fg)"><span style="width:7px;height:7px;border-radius:50%;flex:none;position:relative;z-index:1;box-sizing:border-box;border:1px solid var(--mute,#8e887e);background:var(--side,#f2f0ec)"></span><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Why the brain replays the day</span></div></sc-if>
+  </div></div>
+ </div>
+ </sc-if>
+
+ <div style="flex:1;min-width:0;position:relative;display:flex">
+  <div style="flex:1;min-width:0;overflow-y:auto;position:relative">
+   <sc-if value="{{ showTop }}">
+   <div style="position:sticky;top:0;z-index:3;display:flex;justify-content:center;height:0">
+    <div style="position:relative;margin-top:14px;font-family:'Instrument Sans',sans-serif;font-size:12px">
+
+     <sc-if value="{{ isReview }}">
+     <div style="display:inline-flex;align-items:center;gap:16px;height:28px;padding:0 14px;border-radius:14px;background:var(--bg,#faf9f7);border:1px solid var(--hair,rgba(0,0,0,.09));border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.14);box-shadow:0 4px 16px rgba(0,0,0,.08);animation:rise .18s ease-out"><span style="display:flex;gap:8px;align-items:center"><span style="width:6px;height:6px;border-radius:50%;background:var(--acc,#3e8a5a)"></span>2 changes</span><span onClick="{{ goReading }}" style="cursor:pointer;color:var(--mute,#8e887e)" style-hover="color:var(--fg)">Undo all</span><span onClick="{{ goReading }}" style="cursor:pointer;font-weight:500">Done</span></div>
+     </sc-if>
+
+     <sc-if value="{{ isHistoryPill }}">
+     <div onClick="{{ toggleHistory }}" style="display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px 0 12px;border-radius:13px;color:var(--mute,#8e887e);cursor:pointer;background:{{ verPillBg }}" style-hover="background:var(--card);color:var(--fg)">Version 3 · edited just now<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4 5 6.5 7.5 4"></path></svg></div>
+     </sc-if>
+
+     <sc-if value="{{ isViewing }}">
+     <div style="display:inline-flex;align-items:center;gap:16px;height:28px;padding:0 14px;border-radius:14px;background:var(--bg,#faf9f7);border:1px solid var(--hair,rgba(0,0,0,.09));border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.14);animation:rise .18s ease-out"><span style="display:flex;gap:8px;align-items:center"><span style="width:6px;height:6px;border-radius:50%;background:var(--warn,#c98a1a)"></span>Viewing Version 2 · yesterday</span><span onClick="{{ goConfirm }}" style="cursor:pointer;color:var(--mute,#8e887e)" style-hover="color:var(--fg)">Restore</span><span onClick="{{ goReading }}" style="cursor:pointer;font-weight:500">Back to current</span></div>
+     <sc-if value="{{ showConfirm }}">
+     <div style="position:absolute;top:36px;left:50%;transform:translateX(-50%);width:250px;padding:12px 14px;border-radius:10px;background:var(--bg,#faf9f7);border:1px solid var(--hair,rgba(0,0,0,.09));border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.14);font-size:12.5px;line-height:1.45;animation:rise .15s ease-out"><div>Restore Version 2?</div><div style="color:var(--mute,#8e887e);margin-top:2px">Version 3 won't be kept.</div><div style="display:flex;justify-content:flex-end;gap:14px;margin-top:10px;font-size:11.5px"><span onClick="{{ goViewing }}" style="cursor:pointer;color:var(--mute,#8e887e)" style-hover="color:var(--fg)">Cancel</span><span onClick="{{ goReading }}" style="cursor:pointer;color:var(--fg,#1e1c19)">Restore</span></div></div>
+     </sc-if>
+     </sc-if>
+
+     <sc-if value="{{ showHistory }}">
+     <div style="position:absolute;top:32px;left:50%;transform:translateX(-50%);width:250px;padding:4px;border-radius:10px;background:var(--bg,#faf9f7);border:1px solid var(--hair,rgba(0,0,0,.09));border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.14);font-size:12.5px;animation:rise .15s ease-out">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;border-radius:6px;background:var(--card,rgba(0,0,0,.035))"><span>Version 3 · current</span><span style="color:var(--mute,#8e887e);font-size:11.5px">just now</span></div>
+      <div onClick="{{ goViewing }}" style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;border-radius:6px;cursor:pointer;color:var(--mute,#8e887e)" style-hover="background:var(--card);color:var(--fg)"><span>Version 2</span><span style="font-size:11.5px">yesterday</span></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;border-radius:6px;cursor:pointer;color:var(--mute,#8e887e)" style-hover="background:var(--card);color:var(--fg)"><span>Version 1 · original</span><span style="font-size:11.5px">Tue</span></div>
+     </div>
+     </sc-if>
+    </div>
+   </div>
+   </sc-if>
+   <div style="max-width:560px;margin:0 auto;padding:84px 32px 120px;font-family:Literata,Georgia,serif;font-size:17px;line-height:1.7">
+    <div onClick="{{ goReading }}" style="font-family:'Instrument Sans',sans-serif;font-size:12px;color:var(--acc,#3e8a5a);margin-bottom:18px;cursor:pointer;display:inline-flex;align-items:center;gap:6px"><span style="font-size:13px">↩</span>Replay into cortex</div>
+    <h1 style="font-size:30px;font-weight:500;line-height:1.2;margin:0 0 26px;letter-spacing:-.01em">Sharp-wave ripples</h1>
+    <p style="margin:0 0 22px">A sharp-wave ripple is a brief burst of high-frequency activity in the hippocampus, lasting about a tenth of a second. It is the container in which replay happens: the same sequence of place cells that fired along a route fires again, compressed roughly twenty-fold.</p>
+    <p style="margin:0 0 22px">Ripples cluster during slow-wave sleep and quiet wakefulness. Disrupting them selectively, without otherwise waking the animal, <sc-if value="{{ isPlain }}" hint-placeholder-val="{{ true }}"><span>impairs memory for the route learned that day</span></sc-if><sc-if value="{{ isNewPlain }}"><span>erases the day's route from memory (Girardeau et al., 2009)</span></sc-if><sc-if value="{{ isReview }}"><span style="background:var(--rev,rgba(62,138,90,.12));border-bottom:1px dotted var(--acc,#3e8a5a);border-radius:2px;padding:1px 0;box-decoration-break:clone;-webkit-box-decoration-break:clone;cursor:pointer">erases the day's route from memory (Girardeau et al., 2009)</span></sc-if><sc-if value="{{ isViewing }}"><span style="background:var(--old,rgba(201,138,26,.14));border-radius:2px;padding:1px 0;box-decoration-break:clone;-webkit-box-decoration-break:clone;cursor:pointer">impairs memory for the route learned that day</span></sc-if><sc-if value="{{ isLinked }}"><span style="border-bottom:1px solid var(--acc,#3e8a5a);cursor:pointer">impairs memory for the route learned that day</span><span style="display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--acc,#3e8a5a);margin:0 1px 8px 3px"></span></sc-if><sc-if value="{{ isSelected }}"><span style="background:var(--hl,#f3ecd0);border-radius:2px;padding:1px 0;box-decoration-break:clone;-webkit-box-decoration-break:clone">impairs memory for the route learned that day</span></sc-if>, which is the strongest causal evidence that replay is doing the consolidating rather than merely reflecting it.</p>
+
+    <sc-if value="{{ isReview }}">
+    <div style="position:relative;margin:-10px 0 20px 40px;width:400px;animation:rise .18s ease-out">
+     <div style="position:absolute;top:-5px;left:60px;width:10px;height:10px;background:var(--bg,#faf9f7);border-left:1px solid var(--hair,rgba(0,0,0,.09));border-top:1px solid var(--hair,rgba(0,0,0,.09));transform:rotate(45deg)"></div>
+     <div style="background:var(--bg,#faf9f7);border:1px solid var(--hair,rgba(0,0,0,.09));border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.14);box-shadow:0 8px 30px rgba(0,0,0,.12);padding:10px 14px 9px;font-family:'Instrument Sans',sans-serif;font-size:13px;display:grid;gap:8px">
+      <div style="font-size:11px;color:var(--mute,#8e887e)">Before</div>
+      <div style="font-family:Literata,Georgia,serif;font-size:14px;line-height:1.5;color:var(--mute,#8e887e)">impairs memory for the route learned that day</div>
+      <div style="display:flex;gap:14px;font-size:11.5px;color:var(--mute,#8e887e)"><span onClick="{{ goReading }}" style="cursor:pointer;color:var(--fg,#1e1c19)">Undo</span><span style="margin-left:auto">1 of 2</span></div>
+     </div>
+    </div>
+    </sc-if>
+    <sc-if value="{{ showNow }}">
+    <div style="position:relative;margin:-10px 0 20px 40px;width:400px;animation:rise .18s ease-out">
+     <div style="position:absolute;top:-5px;left:60px;width:10px;height:10px;background:var(--bg,#faf9f7);border-left:1px solid var(--hair,rgba(0,0,0,.09));border-top:1px solid var(--hair,rgba(0,0,0,.09));transform:rotate(45deg)"></div>
+     <div style="background:var(--bg,#faf9f7);border:1px solid var(--hair,rgba(0,0,0,.09));border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.14);box-shadow:0 8px 30px rgba(0,0,0,.12);padding:10px 14px 9px;font-family:'Instrument Sans',sans-serif;font-size:13px;display:grid;gap:8px">
+      <div style="font-size:11px;color:var(--mute,#8e887e)">Now · Version 3</div>
+      <div style="font-family:Literata,Georgia,serif;font-size:14px;line-height:1.5;color:var(--mute,#8e887e)">erases the day's route from memory (Girardeau et al., 2009)</div>
+      <div style="display:flex;gap:14px;font-size:11.5px;color:var(--mute,#8e887e)"><span style="cursor:pointer;color:var(--fg,#1e1c19)">Copy</span><span style="margin-left:auto">changed in Version 3</span></div>
+     </div>
+    </div>
+    </sc-if>
+
+    <sc-if value="{{ showPopover }}">
+    <div style="position:relative;margin:-10px 0 20px 60px;width:420px;animation:rise .18s ease-out">
+     <div style="position:absolute;top:-5px;left:74px;width:10px;height:10px;background:var(--bg,#faf9f7);border-left:1px solid var(--hair,rgba(0,0,0,.09));border-top:1px solid var(--hair,rgba(0,0,0,.09));transform:rotate(45deg)"></div>
+     <div style="background:var(--bg,#faf9f7);border:1px solid var(--hair,rgba(0,0,0,.09));border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.12);padding:10px 12px 9px;font-family:'Instrument Sans',sans-serif;font-size:13px;display:grid;gap:8px">
+      <input data-ask="1" placeholder="Ask something…" style="border:0;outline:0;background:transparent;font:inherit;font-size:13px;color:var(--fg,#1e1c19);padding:0">
+      <div style="display:flex;gap:14px;font-family:'Instrument Sans',sans-serif;font-size:11.5px;color:var(--mute,#8e887e)"><span onClick="{{ goLookup }}" style="cursor:pointer;display:inline-flex;gap:5px;align-items:baseline;white-space:nowrap" style-hover="color:var(--fg)"><span style="font-size:10.5px;padding:1px 4px;border-radius:3px;background:var(--card,rgba(0,0,0,.035))">↵</span>Quick Answer</span><span onClick="{{ goSplit }}" style="cursor:pointer;display:inline-flex;gap:5px;align-items:baseline;white-space:nowrap" style-hover="color:var(--fg)"><span style="font-size:10.5px;padding:1px 4px;border-radius:3px;background:var(--card,rgba(0,0,0,.035))">⌘↵</span>New Page</span><span onClick="{{ goSplit }}" style="cursor:pointer;display:inline-flex;gap:5px;align-items:baseline;white-space:nowrap" style-hover="color:var(--fg)"><span style="font-size:10.5px;padding:1px 4px;border-radius:3px;background:var(--card,rgba(0,0,0,.035))">⌘⇧↵</span>Deep Dive</span><span onClick="{{ goLinked }}" style="margin-left:auto;cursor:pointer" style-hover="color:var(--fg)">Esc</span></div>
+     </div>
+    </div>
+    </sc-if>
+
+    <sc-if value="{{ showRefine }}">
+    <div style="position:relative;margin:-10px 0 20px 40px;width:470px;animation:rise .18s ease-out">
+     <div style="position:absolute;top:-5px;left:94px;width:10px;height:10px;background:var(--bg,#faf9f7);border-left:1px solid var(--hair,rgba(0,0,0,.09));border-top:1px solid var(--hair,rgba(0,0,0,.09));transform:rotate(45deg)"></div>
+     <div style="background:var(--bg,#faf9f7);border:1px solid var(--hair,rgba(0,0,0,.09));border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.12);padding:10px 12px 9px;font-family:'Instrument Sans',sans-serif;font-size:13px;display:grid;gap:8px">
+      <input data-ask="1" value="make this plainer, cite the study" style="border:0;outline:0;background:transparent;font:inherit;font-size:13px;color:var(--fg,#1e1c19);padding:0">
+      <div style="display:flex;gap:14px;font-family:'Instrument Sans',sans-serif;font-size:11.5px;color:var(--mute,#8e887e)"><span onClick="{{ goRevised }}" style="cursor:pointer;display:inline-flex;gap:5px;align-items:baseline;white-space:nowrap;opacity:1" style-hover="color:var(--fg)"><span style="font-size:10.5px;padding:1px 4px;border-radius:3px;background:var(--card,rgba(0,0,0,.035))">↵</span>Refine selection</span><span onClick="{{ goRevised }}" style="cursor:pointer;display:inline-flex;gap:5px;align-items:baseline;white-space:nowrap;opacity:1" style-hover="color:var(--fg)"><span style="font-size:10.5px;padding:1px 4px;border-radius:3px;background:var(--card,rgba(0,0,0,.035))">⌘↵</span>Refine page</span><span onClick="{{ goRevised }}" style="cursor:pointer;display:inline-flex;gap:5px;align-items:baseline;white-space:nowrap;opacity:1" style-hover="color:var(--fg)"><span style="font-size:10.5px;padding:1px 4px;border-radius:3px;background:var(--card,rgba(0,0,0,.035))">⌘⇧↵</span>Refine corpus</span><span onClick="{{ goReading }}" style="margin-left:auto;cursor:pointer" style-hover="color:var(--fg)">Esc</span></div>
+     </div>
+    </div>
+    </sc-if>
+
+    <sc-if value="{{ showCard }}">
+    <div style="margin:-6px 0 24px;padding:14px 18px;border-radius:8px;background:var(--card,rgba(0,0,0,.035));font-size:15px;line-height:1.6;animation:rise .18s ease-out">
+     Selective disruption means firing a short electrical pulse the moment a ripple is detected, aborting it. Animals stay asleep, sleep architecture is unchanged, yet next-day recall of the route drops to near the level of rats that never slept.
+     <input data-ask="1" placeholder="Follow up…" style="display:block;width:100%;box-sizing:border-box;margin-top:14px;padding:8px 0 0;border:0;border-top:1px solid var(--hair,rgba(0,0,0,.09));outline:0;background:transparent;font-family:'Instrument Sans',sans-serif;font-size:13px;color:var(--fg,#1e1c19)">
+     <div style="margin-top:8px"><div style="display:flex;gap:14px;font-family:'Instrument Sans',sans-serif;font-size:11.5px;color:var(--mute,#8e887e)"><span onClick="{{ goLookup }}" style="cursor:pointer;display:inline-flex;gap:5px;align-items:baseline;white-space:nowrap" style-hover="color:var(--fg)"><span style="font-size:10.5px;padding:1px 4px;border-radius:3px;background:var(--card,rgba(0,0,0,.035))">↵</span>Quick Answer</span><span onClick="{{ goSplit }}" style="cursor:pointer;display:inline-flex;gap:5px;align-items:baseline;white-space:nowrap" style-hover="color:var(--fg)"><span style="font-size:10.5px;padding:1px 4px;border-radius:3px;background:var(--card,rgba(0,0,0,.035))">⌘↵</span>New Page</span><span onClick="{{ goSplit }}" style="cursor:pointer;display:inline-flex;gap:5px;align-items:baseline;white-space:nowrap" style-hover="color:var(--fg)"><span style="font-size:10.5px;padding:1px 4px;border-radius:3px;background:var(--card,rgba(0,0,0,.035))">⌘⇧↵</span>Deep Dive</span><span onClick="{{ goLinked }}" style="margin-left:auto;cursor:pointer" style-hover="color:var(--fg)">Esc</span></div></div>
+    </div>
+    </sc-if>
+
+    <p style="margin:0 0 22px">Ripples are also where the day's route is most often observed to replay in the <span style="background:linear-gradient(90deg,var(--mute) 0%,var(--fg) 50%,var(--mute) 100%);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;border-bottom:1px dashed var(--acc,#3e8a5a);animation:shimmer 1.8s linear infinite;cursor:pointer">same order</span> it was run, though reverse replay appears at reward sites.</p>
+    <p style="margin:0 0 22px;color:var(--mute,#8e887e)">Frequency sits between 150 and 250 Hz in rodents, lower in primates. Whether human ripples serve the same role is inferred mostly from intracranial recordings in epilepsy patients, where ripple rate before recall predicts success.</p>
+   </div>
+  </div>
+
+  <sc-if value="{{ showPane }}">
+  <div style="position:absolute;left:50%;bottom:28px;transform:translateX(-50%);width:470px;animation:rise .18s ease-out;z-index:3">
+   <div style="background:var(--bg,#faf9f7);border:1px solid var(--hair,rgba(0,0,0,.09));border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.14);padding:10px 12px 9px;font-family:'Instrument Sans',sans-serif;font-size:13px;display:grid;gap:8px">
+    <input data-ask="1" placeholder="What should change?" style="border:0;outline:0;background:transparent;font:inherit;font-size:13px;color:var(--fg,#1e1c19);padding:0">
+    <div style="display:flex;gap:14px;font-family:'Instrument Sans',sans-serif;font-size:11.5px;color:var(--mute,#8e887e)"><span onClick="{{ goRevised }}" style="cursor:default;display:inline-flex;gap:5px;align-items:baseline;white-space:nowrap;opacity:.4"><span style="font-size:10.5px;padding:1px 4px;border-radius:3px;background:var(--card,rgba(0,0,0,.035))">↵</span>Refine selection</span><span onClick="{{ goRevised }}" style="cursor:pointer;display:inline-flex;gap:5px;align-items:baseline;white-space:nowrap;opacity:1" style-hover="color:var(--fg)"><span style="font-size:10.5px;padding:1px 4px;border-radius:3px;background:var(--card,rgba(0,0,0,.035))">⌘↵</span>Refine page</span><span onClick="{{ goRevised }}" style="cursor:pointer;display:inline-flex;gap:5px;align-items:baseline;white-space:nowrap;opacity:1" style-hover="color:var(--fg)"><span style="font-size:10.5px;padding:1px 4px;border-radius:3px;background:var(--card,rgba(0,0,0,.035))">⌘⇧↵</span>Refine corpus</span><span onClick="{{ goReading }}" style="margin-left:auto;cursor:pointer" style-hover="color:var(--fg)">Esc</span></div>
+   </div>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ showSplit }}">
+  <div style="flex:1;min-width:0;border-left:1px solid var(--hair,rgba(0,0,0,.09));position:relative;overflow-y:auto;animation:rise .2s ease-out">
+   <div style="position:sticky;top:12px;float:right;margin-right:12px;display:flex;gap:4px;color:var(--mute,#8e887e);z-index:2"><span title="Fullscreen ⌘⇧F" style="width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:pointer" style-hover="color:var(--fg);background:var(--card)"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2.5h4v4M13.5 2.5 9 7M6.5 13.5h-4v-4M2.5 13.5 7 9"></path></svg></span><span onClick="{{ goReading }}" title="Close" style="width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:pointer" style-hover="color:var(--fg);background:var(--card)"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"></path></svg></span></div>
+   <div style="max-width:520px;margin:0 auto;padding:84px 36px 120px;font-family:Literata,Georgia,serif;font-size:16px;line-height:1.7">
+    <div style="font-family:'Instrument Sans',sans-serif;font-size:12px;color:var(--acc,#3e8a5a);margin-bottom:18px;display:inline-flex;align-items:center;gap:6px"><span style="font-size:13px">↩</span>Sharp-wave ripples</div>
+    <h2 style="font-size:24px;font-weight:500;line-height:1.25;margin:0 0 22px;letter-spacing:-.01em">Why does disrupting a ripple erase the route?</h2>
+    <p style="margin:0 0 20px">Because the ripple is the only window in which the hippocampal sequence is broadcast to cortex. Cut it short and the cortex receives a fragment, not enough to strengthen the distributed trace that later recall depends on.</p>
+    <p style="margin:0 0 20px">The effect is specific: disrupting ripples that occur outside the post-learning window does nothing, and jittering the pulse by a few hundred milliseconds so it misses the ripple also does nothing.</p>
+    <div style="display:grid;gap:9px;margin-top:8px"><div style="height:7px;border-radius:4px;background:var(--card,rgba(0,0,0,.035))"></div><div style="height:7px;border-radius:4px;background:var(--card,rgba(0,0,0,.035));width:78%"></div></div>
+   </div>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ showMap }}">
+  <div data-screen-label="Session map" style="position:absolute;inset:0;background:var(--bg,#faf9f7);z-index:4;animation:rise .2s ease-out">
+   <div style="position:absolute;top:18px;left:0;right:0;display:flex;justify-content:center;gap:4px;font-size:12.5px;z-index:2">
+    <span onClick="{{ goMapWeb }}" style="padding:4px 12px;border-radius:14px;cursor:pointer;background:{{ webPillBg }};color:{{ webPillFg }}">Web</span>
+    <span onClick="{{ goMapTimeline }}" style="padding:4px 12px;border-radius:14px;cursor:pointer;background:{{ tlPillBg }};color:{{ tlPillFg }}">Timeline</span>
+   </div>
+   <div onClick="{{ goReading }}" title="Close" style="position:absolute;top:12px;right:12px;width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--mute,#8e887e);cursor:pointer;z-index:2" style-hover="color:var(--fg);background:var(--card)"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"></path></svg></div>
+
+   <sc-if value="{{ isWeb }}">
+   <div style="position:absolute;inset:0;font-size:12.5px">
+    <svg width="100%" height="100%" style="position:absolute;inset:0" fill="none" stroke="var(--hair,rgba(0,0,0,.09))" stroke-width="1"><line x1="50%" y1="50%" x2="36%" y2="64%"></line><line x1="36%" y1="64%" x2="24%" y2="80%"></line><line x1="36%" y1="64%" x2="18%" y2="54%"></line><line x1="36%" y1="64%" x2="26%" y2="40%"></line><line x1="50%" y1="50%" x2="66%" y2="32%"></line></svg>
+    <div onClick="{{ goReading }}" style="position:absolute;left:24%;top:80%;transform:translate(-50%,-50%);white-space:nowrap;padding:5px 12px;border-radius:14px;border:1px solid var(--hair,rgba(0,0,0,.09));background:var(--bg,#faf9f7);cursor:pointer">Why the brain replays the day</div>
+    <div style="position:absolute;left:36%;top:64%;transform:translate(-50%,-50%);white-space:nowrap;padding:5px 12px;border-radius:14px;border:1px solid var(--hair,rgba(0,0,0,.09));background:var(--bg,#faf9f7);cursor:pointer">Replay into cortex</div>
+    <div style="position:absolute;left:18%;top:54%;transform:translate(-50%,-50%);white-space:nowrap;padding:5px 12px;border-radius:14px;border:1px solid var(--hair,rgba(0,0,0,.09));background:var(--bg,#faf9f7);cursor:pointer">Does replay run the other way?</div>
+    <div style="position:absolute;left:26%;top:40%;transform:translate(-50%,-50%);white-space:nowrap;padding:5px 12px;border-radius:14px;border:1px solid var(--hair,rgba(0,0,0,.09));background:var(--bg,#faf9f7);cursor:pointer;color:var(--mute,#8e887e);display:flex;align-items:center;gap:8px">Slow oscillations<span style="width:5px;height:5px;border-radius:50%;background:var(--acc,#3e8a5a)"></span></div>
+    <div onClick="{{ goReading }}" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);white-space:nowrap;padding:5px 12px;border-radius:14px;background:var(--fg,#1e1c19);color:var(--bg,#faf9f7);cursor:pointer">Sharp-wave ripples</div>
+    <div style="position:absolute;left:66%;top:32%;transform:translate(-50%,-50%);white-space:nowrap;padding:5px 12px;border-radius:14px;border:1px dashed var(--mute,#8e887e);background:var(--bg,#faf9f7);color:var(--mute,#8e887e)">Same order</div>
+   </div>
+   </sc-if>
+
+   <sc-if value="{{ isTimeline }}">
+   <div style="position:absolute;top:80px;left:0;right:0;bottom:0;overflow:auto">
+    <div style="max-width:520px;margin:0 auto;padding:0 32px;position:relative;font-size:13.5px">
+     <div style="position:absolute;left:37px;top:14px;bottom:20px;width:1px;background:var(--hair,rgba(0,0,0,.09))"></div>
+     <div style="display:flex;gap:16px;align-items:flex-start;padding:8px 0"><span style="width:11px;height:11px;border-radius:50%;border:1.25px dashed var(--mute,#8e887e);background:var(--bg,#faf9f7);flex:none;margin-top:5px;position:relative;z-index:1"></span><div style="flex:1;color:var(--mute,#8e887e)"><div style="display:flex;justify-content:space-between"><span>Same order</span><span style="font-size:11.5px">loading</span></div></div></div>
+     <div onClick="{{ goReading }}" style="display:flex;gap:16px;align-items:flex-start;padding:8px 0;cursor:pointer"><span style="width:11px;height:11px;border-radius:50%;background:var(--fg,#1e1c19);flex:none;margin-top:5px;position:relative;z-index:1"></span><div style="flex:1"><div style="display:flex;justify-content:space-between"><span style="font-weight:500">Sharp-wave ripples</span><span style="font-size:11.5px;color:var(--mute,#8e887e)">now</span></div><div style="color:var(--mute,#8e887e);font-size:12.5px;margin-top:2px">from Replay into cortex</div></div></div>
+     <div style="display:flex;gap:16px;align-items:flex-start;padding:8px 0;cursor:pointer"><span style="width:11px;height:11px;border-radius:50%;border:1.25px solid var(--mute,#8e887e);background:var(--bg,#faf9f7);flex:none;margin-top:5px;position:relative;z-index:1"></span><div style="flex:1"><div style="display:flex;justify-content:space-between"><span>Replay into cortex</span><span style="font-size:11.5px;color:var(--mute,#8e887e)">9:20</span></div></div></div>
+     <div style="position:relative;margin-left:22px;display:flex;gap:16px;align-items:flex-start;padding:8px 0;cursor:pointer"><span style="position:absolute;left:-16px;top:50%;width:16px;height:1px;background:var(--hair,rgba(0,0,0,.09))"></span><span style="width:11px;height:11px;border-radius:50%;border:1.25px solid var(--mute,#8e887e);background:var(--bg,#faf9f7);flex:none;margin-top:5px;position:relative;z-index:1"></span><div style="flex:1;display:flex;justify-content:space-between"><span>Does replay run the other way?</span><span style="font-size:11.5px;color:var(--mute,#8e887e)">9:31</span></div></div>
+     <div style="position:relative;margin-left:22px;display:flex;gap:16px;align-items:flex-start;padding:8px 0;cursor:pointer"><span style="position:absolute;left:-16px;top:50%;width:16px;height:1px;background:var(--hair,rgba(0,0,0,.09))"></span><span style="width:11px;height:11px;border-radius:50%;border:1.25px solid var(--mute,#8e887e);background:var(--bg,#faf9f7);flex:none;margin-top:5px;position:relative;z-index:1"></span><div style="flex:1;display:flex;justify-content:space-between;align-items:center;color:var(--mute,#8e887e)"><span style="display:inline-flex;align-items:center;gap:8px">Slow oscillations<span style="width:5px;height:5px;border-radius:50%;background:var(--acc,#3e8a5a)"></span></span><span style="font-size:11.5px">9:34</span></div></div>
+     <div onClick="{{ goReading }}" style="display:flex;gap:16px;align-items:flex-start;padding:8px 0;cursor:pointer"><span style="width:11px;height:11px;border-radius:50%;border:1.25px solid var(--mute,#8e887e);background:var(--bg,#faf9f7);flex:none;margin-top:5px;position:relative;z-index:1"></span><div style="flex:1"><div style="display:flex;justify-content:space-between"><span>Why the brain replays the day</span><span style="font-size:11.5px;color:var(--mute,#8e887e)">Tue 9:12</span></div><div style="color:var(--mute,#8e887e);font-size:12.5px;margin-top:2px">source · 3 highlights</div></div></div>
+    </div>
+   </div>
+   </sc-if>
+  </div>
+  </sc-if>
+ </div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;light&quot;,&quot;options&quot;:[&quot;light&quot;,&quot;dark&quot;],&quot;tsType&quot;:&quot;'light'|'dark'&quot;},&quot;screen&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;highlight&quot;,&quot;options&quot;:[&quot;reading&quot;,&quot;highlight&quot;,&quot;lookup&quot;,&quot;split&quot;,&quot;linked&quot;,&quot;refine&quot;,&quot;refine-pane&quot;,&quot;review&quot;,&quot;history&quot;,&quot;viewing&quot;,&quot;confirm&quot;,&quot;map-web&quot;,&quot;map-timeline&quot;],&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;State&quot;},&quot;sidebar&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;State&quot;}}">
+class Component extends DCLogic {
+  state = { screen: null, sidebar: null, unreadOnly: false };
+  askRef = null;
+  componentDidMount() { this.focusAsk(); }
+  componentDidUpdate() { this.focusAsk(); }
+  focusAsk() {
+    setTimeout(() => {
+      const el = document.querySelector('input[data-ask]');
+      if (el && document.activeElement !== el) el.focus({ preventScroll: true });
+    }, 60);
+  }
+  renderVals() {
+    const theme = this.props.theme ?? 'light';
+    const screen = this.state.screen ?? this.props.screen ?? 'highlight';
+    const sidebarOpen = this.state.sidebar ?? (this.props.screen === 'split' ? false : (this.props.sidebar ?? true));
+    const dark = theme === 'dark';
+    const t = dark
+      ? { bg: '#171614', fg: '#e8e4dd', mute: '#7f7a71', hair: 'rgba(232,228,221,.1)', acc: 'oklch(0.76 0.1 150)', hl: 'oklch(0.42 0.07 95)', card: 'rgba(232,228,221,.05)', side: '#1e1d1a', rev: 'oklch(0.76 0.1 150 / .18)', old: 'oklch(0.78 0.12 75 / .2)', warn: 'oklch(0.78 0.12 75)' }
+      : { bg: '#faf9f7', fg: '#1e1c19', mute: '#8e887e', hair: 'rgba(30,28,25,.09)', acc: 'oklch(0.55 0.1 150)', hl: 'oklch(0.93 0.06 95)', card: 'rgba(30,28,25,.035)', side: '#f2f0ec', rev: 'oklch(0.55 0.1 150 / .13)', old: 'oklch(0.7 0.13 75 / .16)', warn: 'oklch(0.7 0.13 75)' };
+    const set = s => () => this.setState({ screen: s });
+    const isMap = screen === 'map-web' || screen === 'map-timeline';
+    const isWeb = screen === 'map-web';
+    const isLinked = screen === 'linked';
+    const unreadOnly = this.state.unreadOnly;
+    const isReview = screen === 'review';
+    const isHistory = screen === 'history';
+    const isViewing = screen === 'viewing' || screen === 'confirm';
+    const isNewPlain = screen === 'reading' || isHistory;
+    return {
+      ...t, sidebarOpen,
+      isSelected: screen === 'highlight' || screen === 'lookup' || screen === 'refine',
+      showRefine: screen === 'refine', showPane: screen === 'refine-pane',
+      isReview, isViewing, isNewPlain, showTop: isReview || isViewing || isNewPlain, isHistoryPill: isNewPlain, showHistory: isHistory, showNow: screen === 'viewing', showConfirm: screen === 'confirm',
+      verPillBg: isHistory ? t.card : 'transparent', goRevised: set('review'), toggleHistory: set(isHistory ? 'reading' : 'history'), goViewing: set('viewing'), goConfirm: set('confirm'),
+      isPlain: !(screen === 'highlight' || screen === 'lookup' || screen === 'refine' || isLinked || isReview || isViewing || isNewPlain),
+      showPopover: screen === 'highlight',
+      showCard: screen === 'lookup',
+      showSplit: screen === 'split',
+      showMap: isMap, isWeb, isTimeline: screen === 'map-timeline',
+      isLinked, showAll: !unreadOnly, unreadBtnBg: unreadOnly ? t.hair : 'transparent',
+      toggleUnread: () => this.setState({ unreadOnly: !unreadOnly }),
+      webPillBg: isWeb ? t.fg : 'transparent', webPillFg: isWeb ? t.bg : t.mute,
+      tlPillBg: isWeb ? 'transparent' : t.fg, tlPillFg: isWeb ? t.mute : t.bg,
+      goReading: set('reading'), goLookup: set('lookup'), goSplit: () => this.setState({ screen: 'split', sidebar: false }), goLinked: set('linked'),
+      goMapWeb: set('map-web'), goMapTimeline: set('map-timeline'), openMap: set('map-web'),
+      toggleSidebar: () => this.setState({ sidebar: !sidebarOpen }),
+    };
+  }
+}
+</script>
+</body>
+</html>
