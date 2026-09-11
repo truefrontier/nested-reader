@@ -6,7 +6,7 @@ import { Home } from "./reader/Home";
 import { Page } from "./reader/Page";
 import { SplitPane } from "./reader/SplitPane";
 import { MapOverlay } from "./reader/MapOverlay";
-import { RefinePopover, RefineStatus } from "./reader/Popovers";
+import { NewFilePopover, RefinePopover, RefineStatus } from "./reader/Popovers";
 import { SidebarIcon } from "./reader/Icons";
 import { SettingsApp } from "./settings/SettingsApp";
 
@@ -62,6 +62,12 @@ export default function App() {
       if (e.key === "/") {
         e.preventDefault();
         store.command("filter");
+        return;
+      }
+      // ⌘N works from inside the ask box too: it swaps that box for the new-page one.
+      if (k === "n" && !e.shiftKey) {
+        e.preventDefault();
+        store.command("new-page");
         return;
       }
       if (menuHandled) return;
@@ -138,7 +144,8 @@ export default function App() {
               )
             )}
             {split && <SplitPane />}
-            {s.ui.panePopover && current && (
+            {s.ui.panePopover === "new" && current && <NewFilePopover onSubmit={(text, verb, alt) => void store.newFile(text, verb, alt)} onEsc={() => store.closePopover()} />}
+            {s.ui.panePopover === "refine" && current && (
               <RefinePopover
                 pane
                 initial={s.ui.refineText}

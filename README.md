@@ -2,7 +2,7 @@
 
 A calm research reader for a folder of Markdown notes. Built with Tauri 2, React and Rust for macOS.
 
-Read a page. Select text to ask about it. **Quick Answer** puts a short answer inline. **New Page** writes a new `.md` beside the source and opens it in a split pane. **Deep Dive** writes a longer page in the background and marks it unread. **Refine** (⌘R) rewrites a selection, a page, or the whole session; changes are tinted so you can undo any one of them, and every refine keeps the previous text as a version.
+Read a page. Select text to ask about it. **Quick Answer** puts a short answer inline. **New Page** writes a new `.md` beside the source and opens it in a split pane. **Deep Dive** writes a longer page in the background and marks it unread. **Refine** (⌘R) rewrites a selection, a page, or the whole session; changes are tinted so you can undo any one of them, and every refine keeps the previous text as a version. **New page** (⌘N) is the same reach with a blank file: type what the page should cover and it is written from the whole session, with no highlight behind it.
 
 Every page is a plain `.md` file in the folder you opened. Nothing else is required to read your notes elsewhere.
 
@@ -40,6 +40,7 @@ The "Built in" provider is in the design but not connected to a service in this 
 | ↵ / ⌘↵ / ⌘⇧↵ | Quick Answer / New Page / Deep Dive from the ask popover |
 | ⌥ + verb | Use the other placement (beside ↔ background) |
 | ⌘R | Refine the selection, or the page when nothing is selected |
+| ⌘N | New page written from the whole session: ↵ here, ⌘↵ New Page placement, ⌘⇧↵ Deep Dive |
 | ⌘F | Find in the page; a fresh selection becomes the search |
 | ↵ in the find box | Select the match: the ask box opens on it, ready to type |
 | ⌘G / ⌘⇧G | Next / previous match, selected the same way (⌘R switches to refine) |

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, type KeyboardEvent, type MouseEvent } from "react";
 import { store, useReader } from "../state/store";
 import { buildTree, dotState } from "../lib/tree";
-import { ChevronLeft } from "./Icons";
+import { ChevronLeft, PlusIcon } from "./Icons";
 
 export function Sidebar() {
   const s = useReader();
@@ -86,6 +86,11 @@ export function Sidebar() {
           })}
         </div>
       </div>
+      <button className="home-new" onClick={() => store.toggleNewFile()} title="A new page written from this session">
+        <PlusIcon />
+        <span>New page</span>
+        <span className="k">⌘N</span>
+      </button>
     </aside>
   );
 }

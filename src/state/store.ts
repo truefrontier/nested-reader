@@ -19,7 +19,7 @@ import { authFor, modelSlot } from "../lib/models";
 import { serializePage, titleFromBody } from "../lib/frontmatter";
 import { slugify, titleFromQuestion, uniquePath } from "../lib/slug";
 import { nowIso } from "../lib/time";
-import { newPageMessages, quickAnswerMessages, refineMessages, type AskContext, type RefineScope } from "../lib/prompts";
+import { newFileMessages, newPageMessages, quickAnswerMessages, refineMessages, type AskContext, type RefineScope } from "../lib/prompts";
 import { growsFrom, sessionPages } from "../lib/tree";
 
 export type Selection = {
@@ -43,11 +43,18 @@ export type Lookup = {
 
 export type Popover = "ask" | "refine";
 export type Verb = "quick" | "page" | "deep";
+/** The ⌘N verbs: ↵ opens the page here, ⌘↵ and ⌘⇧↵ are the New Page and Deep Dive placements. */
+export type NewFileVerb = "here" | "page" | "deep";
+/** Where a page's brief came from: a highlight in its source (the default) or the whole session (⌘N). */
+export type PageOrigin = "highlight" | "session";
+
+/** The box at the bottom of the pane: refine the page or corpus (⌘R), or start a new page (⌘N). */
+export type PanePopover = "refine" | "new";
 
 export type UiState = {
   selection?: Selection;
   popover?: Popover;
-  panePopover: boolean;
+  panePopover?: PanePopover;
   lookup?: Lookup;
   history: boolean;
   viewing?: number;
@@ -103,7 +110,6 @@ export type ReaderState = {
 };
 
 const initialUi: UiState = {
-  panePopover: false,
   history: false,
   confirmRestore: false,
   fullscreen: false,
@@ -369,7 +375,7 @@ export class ReaderStore {
 
   /** Steps up to the Home screen. The session stays loaded, so leaving Home returns to it as it was. */
   goHome() {
-    this.setUi({ popover: undefined, selection: undefined, panePopover: false, map: undefined, history: false, confirmRestore: false });
+    this.setUi({ popover: undefined, selection: undefined, panePopover: undefined, map: undefined, history: false, confirmRestore: false });
     this.set({ home: true });
   }
 
@@ -574,11 +580,11 @@ export class ReaderStore {
   /** The page calls this with the current match once it is on screen. The refine box stays if that is what was open. */
   selectMatch(selection: Selection) {
     const popover = this.state.ui.popover === "refine" ? "refine" : "ask";
-    this.setUi({ selection, popover, panePopover: false, history: false, refineError: undefined, refineText: undefined });
+    this.setUi({ selection, popover, panePopover: undefined, history: false, refineError: undefined, refineText: undefined });
   }
 
   openMap(kind: "web" | "timeline") {
-    this.setUi({ map: kind, popover: undefined, selection: undefined, panePopover: false, history: false });
+    this.setUi({ map: kind, popover: undefined, selection: undefined, panePopover: undefined, history: false });
   }
 
   closeMap() {
@@ -592,11 +598,11 @@ export class ReaderStore {
       if (this.state.ui.popover) this.setUi({ selection: undefined, popover: undefined });
       return;
     }
-    this.setUi({ selection, popover: "ask", panePopover: false, history: false, refineError: undefined, refineText: undefined });
+    this.setUi({ selection, popover: "ask", panePopover: undefined, history: false, refineError: undefined, refineText: undefined });
   }
 
   closePopover() {
-    this.setUi({ popover: undefined, selection: undefined, panePopover: false, refineError: undefined, refineText: undefined });
+    this.setUi({ popover: undefined, selection: undefined, panePopover: undefined, refineError: undefined, refineText: undefined });
   }
 
   closeLookup() {
@@ -609,7 +615,14 @@ export class ReaderStore {
     if (ui.selection && ui.popover === "ask") return this.setUi({ popover: "refine" });
     if (ui.popover === "refine") return this.setUi({ popover: "ask" });
     if (ui.selection && ui.lookup) return this.setUi({ popover: "refine", lookup: undefined });
-    this.setUi({ panePopover: !ui.panePopover, popover: undefined, selection: undefined });
+    this.setUi({ panePopover: ui.panePopover === "refine" ? undefined : "refine", popover: undefined, selection: undefined });
+  }
+
+  /** ⌘N: the box for a new page written from the whole session. Pressing it again closes the box. */
+  toggleNewFile() {
+    const ui = this.state.ui;
+    if (!this.state.session.current) return;
+    this.setUi({ panePopover: ui.panePopover === "new" ? undefined : "new", popover: undefined, selection: undefined, lookup: undefined });
   }
 
   /** Reopens the refine box, pre-filled, after a failed attempt. */
@@ -618,7 +631,7 @@ export class ReaderStore {
     const err = ui.refineError;
     if (!err) return;
     if (err.scope === "selection" && ui.selection) return this.setUi({ refineError: undefined, popover: "refine" });
-    this.setUi({ refineError: undefined, panePopover: true, popover: undefined, selection: undefined });
+    this.setUi({ refineError: undefined, panePopover: "refine", popover: undefined, selection: undefined });
   }
 
   escape() {
@@ -719,7 +732,7 @@ export class ReaderStore {
     const thread = existing ? (existing.answer ? [...existing.thread, { question: existing.question, answer: existing.answer }] : existing.thread) : [];
     const q = question || (selection ? `Explain: ${selection.text}` : "");
     const lookup: Lookup = { block, thread, question: q, answer: "", streaming: true };
-    this.setUi({ lookup, popover: undefined, selection: existing?.block === block ? this.state.ui.selection : selection, panePopover: false });
+    this.setUi({ lookup, popover: undefined, selection: existing?.block === block ? this.state.ui.selection : selection, panePopover: undefined });
     try {
       const ctx = await this.askContext(selection ?? this.state.ui.selection, thread);
       if (!ctx) return;
@@ -743,7 +756,21 @@ export class ReaderStore {
     }
   }
 
-  async createPage(opts: { question: string; mode: "new-page" | "deep-dive"; placement: Placement; sourceText?: string; block?: number }) {
+  /**
+   * ⌘N: a page written from the reader's brief with the whole session as context. There is no
+   * highlight and nothing is linked; the page hangs off the current one so it belongs to the session.
+   * ↵ opens it here, ⌘↵ follows the New Page placement, ⌘⇧↵ writes a Deep Dive; ⌥ flips the placement.
+   */
+  async newFile(brief: string, verb: NewFileVerb, alt = false) {
+    if (!brief.trim()) return;
+    const s = this.state.settings;
+    const mode = verb === "deep" ? "deep-dive" : "new-page";
+    const preferred: Placement = verb === "deep" ? s.deepDiveOpens : verb === "page" ? s.newPageOpens : "active";
+    const placement = alt ? flipPlacement(preferred) : preferred;
+    await this.createPage({ question: brief, mode, placement, from: "session" });
+  }
+
+  async createPage(opts: { question: string; mode: "new-page" | "deep-dive"; placement: Placement; sourceText?: string; block?: number; from?: PageOrigin }) {
     const { folder, session, settings, pages } = this.state;
     const current = session.current;
     if (!folder || !current) return;
@@ -760,14 +787,14 @@ export class ReaderStore {
       // Link the source text to the new page so the file itself remembers the branch.
       if (sourceText && opts.block !== undefined) await this.linkSelection(current, opts.block, sourceText, slug);
       this.setSession({ loading: [...this.state.session.loading, path] });
-      this.setUi({ popover: undefined, selection: undefined, lookup: undefined, panePopover: false });
+      this.setUi({ popover: undefined, selection: undefined, lookup: undefined, panePopover: undefined });
       if (opts.placement === "active") await this.navigate(path);
       else if (opts.placement === "beside" || opts.placement === "below") {
         this.setSession({ split: path, splitDirection: opts.placement, sidebar: false });
       } else if (opts.placement === "window") {
         await platform.openPageWindow(folder, path);
       }
-      await this.generatePage(path, { sourcePath: current, question, mode: opts.mode, sourceText, block: opts.block });
+      await this.generatePage(path, { sourcePath: current, question, mode: opts.mode, sourceText, block: opts.block, from: opts.from });
     } catch (e) {
       this.fail(e);
     }
@@ -777,7 +804,10 @@ export class ReaderStore {
    * Streams a page's text from the model. On failure the page keeps its heading and the
    * error is remembered, so the page shows a retry instead of silently staying empty.
    */
-  private async generatePage(path: string, opts: { sourcePath: string; question: string; mode: "new-page" | "deep-dive"; sourceText?: string; block?: number }) {
+  private async generatePage(
+    path: string,
+    opts: { sourcePath: string; question: string; mode: "new-page" | "deep-dive"; sourceText?: string; block?: number; from?: PageOrigin },
+  ) {
     const folder = this.state.folder;
     if (!folder) return;
     const title = this.state.pages[path]?.title ?? opts.question;
@@ -787,7 +817,8 @@ export class ReaderStore {
       : undefined;
     const ctx = await this.askContext(selection, undefined, opts.sourcePath);
     if (!ctx) return;
-    const { system, messages } = newPageMessages(ctx, opts.question, opts.mode === "deep-dive");
+    const deep = opts.mode === "deep-dive";
+    const { system, messages } = opts.from === "session" ? newFileMessages(ctx, opts.question, deep) : newPageMessages(ctx, opts.question, deep);
     let text = "";
     const flush = (final: boolean) => {
       const body = text.trim().startsWith("#") ? text : heading + text;
@@ -855,12 +886,14 @@ export class ReaderStore {
       const link = findWikiLink(sourceBody, slug);
       this.set({ pageErrors: this.withoutPageError(path) });
       this.setSession({ loading: [...this.state.session.loading, path] });
+      // No link in the source means the page was started from the session (⌘N), not from a highlight.
       await this.generatePage(path, {
         sourcePath: source,
         question: meta.question ?? meta.title,
         mode: meta.mode === "deep-dive" ? "deep-dive" : "new-page",
         sourceText: link?.text,
         block: link?.block,
+        from: link ? undefined : "session",
       });
     } catch (e) {
       this.fail(e);
@@ -895,7 +928,7 @@ export class ReaderStore {
     if (!folder || !current || !instruction.trim()) return;
     const selection = this.state.ui.selection;
     if (scope === "selection" && !selection) return;
-    this.setUi({ refining: scope, refineText: instruction, refineError: undefined, popover: undefined, panePopover: false });
+    this.setUi({ refining: scope, refineText: instruction, refineError: undefined, popover: undefined, panePopover: undefined });
     let ok = true;
     try {
       if (scope === "corpus") {
@@ -1136,6 +1169,9 @@ export class ReaderStore {
         break;
       case "filter":
         this.focusFilter();
+        break;
+      case "new-page":
+        this.toggleNewFile();
         break;
       case "back":
         this.back();

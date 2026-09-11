@@ -4,7 +4,7 @@ Markdown Learner is a Tauri 2 desktop app. The window is a React + TypeScript we
 
 ## The idea in one paragraph
 
-A session is a folder of `.md` files. You read one page at a time. Highlighting text is the only creation gesture: it offers three verbs. **Quick Answer** puts a short answer inline. **New Page** writes a new `.md` file beside the source and opens it in a split pane. **Deep Dive** writes a longer page in the background and marks it unread in the tree. Every new page records its source in front matter, so the folder itself is the session map. **Refine** rewrites a selection, a page, or the whole session; the file is written immediately and the changes are shown tinted so you can undo any of them. Every refine snapshots the previous text as a numbered version.
+A session is a folder of `.md` files. You read one page at a time. Highlighting text is the only creation gesture: it offers three verbs. **Quick Answer** puts a short answer inline. **New Page** writes a new `.md` file beside the source and opens it in a split pane. **Deep Dive** writes a longer page in the background and marks it unread in the tree. Every new page records its source in front matter, so the folder itself is the session map. **Refine** rewrites a selection, a page, or the whole session; the file is written immediately and the changes are shown tinted so you can undo any of them. Every refine snapshots the previous text as a numbered version. **New page** (⌘N) takes a brief instead of a highlight and writes a fresh `.md` from the whole session.
 
 ## Layout
 
@@ -115,5 +115,11 @@ While a refinement runs, `ui.refining` and `ui.refineText` drive a status card i
 A plain click on a link or tree row opens the page here. ⌘‑click uses the "⌘‑click opens" setting (`newPageOpens`, also where New Page ⌘↵ goes) and ⌘⇧‑click the "⌘⇧‑click opens" setting (`deepDiveOpens`, also where Deep Dive ⌘⇧↵ goes); ⌥ flips either (`placementFor` in the store). For a page that already exists, the "background" placement is a read‑later mark: it adds the page to `session.unread`, and doing it again removes it. Both settings sit under General.
 
 The sidebar and map carry three marks: a solid blue dot for unread (`.udot`), a green ring for changes to review (`.cdot`, matching the strip's ring), and an amber dot for a page the model failed to write (`.fdot`).
+
+## New page from the session (⌘N)
+
+⌘N opens the same bottom box as a page or corpus refine (`ui.panePopover` is `"refine"` or `"new"`), from the File menu item, the button at the foot of the tree, or the key, which stays in the webview like ⌘R so it also works while the ask box has focus. The brief typed there is the page's `question`; `newFile` in the store calls `createPage` with `from: "session"` and no highlight, so nothing is linked in the source. The page's `source` is the page you were reading, which keeps it inside the session (and inside a file session). ↵ opens it here, ⌘↵ follows the New Page placement, ⌘⇧↵ writes a Deep Dive at its placement, ⌥ flips either.
+
+`generatePage` then uses `newFileMessages` instead of `newPageMessages`: the current page plus the session and folder pages the Context toggles allow, and the brief as "New page: …". A retry tells the two apart by whether the source page holds a `[[slug|text]]` link to the page; a page with no link was started from the session.
 
 Page generation is `generatePage` in the store, separate from creating the file. A failed stream leaves the page with its heading, records the message in `pageErrors`, and toasts if the page is not on screen. The page then shows a card with Try again (↵), and so does any page that holds only its heading. `retryPage` rebuilds the context from the source page by finding the `[[slug|text]]` link to the page, then streams again.
