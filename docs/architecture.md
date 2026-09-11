@@ -93,6 +93,10 @@ Every ping returns the provider's model list (`PingResult.models`). Settings sho
 
 Prompts are built in `src/lib/prompts.ts`. What gets sent is controlled by the Context toggles in Settings: the highlight and its paragraph, the other pages in this session, or every page in the folder.
 
+## Appearance
+
+Theme, text size, reading font and page width are settings. `applyTheme` in the store writes them to the root element as `data-theme`, `--text-size`, `data-font` and `--reading-width`, at launch and again whenever the settings window saves. The reading column (`.article`) takes `--reading-width` as its `max-width`. The unit is `em`, measured against the article's own text, so the column follows the text size and comes out a little narrower in the split pane, whose text is 1px smaller; or `%` of the pane. The setting keeps a value per unit (`readingWidth: { unit, em, percent }`), so switching units brings back the last choice made in each. The default is 33em, the old 560px at 17px text, so an upgrade moves nothing. Values outside 20–60em or 30–100% are clamped when applied.
+
 ## Running it
 
 ```

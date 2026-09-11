@@ -66,6 +66,9 @@ export type Auth = "key" | "subscription";
 export type ModelSlot = Provider | "openai-subscription" | "anthropic-subscription";
 export type Placement = "beside" | "below" | "active" | "background" | "window";
 export type OpenAtLaunch = "last-session" | "ask" | "nothing";
+/** How the reading column's width is measured: in ems of the reading text, or as a share of the pane. */
+export type ReadingWidthUnit = "em" | "percent";
+export type ReadingWidth = { unit: ReadingWidthUnit; em: number; percent: number };
 
 export type Settings = {
   folder?: string;
@@ -75,6 +78,8 @@ export type Settings = {
   theme: "system" | "light" | "dark";
   textSize: number;
   readingFont: "serif" | "sans";
+  /** Both values are kept, so switching the unit brings back the last choice made in it. */
+  readingWidth: ReadingWidth;
   newPageOpens: Placement;
   deepDiveOpens: Placement;
   provider: Provider;
@@ -94,6 +99,7 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: "system",
   textSize: 17,
   readingFont: "serif",
+  readingWidth: { unit: "em", em: 33, percent: 70 },
   newPageOpens: "beside",
   deepDiveOpens: "background",
   provider: "anthropic",
@@ -111,6 +117,20 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   context: { highlight: true, session: true, folder: false },
 };
+
+export const READING_WIDTH_RANGE: Record<ReadingWidthUnit, { min: number; max: number }> = {
+  em: { min: 20, max: 60 },
+  percent: { min: 30, max: 100 },
+};
+
+/** The CSS length behind `--reading-width`; a value outside its range (a hand-edited settings file) is clamped. */
+export function readingWidthCss(w: ReadingWidth): string {
+  const unit = w.unit === "percent" ? "percent" : "em";
+  const range = READING_WIDTH_RANGE[unit];
+  const raw = Number(w[unit]);
+  const n = Number.isFinite(raw) ? Math.min(range.max, Math.max(range.min, raw)) : DEFAULT_SETTINGS.readingWidth[unit];
+  return unit === "percent" ? `${n}%` : `${n}em`;
+}
 
 export function emptySession(): Session {
   return {

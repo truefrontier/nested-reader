@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { DEFAULT_SETTINGS, isTauri, platform, type Auth, type OpenAtLaunch, type Placement, type Provider, type Settings } from "../platform";
+import { DEFAULT_SETTINGS, READING_WIDTH_RANGE, isTauri, platform, type Auth, type OpenAtLaunch, type Placement, type Provider, type ReadingWidthUnit, type Settings } from "../platform";
 import { authFor, chatModels, modelSlot, pickDefaultModel } from "../lib/models";
 import { AiIcon, AppearanceIcon, CheckIcon, GeneralIcon, UpDownIcon } from "../reader/Icons";
 
@@ -240,10 +240,70 @@ function General({ settings, save }: SectionProps) {
   );
 }
 
+const WIDTH_UNITS: { value: ReadingWidthUnit; label: string }[] = [
+  { value: "em", label: "em" },
+  { value: "percent", label: "%" },
+];
+
+/** A small number box that follows `value` until it is being typed in, and hands back what was typed. */
+function NumberField({ value, min, max, onChange, onCommit }: { value: number; min: number; max: number; onChange: (v: number) => void; onCommit: (v: number) => void }) {
+  const [draft, setDraft] = useState(String(value));
+  // blur() fires synchronously, before a state update lands, so the commit reads the draft through this ref.
+  const draftRef = useRef(draft);
+  const [editing, setEditing] = useState(false);
+  const update = (text: string) => {
+    draftRef.current = text;
+    setDraft(text);
+  };
+  useEffect(() => {
+    if (!editing) update(String(value));
+  }, [value, editing]);
+  const parse = (text: string) => (text.trim() === "" ? NaN : Number(text));
+  return (
+    <input
+      className="field num"
+      type="number"
+      inputMode="numeric"
+      min={min}
+      max={max}
+      step={1}
+      value={draft}
+      onFocus={() => setEditing(true)}
+      onChange={(e) => {
+        update(e.target.value);
+        const n = parse(e.target.value);
+        // Arrow keys and in-range typing apply as you go; anything else waits for ↵ or blur to be clamped.
+        if (Number.isFinite(n) && n >= min && n <= max) onChange(n);
+      }}
+      onBlur={() => {
+        setEditing(false);
+        onCommit(parse(draftRef.current));
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+        if (e.key === "Escape") {
+          // Esc throws the typed text away; the blur then commits what was set.
+          update(String(value));
+          e.currentTarget.blur();
+        }
+      }}
+    />
+  );
+}
+
 function Appearance({ settings, save }: SectionProps) {
   const min = 13;
   const max = 22;
   const pct = ((settings.textSize - min) / (max - min)) * 100;
+  const width = settings.readingWidth;
+  const range = READING_WIDTH_RANGE[width.unit];
+  const widthValue = Math.min(range.max, Math.max(range.min, width[width.unit]));
+  const widthPct = ((widthValue - range.min) / (range.max - range.min)) * 100;
+  const setWidth = (v: number, debounce = 0) => {
+    // NaN (an emptied box) falls back to what is set, so the box never commits nothing.
+    const n = Number.isFinite(v) ? Math.min(range.max, Math.max(range.min, Math.round(v))) : widthValue;
+    save({ readingWidth: { ...width, [width.unit]: n } }, debounce);
+  };
   return (
     <div className="grid">
       <Row label="Theme">
@@ -278,6 +338,24 @@ function Appearance({ settings, save }: SectionProps) {
           onChange={(v) => save({ readingFont: v })}
         />
       </Row>
+      <Row label="Page width">
+        <div className="width-row">
+          <div className="slider">
+            <span className="wbar narrow" />
+            <div className="track">
+              <div className="fill" style={{ width: `${widthPct}%` }} />
+              <div className="thumb" style={{ left: `${widthPct}%` }} />
+              <input type="range" min={range.min} max={range.max} step={1} value={widthValue} onChange={(e) => setWidth(Number(e.target.value), 150)} />
+            </div>
+            <span className="wbar wide" />
+          </div>
+          <NumberField value={widthValue} min={range.min} max={range.max} onChange={(v) => setWidth(v, 150)} onCommit={setWidth} />
+          <Seg value={width.unit} options={WIDTH_UNITS} onChange={(unit) => save({ readingWidth: { ...width, unit } })} />
+        </div>
+      </Row>
+      <div className="hint lines">
+        <div>em follows the text size, so a line keeps about the same number of characters. % follows the width of the pane.</div>
+      </div>
     </div>
   );
 }

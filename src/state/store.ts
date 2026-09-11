@@ -3,6 +3,7 @@ import {
   DEFAULT_SETTINGS,
   emptySession,
   platform,
+  readingWidthCss,
   type AiRequest,
   type ChatMessage,
   type PageMeta,
@@ -266,6 +267,7 @@ export class ReaderStore {
     const dark = s.theme === "dark" || (s.theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
     root.dataset.theme = dark ? "dark" : "light";
     root.style.setProperty("--text-size", `${s.textSize}px`);
+    root.style.setProperty("--reading-width", readingWidthCss(s.readingWidth));
     root.dataset.font = s.readingFont;
   }
 

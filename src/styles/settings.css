@@ -259,6 +259,41 @@ body.settings-body {
   opacity: 0;
   cursor: pointer;
 }
+.width-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.width-row .slider {
+  flex: 1;
+  min-width: 0;
+}
+.wbar {
+  height: 11px;
+  border: 1px solid var(--mute);
+  border-radius: 2px;
+  flex: none;
+}
+.wbar.narrow {
+  width: 7px;
+}
+.wbar.wide {
+  width: 15px;
+}
+.field.num {
+  width: 52px;
+  height: 28px;
+  padding: 0 6px;
+  text-align: right;
+  flex: none;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.field.num::-webkit-inner-spin-button,
+.field.num::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
 .divider {
   grid-column: 1 / -1;
   height: 1px;
