@@ -21,6 +21,7 @@
 2. Added the placement parameter to `viewVersion`, the version parameter to `openPageWindow` in the mock, Tauri bridge, and Rust command, and the URL parameter handling in `init` and `openFolder`.
 3. Ran the browser check; all cases passed. Updated `docs/architecture.md`.
 4. Committed and pushed.
+5. Kevin asked for a pull request and a merge. Opened [pull request #2](https://github.com/truefrontier/markdown-learner/pull/2) and merged it into `main` with a merge commit. The branch was restarted from `main` again for this note.
 
 ### Possible next steps
 - Run `pnpm tauri dev` locally to compile the Rust change and try the window placement in the real app.
