@@ -60,8 +60,8 @@ function key(path: string) {
 
 function fakeAnswer(req: AiRequest): string {
   const last = [...req.messages].reverse().find((m) => m.role === "user")?.content ?? "";
-  const q = /Question:\s*(.+)/.exec(last)?.[1]?.trim() ?? "";
-  if (req.system?.includes("wiki-style page")) {
+  const q = /(?:Question|New page):\s*(.+)/.exec(last)?.[1]?.trim() ?? "";
+  if (req.system?.includes("wiki-style page") || req.system?.includes("adding a new page")) {
     const title = q.replace(/\?+$/, "") || "A closer look";
     return `# ${title}\n\nBecause the ripple is the only window in which the hippocampal sequence is broadcast to cortex. Cut it short and the cortex receives a fragment, not enough to strengthen the distributed trace that later recall depends on.\n\nThe effect is specific: disrupting ripples that occur outside the post-learning window does nothing, and jittering the pulse by a few hundred milliseconds so it misses the ripple also does nothing.\n\nWhat survives is the general shape of the day rather than its particulars. Each replay strengthens the cortical version a little, and after enough nights the memory no longer needs the hippocampus at all.\n`;
   }

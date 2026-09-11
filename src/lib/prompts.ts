@@ -72,6 +72,17 @@ export function newPageMessages(ctx: AskContext, question: string, deep: boolean
   return { system, messages: [{ role: "user", content: `${contextBlock(ctx)}\n\nQuestion: ${q}` }] };
 }
 
+/**
+ * A page started with ⌘N: no highlight, no source passage. The whole session is the
+ * context, the reader's brief says what the page is for.
+ */
+export function newFileMessages(ctx: AskContext, brief: string, deep: boolean): { system: string; messages: ChatMessage[] } {
+  const length = deep ? "six to nine paragraphs, going deeper into mechanism, evidence and open questions" : "three to five paragraphs";
+  const system = `You are the research assistant inside a markdown reader. The reader is adding a new page to a research session and has described what it should cover. Write that page in Markdown, drawing on the session pages given as context and staying consistent with them. Start with a level-1 heading that gives the page a short title, then ${length}. ${VOICE} Use plain paragraphs; a short list only if the content is genuinely a list. Return only the Markdown.`;
+  const context = contextBlock({ ...ctx, selection: undefined, paragraph: undefined });
+  return { system, messages: [{ role: "user", content: `${context}\n\nNew page: ${brief}` }] };
+}
+
 export type RefineScope = "selection" | "page" | "corpus";
 
 export function refineMessages(

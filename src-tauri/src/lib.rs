@@ -258,10 +258,14 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
         .quit()
         .build()?;
 
+    // ⌘N stays in the webview, like ⌘R, so it also works while the ask box has focus.
+    let new_page = MenuItemBuilder::with_id("new-page", "New Page… (⌘N)").build(app)?;
     let open_folder = MenuItemBuilder::with_id("open-folder", "Open Folder…").accelerator("CmdOrCtrl+O").build(app)?;
     let open_file = MenuItemBuilder::with_id("open-file", "Open File…").accelerator("CmdOrCtrl+Shift+O").build(app)?;
     let close_pane = MenuItemBuilder::with_id("close-pane", "Close Pane").accelerator("CmdOrCtrl+W").build(app)?;
     let file_menu = SubmenuBuilder::new(app, "File")
+        .item(&new_page)
+        .separator()
         .item(&open_folder)
         .item(&open_file)
         .separator()

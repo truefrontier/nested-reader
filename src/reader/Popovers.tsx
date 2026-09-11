@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import type { Lookup, Verb } from "../state/store";
+import type { Lookup, NewFileVerb, Verb } from "../state/store";
 import type { Change } from "../lib/diff";
 import type { RefineScope } from "../lib/prompts";
 
@@ -217,6 +217,45 @@ export function RefinePopover({
     <PopWrap caretX={caretLeft ?? 0}>
       {body}
     </PopWrap>
+  );
+}
+
+/**
+ * The ⌘N box at the bottom of the pane: a brief for a page written from the whole session.
+ * The verbs read like the ask popover's, but ↵ opens the page here since there is no highlight to answer inline.
+ */
+export function NewFilePopover({ onSubmit, onEsc }: { onSubmit: (brief: string, verb: NewFileVerb, alt: boolean) => void; onEsc: () => void }) {
+  const ref = useAutoFocus();
+  const [text, setText] = useState("");
+  const submit = (verb: NewFileVerb, alt: boolean) => text.trim() && onSubmit(text, verb, alt);
+  const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Escape") return onEsc();
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    submit(e.metaKey && e.shiftKey ? "deep" : e.metaKey ? "page" : "here", e.altKey);
+  };
+  return (
+    <div className="pane-pop">
+      <div className="pop">
+        <input ref={ref} data-ask="1" placeholder="What should the new page cover?" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={onKey} spellCheck={false} />
+        <div className="verbs">
+          <span className="verb" onClick={(e) => submit("here", e.altKey)}>
+            <Kbd>↵</Kbd>Write here
+          </span>
+          <span className="verb" onClick={(e) => submit("page", e.altKey)}>
+            <Kbd>⌘↵</Kbd>New Page
+          </span>
+          <span className="verb" onClick={(e) => submit("deep", e.altKey)}>
+            <Kbd>⌘⇧↵</Kbd>Deep Dive
+          </span>
+          <span className="tail">
+            <span className="verb esc" onClick={onEsc}>
+              Esc
+            </span>
+          </span>
+        </div>
+      </div>
+    </div>
   );
 }
 
