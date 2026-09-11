@@ -82,7 +82,7 @@ export default function App() {
           <span style={{ background: "#28c840" }} />
         </div>
       )}
-      {isTauri && <div className="titlebar" />}
+      {isTauri && <div className="titlebar" data-tauri-drag-region />}
       <button className="tbtn side-toggle" title="Toggle tree ⌘\" onClick={() => store.toggleSidebar()}>
         <SidebarIcon />
       </button>

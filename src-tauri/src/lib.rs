@@ -221,7 +221,7 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
     let close_pane = MenuItemBuilder::with_id("close-pane", "Close Pane").accelerator("CmdOrCtrl+W").build(app)?;
     let file_menu = SubmenuBuilder::new(app, "File").item(&open_folder).separator().item(&close_pane).build()?;
 
-    let refine = MenuItemBuilder::with_id("refine", "Refine").accelerator("CmdOrCtrl+R").build(app)?;
+    let refine = MenuItemBuilder::with_id("refine", "Refine (⌘R)").build(app)?;
     let edit_menu = SubmenuBuilder::new(app, "Edit")
         .undo()
         .redo()

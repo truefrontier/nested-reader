@@ -82,7 +82,7 @@ export function SettingsApp({ embedded, onClose }: { embedded?: boolean; onClose
             <span style={{ background: "#28c840" }} />
           </div>
         )}
-        {!embedded && <div className="titlebar" />}
+        {!embedded && <div className="titlebar" data-tauri-drag-region />}
         Settings
       </div>
       <div className="tabs">

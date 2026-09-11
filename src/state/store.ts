@@ -161,8 +161,20 @@ export class ReaderStore {
       platform.onCommand((id) => this.command(id));
       const url = new URL(location.href);
       const page = url.searchParams.get("page");
-      if (settings.folder && settings.openAtLaunch !== "nothing") {
-        await this.openFolder(settings.folder, page ?? undefined);
+      if (page && settings.folder) {
+        await this.openFolder(settings.folder, page);
+      } else if (settings.openAtLaunch === "ask") {
+        const folder = await platform.pickFolder();
+        if (folder) {
+          const next = { ...settings, folder };
+          await platform.saveSettings(next);
+          this.set({ settings: next });
+          await this.openFolder(folder);
+        } else if (settings.folder) {
+          await this.openFolder(settings.folder);
+        }
+      } else if (settings.folder && settings.openAtLaunch !== "nothing") {
+        await this.openFolder(settings.folder);
       }
     } catch (e) {
       this.fail(e);
