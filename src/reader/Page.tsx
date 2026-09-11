@@ -8,6 +8,9 @@ import { TopStrip } from "./TopStrip";
 
 type LinkState = "loading" | "unread" | "read" | "missing";
 
+/** How long the skeleton takes to fade before the first streamed text shows. Matches `.skeleton` in app.css. */
+const SKELETON_FADE_MS = 260;
+
 /** A span to tint. Empty spans (pure insertions or deletions) borrow the word before them so there is something to see. */
 function displayRange(text: string, start: number, end: number): { start: number; end: number } {
   if (end > start) return { start, end };
@@ -46,9 +49,31 @@ export function Page({ path, role }: Props) {
   const isMain = role === "main";
   const ui = s.ui;
   const loading = s.session.loading.includes(path);
+  const stub = body !== undefined && isStubBody(body);
   // A page that failed to generate, or one left with only its heading, gets a retry card.
   const pageError = s.pageErrors[path];
-  const unwritten = !loading && !!meta?.source && !!s.pages[meta.source] && (!!pageError || (body !== undefined && isStubBody(body)));
+  const unwritten = !loading && !!meta?.source && !!s.pages[meta.source] && (!!pageError || stub);
+
+  // While a page is being written it shows a skeleton until the first text arrives. The skeleton
+  // then fades out, and only once it is gone does the streamed text start to show: the page keeps
+  // displaying its heading-only body for the length of the fade. The fade is decided during render
+  // (from what the previous render saw) so the skeleton element stays mounted and its class change
+  // can transition; an effect would unmount it for a frame first.
+  const [prev, setPrev] = useState({ path, loading, stub, heading: stub ? body : undefined });
+  const [fading, setFading] = useState(false);
+  if (prev.path !== path || prev.loading !== loading || prev.stub !== stub) {
+    // A page opened mid-stream already has text; it shows that text, not a skeleton.
+    const startsFade = prev.path === path && prev.loading && loading && prev.stub && !stub;
+    setPrev({ path, loading, stub, heading: stub ? body : prev.heading });
+    setFading(startsFade);
+  }
+  useEffect(() => {
+    if (!fading) return;
+    const t = window.setTimeout(() => setFading(false), SKELETON_FADE_MS);
+    return () => window.clearTimeout(t);
+  }, [fading]);
+  const waiting = loading && stub;
+  const shownBody = fading ? (prev.heading ?? body) : body;
   const viewingN = isMain ? ui.viewing : undefined;
   const [activeChange, setActiveChange] = useState<string | undefined>();
   const articleRef = useRef<HTMLDivElement>(null);
@@ -74,8 +99,8 @@ export function Page({ path, role }: Props) {
   const blocks: Block[] = useMemo(() => {
     if (viewDiff) return viewDiff.oldBlocks;
     if (reviewDiff) return reviewDiff.newBlocks;
-    return lexBlocks(body ?? "");
-  }, [viewDiff, reviewDiff, body]);
+    return lexBlocks(shownBody ?? "");
+  }, [viewDiff, reviewDiff, shownBody]);
 
   const selection = isMain && !viewDiff ? ui.selection : undefined;
   // What has been typed into the ask/refine box; survives the ⌘R switch, resets with a new selection.
@@ -349,8 +374,8 @@ export function Page({ path, role }: Props) {
             {renderAfter(i)}
           </div>
         ))}
-        {loading && (
-          <div className="skeleton">
+        {(waiting || fading) && (
+          <div className={`skeleton${fading ? " fading" : ""}`}>
             <div />
             <div style={{ width: "78%" }} />
           </div>
