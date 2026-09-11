@@ -51,16 +51,23 @@ export type PageOrigin = "highlight" | "session";
 /** The box at the bottom of the pane: refine the page or corpus (⌘R), or start a new page (⌘N). */
 export type PanePopover = "refine" | "new";
 
+/** Which pane something belongs to: the reading pane, or the one opened beside or below it. */
+export type PaneRole = "main" | "split";
+
+/** One pane's version history UI: whether its menu is open, which old version it shows, and whether Restore awaits a yes. */
+export type VersionView = { history: boolean; viewing?: number; confirmRestore: boolean };
+
 export type UiState = {
   selection?: Selection;
   popover?: Popover;
   panePopover?: PanePopover;
   lookup?: Lookup;
-  history: boolean;
-  viewing?: number;
-  confirmRestore: boolean;
+  /** Version history UI, per pane, so each pane can show a different version of the same page. */
+  versionView: Record<PaneRole, VersionView>;
   map?: "web" | "timeline";
   fullscreen: boolean;
+  /** When both panes show the same page they scroll together, until this is turned off from the pane tools. */
+  syncScroll: boolean;
   filter: string;
   unreadOnly: boolean;
   refining?: RefineScope;
@@ -99,8 +106,10 @@ export type ReaderState = {
   bodies: Record<string, string>;
   session: Session;
   settings: Settings;
-  versions: VersionInfo[];
-  versionBodies: Record<number, string>;
+  /** Snapshots of each page shown in a pane, by path. */
+  versions: Record<string, VersionInfo[]>;
+  /** Old version texts already read, by path then version number. */
+  versionBodies: Record<string, Record<number, string>>;
   /** The snapshot each pending page is being reviewed against, by path. */
   reviewBases: Record<string, ReviewBase>;
   /** Pages the model failed to write, by path, with the error; they keep their heading and can be retried. */
@@ -109,10 +118,12 @@ export type ReaderState = {
   ui: UiState;
 };
 
+const closedVersionView: VersionView = { history: false, confirmRestore: false };
+
 const initialUi: UiState = {
-  history: false,
-  confirmRestore: false,
+  versionView: { main: closedVersionView, split: closedVersionView },
   fullscreen: false,
+  syncScroll: true,
   filter: "",
   unreadOnly: false,
   dragging: false,
@@ -139,7 +150,7 @@ export class ReaderStore {
     bodies: {},
     session: emptySession(),
     settings: DEFAULT_SETTINGS,
-    versions: [],
+    versions: {},
     versionBodies: {},
     reviewBases: {},
     pageErrors: {},
@@ -320,14 +331,17 @@ export class ReaderStore {
       session.trailIndex = before.length - 1;
       const recent = this.findRecent(folder, file);
       const folderName = session.name || recent?.name || (file ? pages[file].title : prettyFolderName(folder));
-      this.set({ folder, rootFile: file, folderName, pages, bodies: {}, session, versions: [], versionBodies: {}, reviewBases: {}, pageErrors: {}, home: false, ui: { ...initialUi } });
+      this.set({ folder, rootFile: file, folderName, pages, bodies: {}, session, versions: {}, versionBodies: {}, reviewBases: {}, pageErrors: {}, home: false, ui: { ...initialUi } });
       let current = initialPage && pages[initialPage] ? initialPage : session.current;
       if (!current || !pages[current]) {
         const sorted = Object.values(pages).sort((a, b) => Date.parse(b.created ?? b.modified ?? "") - Date.parse(a.created ?? a.modified ?? ""));
         current = file ?? sorted[0]?.path;
       }
       if (current) await this.navigate(current, { push: session.trail.length === 0 });
-      if (session.split) await this.loadBody(session.split);
+      if (session.split) {
+        await this.loadBody(session.split);
+        await this.refreshVersions(session.split);
+      }
       this.rememberSession();
       if (this.state.settings.folder !== folder) {
         const settings = { ...this.state.settings, folder };
@@ -375,7 +389,7 @@ export class ReaderStore {
 
   /** Steps up to the Home screen. The session stays loaded, so leaving Home returns to it as it was. */
   goHome() {
-    this.setUi({ popover: undefined, selection: undefined, panePopover: undefined, map: undefined, history: false, confirmRestore: false });
+    this.setUi({ popover: undefined, selection: undefined, panePopover: undefined, map: undefined, versionView: this.closedMenus({ confirmRestore: false }) });
     this.set({ home: true });
   }
 
@@ -453,7 +467,9 @@ export class ReaderStore {
         trail,
         trailIndex,
       });
-      this.setUi({ ...initialUi, filter: this.state.ui.filter, unreadOnly: this.state.ui.unreadOnly, map: undefined });
+      const ui = this.state.ui;
+      // The split pane keeps its version view; only the main pane changed.
+      this.setUi({ ...initialUi, filter: ui.filter, unreadOnly: ui.unreadOnly, map: undefined, versionView: { ...initialUi.versionView, split: ui.versionView.split } });
       await this.refreshVersions(path);
       await this.refreshReview(path);
     } catch (e) {
@@ -477,6 +493,8 @@ export class ReaderStore {
     }
     await this.loadBody(path);
     this.setSession({ split: path, splitDirection: placement, sidebar: false });
+    this.setUi({ versionView: { ...this.state.ui.versionView, split: closedVersionView }, syncScroll: true });
+    await this.refreshVersions(path);
   }
 
   /**
@@ -519,7 +537,12 @@ export class ReaderStore {
 
   closeSplit() {
     this.setSession({ split: undefined });
-    this.setUi({ fullscreen: false });
+    this.setUi({ fullscreen: false, versionView: { ...this.state.ui.versionView, split: closedVersionView } });
+  }
+
+  /** Turns linked scrolling of two panes showing the same page on or off. */
+  toggleSyncScroll() {
+    this.setUi({ syncScroll: !this.state.ui.syncScroll });
   }
 
   toggleSidebar() {
@@ -548,10 +571,10 @@ export class ReaderStore {
     const fromSelection = !ui.find && ui.popover === "ask" && !ui.lookup ? ui.selection?.text : undefined;
     if (fromSelection && fromSelection.length <= 200) {
       this.closePopover();
-      this.setUi({ find: true, findQuery: fromSelection, findIndex: 0, findFocus: ui.findFocus + 1, history: false });
+      this.setUi({ find: true, findQuery: fromSelection, findIndex: 0, findFocus: ui.findFocus + 1, versionView: this.closedMenus() });
       return;
     }
-    this.setUi({ find: true, findFocus: ui.findFocus + 1, history: false });
+    this.setUi({ find: true, findFocus: ui.findFocus + 1, versionView: this.closedMenus() });
   }
 
   closeFind() {
@@ -580,11 +603,11 @@ export class ReaderStore {
   /** The page calls this with the current match once it is on screen. The refine box stays if that is what was open. */
   selectMatch(selection: Selection) {
     const popover = this.state.ui.popover === "refine" ? "refine" : "ask";
-    this.setUi({ selection, popover, panePopover: undefined, history: false, refineError: undefined, refineText: undefined });
+    this.setUi({ selection, popover, panePopover: undefined, versionView: this.closedMenus(), refineError: undefined, refineText: undefined });
   }
 
   openMap(kind: "web" | "timeline") {
-    this.setUi({ map: kind, popover: undefined, selection: undefined, panePopover: undefined, history: false });
+    this.setUi({ map: kind, popover: undefined, selection: undefined, panePopover: undefined, versionView: this.closedMenus() });
   }
 
   closeMap() {
@@ -598,7 +621,7 @@ export class ReaderStore {
       if (this.state.ui.popover) this.setUi({ selection: undefined, popover: undefined });
       return;
     }
-    this.setUi({ selection, popover: "ask", panePopover: undefined, history: false, refineError: undefined, refineText: undefined });
+    this.setUi({ selection, popover: "ask", panePopover: undefined, versionView: this.closedMenus(), refineError: undefined, refineText: undefined });
   }
 
   closePopover() {
@@ -637,9 +660,11 @@ export class ReaderStore {
   escape() {
     const ui = this.state.ui;
     if (this.state.home) return this.leaveHome();
-    if (ui.confirmRestore) return this.setUi({ confirmRestore: false });
-    if (ui.history) return this.setUi({ history: false });
-    if (ui.viewing !== undefined) return this.backToCurrent();
+    // The pane being read answers first: the split when it is fullscreen, else the main pane.
+    const roles: PaneRole[] = ui.fullscreen && this.state.session.split ? ["split", "main"] : ["main", "split"];
+    for (const role of roles) if (ui.versionView[role].confirmRestore) return this.cancelRestore(role);
+    for (const role of roles) if (ui.versionView[role].history) return this.setVersionView(role, { history: false });
+    for (const role of roles) if (ui.versionView[role].viewing !== undefined) return this.backToCurrent(role);
     if (ui.popover || ui.panePopover || ui.refineError) return this.closePopover();
     if (ui.lookup) return this.closeLookup();
     if (ui.find) return this.closeFind();
@@ -981,7 +1006,7 @@ export class ReaderStore {
                 await platform.writePage(folder, path, serializePage(this.state.pages[path], next));
                 this.set({ bodies: { ...this.state.bodies, [path]: next } });
                 this.setSession({ pending: { ...this.state.session.pending, [path]: n } });
-                if (this.state.session.current === path) await this.refreshVersions(path);
+                if (this.isShown(path)) await this.refreshVersions(path);
                 // Every changed page gets its review base, so the split pane and later visits show the tints.
                 await this.refreshReview(path);
               } catch (e) {
@@ -1057,7 +1082,7 @@ export class ReaderStore {
       delete pending[path];
       this.set({ bodies: { ...this.state.bodies, [path]: base.body }, reviewBases: this.withoutReview(path) });
       this.setSession({ pending });
-      if (path === this.state.session.current) await this.refreshVersions(path);
+      if (this.isShown(path)) await this.refreshVersions(path);
     } catch (e) {
       this.fail(e);
     }
@@ -1073,49 +1098,76 @@ export class ReaderStore {
 
   // ---------- versions ----------
 
+  /** Whether a page is on screen in either pane. */
+  private isShown(path: string): boolean {
+    const s = this.state.session;
+    return s.current === path || s.split === path;
+  }
+
+  /** The page a pane shows. */
+  private panePath(role: PaneRole): string | undefined {
+    return role === "main" ? this.state.session.current : this.state.session.split;
+  }
+
+  private setVersionView(role: PaneRole, patch: Partial<VersionView>) {
+    const views = this.state.ui.versionView;
+    this.setUi({ versionView: { ...views, [role]: { ...views[role], ...patch } } });
+  }
+
+  /** Both panes' version views with their menus closed, and any other fields changed alike. */
+  private closedMenus(patch: Partial<VersionView> = {}): Record<PaneRole, VersionView> {
+    const views = this.state.ui.versionView;
+    return { main: { ...views.main, history: false, ...patch }, split: { ...views.split, history: false, ...patch } };
+  }
+
   private async refreshVersions(path: string) {
     if (!this.state.folder) return;
+    let list: VersionInfo[] = [];
     try {
-      const versions = await platform.listVersions(this.state.folder, path);
-      this.set({ versions, versionBodies: {} });
+      list = await platform.listVersions(this.state.folder, path);
     } catch {
-      this.set({ versions: [], versionBodies: {} });
+      list = [];
     }
+    this.set({ versions: { ...this.state.versions, [path]: list }, versionBodies: { ...this.state.versionBodies, [path]: {} } });
   }
 
-  toggleHistory() {
-    this.setUi({ history: !this.state.ui.history, popover: undefined, selection: undefined });
+  toggleHistory(role: PaneRole = "main") {
+    const open = this.state.ui.versionView[role].history;
+    this.setUi({ popover: undefined, selection: undefined, versionView: this.closedMenus() });
+    if (!open) this.setVersionView(role, { history: true });
   }
 
-  async viewVersion(n: number) {
-    const path = this.state.session.current;
+  async viewVersion(n: number, role: PaneRole = "main") {
+    const path = this.panePath(role);
     if (!path || !this.state.folder) return;
     try {
-      if (this.state.versionBodies[n] === undefined) {
+      if (this.state.versionBodies[path]?.[n] === undefined) {
         const raw = await platform.readVersion(this.state.folder, path, n);
-        this.set({ versionBodies: { ...this.state.versionBodies, [n]: stripFrontMatter(raw) } });
+        const forPage = { ...(this.state.versionBodies[path] ?? {}), [n]: stripFrontMatter(raw) };
+        this.set({ versionBodies: { ...this.state.versionBodies, [path]: forPage } });
       }
-      this.setUi({ viewing: n, history: false, confirmRestore: false, popover: undefined, selection: undefined, lookup: undefined });
+      this.setUi({ popover: undefined, selection: undefined, lookup: undefined });
+      this.setVersionView(role, { viewing: n, history: false, confirmRestore: false });
     } catch (e) {
       this.fail(e);
     }
   }
 
-  backToCurrent() {
-    this.setUi({ viewing: undefined, confirmRestore: false });
+  backToCurrent(role: PaneRole = "main") {
+    this.setVersionView(role, { viewing: undefined, confirmRestore: false });
   }
 
-  askRestore() {
-    this.setUi({ confirmRestore: true });
+  askRestore(role: PaneRole = "main") {
+    this.setVersionView(role, { confirmRestore: true });
   }
 
-  cancelRestore() {
-    this.setUi({ confirmRestore: false });
+  cancelRestore(role: PaneRole = "main") {
+    this.setVersionView(role, { confirmRestore: false });
   }
 
-  async restore() {
-    const path = this.state.session.current;
-    const n = this.state.ui.viewing;
+  async restore(role: PaneRole = "main") {
+    const path = this.panePath(role);
+    const n = this.state.ui.versionView[role].viewing;
     if (!path || n === undefined || !this.state.folder) return;
     try {
       await platform.restoreVersion(this.state.folder, path, n);
@@ -1124,7 +1176,11 @@ export class ReaderStore {
       delete pending[path];
       this.set({ bodies: { ...this.state.bodies, [path]: page.body }, reviewBases: this.withoutReview(path) });
       this.setSession({ pending });
-      this.setUi({ viewing: undefined, confirmRestore: false });
+      // Restoring drops every newer snapshot, so a pane showing one of them on the same page goes back to current too.
+      const views = this.state.ui.versionView;
+      const other: PaneRole = role === "main" ? "split" : "main";
+      const otherView = this.panePath(other) === path && (views[other].viewing ?? 0) >= n ? closedVersionView : views[other];
+      this.setUi({ versionView: { ...views, [role]: closedVersionView, [other]: otherView } });
       await this.refreshVersions(path);
     } catch (e) {
       this.fail(e);

@@ -23,6 +23,17 @@ export function FullscreenIcon() {
   );
 }
 
+/** Two panes with a link between them: scroll one and the other follows. */
+export function SyncScrollIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4.5 2.5v11M11.5 2.5v11" />
+      <path d="M2.5 4.5l2-2 2 2M9.5 4.5l2-2 2 2M2.5 11.5l2 2 2-2M9.5 11.5l2 2 2-2" />
+      <path d="M6.5 8h3" />
+    </svg>
+  );
+}
+
 export function ChevronLeft() {
   return (
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">

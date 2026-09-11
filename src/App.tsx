@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { isTauri, platform } from "./platform";
 import { store, useReader } from "./state/store";
 import { Sidebar } from "./reader/Sidebar";
@@ -8,6 +8,7 @@ import { SplitPane } from "./reader/SplitPane";
 import { MapOverlay } from "./reader/MapOverlay";
 import { NewFilePopover, RefinePopover, RefineStatus } from "./reader/Popovers";
 import { SidebarIcon } from "./reader/Icons";
+import { useSyncScroll } from "./reader/useSyncScroll";
 import { SettingsApp } from "./settings/SettingsApp";
 
 export default function App() {
@@ -107,6 +108,9 @@ export default function App() {
   const current = s.session.current;
   const split = s.session.split;
   const showMainPane = !(s.ui.fullscreen && split);
+  // Two panes on the same page scroll together while the pane's link button is on.
+  const mainRef = useRef<HTMLDivElement>(null);
+  useSyncScroll(mainRef, !!split && split === current && showMainPane && s.ui.syncScroll);
   // Home replaces the whole window: on request, and whenever nothing is open.
   const showHome = s.home || (s.ready && !s.folder);
 
@@ -128,7 +132,7 @@ export default function App() {
             <SidebarIcon />
           </button>
           {s.session.sidebar && <Sidebar />}
-          <div className={`main ${s.session.splitDirection}`}>
+          <div className={`main ${s.session.splitDirection}`} ref={mainRef}>
             {current && s.pages[current] ? (
               <div className={`pane${showMainPane ? "" : " hidden"}`}>
                 <Page path={current} role="main" />
