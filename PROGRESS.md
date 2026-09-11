@@ -212,6 +212,7 @@
 
 ### Verification
 - `tsc` and `pnpm build` pass. No Rust changes.
+- Opened as pull request #3 from `fix/split-pane-highlights-nested-tree`.
 
 ### Possible next steps
 - Show the Before / Now change cards in the split pane too, since the tints and strip already appear there.
