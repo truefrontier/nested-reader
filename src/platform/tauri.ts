@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import {
   DEFAULT_SETTINGS,
   type AiRequest,
+  type Auth,
   type Page,
   type PageMeta,
   type PingResult,
@@ -56,6 +57,7 @@ export const tauriPlatform: Platform = {
     return {
       ...DEFAULT_SETTINGS,
       ...(stored ?? {}),
+      auth: { ...DEFAULT_SETTINGS.auth, ...(stored?.auth ?? {}) },
       models: { ...DEFAULT_SETTINGS.models, ...(stored?.models ?? {}) },
       context: { ...DEFAULT_SETTINGS.context, ...(stored?.context ?? {}) },
     };
@@ -88,8 +90,8 @@ export const tauriPlatform: Platform = {
     };
   },
 
-  aiPing: (provider: Provider, baseUrl: string, model: string) =>
-    invoke<PingResult>("ai_ping", { provider, baseUrl, model }),
+  aiPing: (provider: Provider, auth: Auth | undefined, baseUrl: string, model: string) =>
+    invoke<PingResult>("ai_ping", { provider, auth, baseUrl, model }),
 
   openSettings: () => invoke("open_settings"),
   openPageWindow: (folder, path) => invoke("open_page_window", { folder, path }),

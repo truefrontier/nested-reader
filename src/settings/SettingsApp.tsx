@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { DEFAULT_SETTINGS, isTauri, platform, type OpenAtLaunch, type Placement, type Provider, type Settings } from "../platform";
+import { DEFAULT_SETTINGS, isTauri, platform, type Auth, type OpenAtLaunch, type Placement, type Provider, type Settings } from "../platform";
+import { authFor, chatModels, modelSlot, pickDefaultModel } from "../lib/models";
 import { AiIcon, AppearanceIcon, CheckIcon, GeneralIcon, UpDownIcon } from "../reader/Icons";
 
 type Tab = "general" | "appearance" | "ai";
@@ -274,45 +275,87 @@ function Appearance({ settings, save }: SectionProps) {
 
 type Ping = { status: "idle" | "checking" | "ok" | "err"; ms?: number; error?: string };
 
+const ACCOUNTS: Record<"openai" | "anthropic", { value: Auth; label: string }[]> = {
+  openai: [
+    { value: "key", label: "API key" },
+    { value: "subscription", label: "ChatGPT plan" },
+  ],
+  anthropic: [
+    { value: "key", label: "API key" },
+    { value: "subscription", label: "Claude plan" },
+  ],
+};
+
 function Ai({ settings, save }: SectionProps) {
   const p = settings.provider;
   const external = p !== "builtin";
-  const needsKey = external && p !== "ollama";
+  const account = p === "openai" || p === "anthropic" ? p : undefined;
+  const auth = authFor(settings, p);
+  const subscription = auth === "subscription";
+  const slot = modelSlot(p, auth);
+  const needsKey = external && p !== "ollama" && !subscription;
   const [hasKey, setHasKey] = useState<boolean | null>(null);
-  const [installed, setInstalled] = useState<string[]>([]);
   const [keyDraft, setKeyDraft] = useState("");
   const [keyEditing, setKeyEditing] = useState(false);
   const [ping, setPing] = useState<Ping>({ status: "idle" });
-  const [model, setModel] = useState(settings.models[p]);
+  const [model, setModel] = useState(settings.models[slot]);
+  const [available, setAvailable] = useState<string[]>([]);
   const pingTimer = useRef<number | undefined>(undefined);
   const pingSeq = useRef(0);
+  // `check` fires from timers and effects; the ref always holds what the field shows now.
+  const modelRef = useRef(model);
+  modelRef.current = model;
 
   useEffect(() => {
-    setModel(settings.models[p]);
+    setModel(settings.models[slot]);
+  }, [settings.models, slot]);
+
+  useEffect(() => {
     setKeyDraft("");
     setKeyEditing(false);
-    if (p === "builtin") {
+    setAvailable([]);
+    setPing({ status: "idle" });
+    if (!external) {
       setHasKey(null);
       return;
     }
-    if (p === "ollama") {
-      // A local server needs no key; "has key" just means "ready to ping".
+    if (!needsKey) {
+      // Ollama and the CLI plans store nothing here; "has key" just means ready to check.
       setHasKey(true);
       return;
     }
     platform.hasApiKey(p).then(setHasKey, () => setHasKey(false));
-  }, [p, settings.models]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p, auth]);
 
-  const check = (delay = 0) => {
+  const choose = (m: string) => {
+    setModel(m);
+    if (m !== settings.models[slot]) save({ models: { ...settings.models, [slot]: m } });
+  };
+
+  const check = (delay = 0, override?: string) => {
     window.clearTimeout(pingTimer.current);
     if (!external) return;
     const seq = ++pingSeq.current;
     pingTimer.current = window.setTimeout(() => {
+      const m = override ?? modelRef.current;
       setPing({ status: "checking" });
-      platform.aiPing(p, p === "ollama" ? settings.ollamaUrl : settings.baseUrl, model).then(
+      platform.aiPing(p, auth, p === "ollama" ? settings.ollamaUrl : settings.baseUrl, m).then(
         (r) => {
           if (seq !== pingSeq.current) return;
-          setInstalled(r.models ?? []);
+          const list = r.models ?? [];
+          setAvailable(list);
+          const usable = chatModels(p, auth, list);
+          const stale = !m || (!r.ok && !usable.includes(m));
+          if (usable.length && stale) {
+            // Nothing chosen yet, or the stored model is gone: start with the fastest, cheapest one.
+            const pick = pickDefaultModel(p, auth, list);
+            if (pick) {
+              choose(pick);
+              check(0, pick);
+              return;
+            }
+          }
           setPing(r.ok ? { status: "ok", ms: r.ms } : { status: "err", error: r.error });
         },
         (e) => seq === pingSeq.current && setPing({ status: "err", error: String(e) }),
@@ -321,10 +364,10 @@ function Ai({ settings, save }: SectionProps) {
   };
 
   useEffect(() => {
-    if (external && hasKey !== null) check(100);
+    if (external && hasKey !== null) check(100, settings.models[slot]);
     return () => window.clearTimeout(pingTimer.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [p, hasKey, settings.baseUrl, settings.ollamaUrl]);
+  }, [p, auth, hasKey, settings.baseUrl, settings.ollamaUrl]);
 
   const commitKey = async () => {
     if (!needsKey) return;
@@ -341,11 +384,15 @@ function Ai({ settings, save }: SectionProps) {
     }
   };
 
-  const commitModel = () => {
-    const m = model.trim();
-    if (m !== settings.models[p]) save({ models: { ...settings.models, [p]: m } });
-    check(0);
+  const pickModel = (m: string) => {
+    choose(m.trim());
+    check(0, m.trim());
   };
+
+  const options = chatModels(p, auth, available);
+  const listed = model && !options.includes(model) ? [model, ...options] : options;
+  const modelOptions = listed.map((m) => ({ value: m, label: m }));
+  const cli = account === "anthropic" ? "claude" : "codex";
 
   return (
     <div className="grid">
@@ -359,18 +406,12 @@ function Ai({ settings, save }: SectionProps) {
           </span>
         </Row>
       )}
-      {external && p === "custom" && (
-        <Row label="Base URL">
-          <input
-            className="field"
-            placeholder="https://api.example.com/v1"
-            value={settings.baseUrl}
-            onChange={(e) => save({ baseUrl: e.target.value }, 400)}
-            onBlur={() => check(0)}
-            spellCheck={false}
-          />
+      {account && (
+        <Row label="Account">
+          <Seg value={auth ?? "key"} options={ACCOUNTS[account]} onChange={(v) => save({ auth: { ...settings.auth, [account]: v } })} />
         </Row>
       )}
+      {account && subscription && <div className="hint">Runs the {cli} command-line tool signed in on this Mac, so questions count against that plan.</div>}
       {p === "ollama" && (
         <Row label="Server">
           <input
@@ -383,61 +424,70 @@ function Ai({ settings, save }: SectionProps) {
           />
         </Row>
       )}
+      {p === "custom" && (
+        <Row label="Base URL">
+          <input
+            className="field"
+            placeholder="https://api.example.com/v1"
+            value={settings.baseUrl}
+            onChange={(e) => save({ baseUrl: e.target.value }, 400)}
+            onBlur={() => check(0)}
+            spellCheck={false}
+          />
+        </Row>
+      )}
       {needsKey && (
-          <Row label="API key">
-            <span className="with-note">
-              <input
-                className="field"
-                type="password"
-                placeholder={hasKey ? "••••••••••••••••••••••••" : p === "anthropic" ? "sk-ant-…" : "sk-…"}
-                value={keyDraft}
-                onFocus={() => setKeyEditing(true)}
-                onChange={(e) => setKeyDraft(e.target.value)}
-                onBlur={() => void commitKey()}
-                onKeyDown={(e) => e.key === "Enter" && void commitKey()}
-                spellCheck={false}
-              />
-              <span className="note">{keyEditing && keyDraft ? "Press ↵ to store" : hasKey ? (isTauri ? "Stored in Keychain" : "Stored for this session") : "Not set"}</span>
-            </span>
-          </Row>
+        <Row label="API key">
+          <span className="with-note">
+            <input
+              className="field"
+              type="password"
+              placeholder={hasKey ? "••••••••••••••••••••••••" : p === "anthropic" ? "sk-ant-…" : "sk-…"}
+              value={keyDraft}
+              onFocus={() => setKeyEditing(true)}
+              onChange={(e) => setKeyDraft(e.target.value)}
+              onBlur={() => void commitKey()}
+              onKeyDown={(e) => e.key === "Enter" && void commitKey()}
+              spellCheck={false}
+            />
+            <span className="note">{keyEditing && keyDraft ? "Press ↵ to store" : hasKey ? (isTauri ? "Stored in Keychain" : "Stored for this session") : "Not set"}</span>
+          </span>
+        </Row>
       )}
       {external && (
-          <Row label="Model">
-            <span className="with-note">
+        <Row label="Model">
+          <span className="with-note">
+            {modelOptions.length ? (
+              <Dropdown value={model} options={modelOptions} onChange={pickModel} />
+            ) : (
               <input
                 className="field"
-                list={p === "ollama" ? "ollama-models" : undefined}
+                placeholder={needsKey && !hasKey ? "Add a key to list models" : "Model"}
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
-                onBlur={commitModel}
-                onKeyDown={(e) => e.key === "Enter" && commitModel()}
+                onBlur={() => pickModel(model)}
+                onKeyDown={(e) => e.key === "Enter" && pickModel(model)}
                 spellCheck={false}
               />
-              {p === "ollama" && (
-                <datalist id="ollama-models">
-                  {installed.map((m) => (
-                    <option key={m} value={m} />
-                  ))}
-                </datalist>
+            )}
+            <span className="note status">
+              {ping.status === "ok" && (
+                <>
+                  <span className="gdot" />
+                  Connected · {ping.ms} ms
+                </>
               )}
-              <span className="note status">
-                {ping.status === "ok" && (
-                  <>
-                    <span className="gdot" />
-                    Connected · {ping.ms} ms
-                  </>
-                )}
-                {ping.status === "checking" && "Checking…"}
-                {ping.status === "err" && (
-                  <span className="warn" title={ping.error}>
-                    <span className="wdot" />
-                    {shortError(ping.error)}
-                  </span>
-                )}
-                {ping.status === "idle" && (needsKey && !hasKey ? "Add a key to connect" : "")}
-              </span>
+              {ping.status === "checking" && "Checking…"}
+              {ping.status === "err" && (
+                <span className="warn" title={ping.error}>
+                  <span className="wdot" />
+                  {shortError(ping.error)}
+                </span>
+              )}
+              {ping.status === "idle" && (needsKey && !hasKey ? "Add a key to connect" : "")}
             </span>
-          </Row>
+          </span>
+        </Row>
       )}
       <Row label="Context sent" top>
         <div className="checks">

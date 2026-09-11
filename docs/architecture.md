@@ -23,6 +23,7 @@ src-tauri/src/
   lib.rs                 commands, menu bar, window creation
   files.rs               pages, session.json, versions (atomic writes)
   ai.rs                  streaming for OpenAI, Anthropic, Ollama and OpenAI-compatible APIs
+  cli.rs                 plan access through the claude and codex command-line tools
 examples/sleep-memory/   sample corpus used by the mock backend
 design/                  Claude Design source files this app implements
 ```
@@ -72,8 +73,11 @@ Diffing happens in TypeScript on the rendered text of each block (`src/lib/diff.
 
 - **OpenAI**: `POST {base}/chat/completions` with `stream: true`.
 - **Anthropic**: `POST /v1/messages` with `stream: true`.
-- **Ollama**: `POST {server}/api/chat` with `stream: true`, read as newline-delimited JSON; `GET {server}/api/tags` for the ping and the installed-model list. No key; the server URL is `ollamaUrl` in settings. The client has no overall timeout because local models can be slow.
+- **Ollama**: `POST {server}/api/chat` with `stream: true` and `think: false`, read as newline-delimited JSON; `GET {server}/api/tags` for the ping and the installed-model list (chat models only, local and smallest first). No key; the server URL is `ollamaUrl` in settings. The client has no overall timeout because local models can be slow.
 - **Custom**: any OpenAI-compatible server; set the base URL in Settings.
+- **Plans** (`auth: "subscription"` on the request, `cli.rs`): Anthropic runs `claude -p --output-format stream-json --include-partial-messages --tools "" --setting-sources "" --strict-mcp-config` from a neutral folder and forwards `text_delta` events; OpenAI runs `codex exec --json` and forwards `agent_message` items. The pings are `claude auth status --json` and `codex login status`. The CLIs hold the sign-in; the app never handles a token.
+
+Every ping returns the provider's model list (`PingResult.models`). Settings shows it as a menu and, when nothing has been chosen for that provider and account mode, picks the cheapest tier it recognises (`src/lib/models.ts`: Luna, nano or mini for OpenAI; Haiku for Anthropic; the smallest local model for Ollama; the CLI aliases for plans).
 - **Built in** is present in the UI but not wired to a service in this build.
 
 Prompts are built in `src/lib/prompts.ts`. What gets sent is controlled by the Context toggles in Settings: the highlight and its paragraph, the other pages in this session, or every page in the folder.

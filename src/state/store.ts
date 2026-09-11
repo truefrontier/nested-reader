@@ -14,6 +14,7 @@ import {
 } from "../platform";
 import { diffBodies, revertChange, type Change, type PageDiff } from "../lib/diff";
 import { joinBlocks, lexBlocks, linkTextInRaw, replaceFlexible, resolveWikiTarget } from "../lib/markdown";
+import { authFor, modelSlot } from "../lib/models";
 import { serializePage, titleFromBody } from "../lib/frontmatter";
 import { slugify, titleFromQuestion, uniquePath } from "../lib/slug";
 import { nowIso } from "../lib/time";
@@ -380,14 +381,19 @@ export class ReaderStore {
 
   private request(system: string, messages: ChatMessage[], maxTokens?: number): AiRequest {
     const s = this.state.settings;
+    const auth = authFor(s, s.provider);
     const baseUrl = s.provider === "ollama" ? s.ollamaUrl : s.baseUrl;
-    return { provider: s.provider, model: s.models[s.provider], baseUrl: baseUrl || undefined, system, messages, maxTokens };
+    return { provider: s.provider, auth, model: s.models[modelSlot(s.provider, auth)], baseUrl: baseUrl || undefined, system, messages, maxTokens };
   }
 
   private stream(key: string, req: AiRequest, on: { delta: (t: string) => void; done: () => void; error: (m: string) => void }) {
     this.stopStream(key);
     if (req.provider === "builtin") {
       on.error("The built-in plan is not available in this build. Choose a provider in Settings › AI.");
+      return;
+    }
+    if (!req.model) {
+      on.error("Choose a model in Settings › AI.");
       return;
     }
     const handle = platform.aiStream(req, (e) => {

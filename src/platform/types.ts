@@ -41,6 +41,10 @@ export type Session = {
 };
 
 export type Provider = "builtin" | "openai" | "anthropic" | "ollama" | "custom";
+/** How OpenAI and Anthropic are reached: an API key, or the plan signed in to their official CLI. */
+export type Auth = "key" | "subscription";
+/** Each way of reaching a provider remembers its own model. */
+export type ModelSlot = Provider | "openai-subscription" | "anthropic-subscription";
 export type Placement = "beside" | "below" | "active" | "background" | "window";
 export type OpenAtLaunch = "last-session" | "ask" | "nothing";
 
@@ -59,7 +63,9 @@ export type Settings = {
   baseUrl: string;
   /** Where the local Ollama server listens. */
   ollamaUrl: string;
-  models: Record<Provider, string>;
+  auth: { openai: Auth; anthropic: Auth };
+  /** Chosen model per slot; "" means "not chosen yet", and Settings picks the cheapest on first contact. */
+  models: Record<ModelSlot, string>;
   context: { highlight: boolean; session: boolean; folder: boolean };
 };
 
@@ -74,12 +80,15 @@ export const DEFAULT_SETTINGS: Settings = {
   provider: "anthropic",
   baseUrl: "",
   ollamaUrl: "http://localhost:11434",
+  auth: { openai: "key", anthropic: "key" },
   models: {
     builtin: "",
-    openai: "gpt-5",
-    anthropic: "claude-sonnet-5",
-    ollama: "llama3.2",
-    custom: "llama-3.3-70b",
+    openai: "",
+    anthropic: "",
+    ollama: "",
+    custom: "",
+    "openai-subscription": "",
+    "anthropic-subscription": "",
   },
   context: { highlight: true, session: true, folder: false },
 };
@@ -101,6 +110,7 @@ export type ChatMessage = { role: "system" | "user" | "assistant"; content: stri
 
 export type AiRequest = {
   provider: Provider;
+  auth?: Auth;
   model: string;
   baseUrl?: string;
   system?: string;
@@ -113,7 +123,7 @@ export type StreamEvent =
   | { type: "done" }
   | { type: "error"; message: string };
 
-/** `models` lists what the server has installed (Ollama only). */
+/** `models` lists what the provider offers (installed models for Ollama, cheapest first). */
 export type PingResult = { ok: true; ms: number; models?: string[] } | { ok: false; error: string; models?: string[] };
 
 export type StreamHandle = { cancel(): void };
@@ -139,7 +149,7 @@ export interface Platform {
   setApiKey(provider: Provider, key: string): Promise<void>;
   hasApiKey(provider: Provider): Promise<boolean>;
   aiStream(req: AiRequest, onEvent: (e: StreamEvent) => void): StreamHandle;
-  aiPing(provider: Provider, baseUrl: string, model: string): Promise<PingResult>;
+  aiPing(provider: Provider, auth: Auth | undefined, baseUrl: string, model: string): Promise<PingResult>;
   openSettings(): Promise<void>;
   openPageWindow(folder: string, path: string): Promise<void>;
   /** Menu / shortcut commands coming from the native menu bar. */

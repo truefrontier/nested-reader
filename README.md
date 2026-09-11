@@ -19,9 +19,11 @@ pnpm tauri dev
 
 ## Set up a provider
 
-Open Settings (⌘,) › AI. Pick OpenAI, Anthropic, Ollama, or Custom (any OpenAI-compatible server; set its base URL). For OpenAI, Anthropic and Custom, paste an API key and press ↵; it is stored in the macOS Keychain. The model field shows a live connection check. The Context toggles decide what leaves the machine with each request.
+Open Settings (⌘,) › AI. Pick OpenAI, Anthropic, Ollama, or Custom (any OpenAI-compatible server; set its base URL). With an API key, paste it and press ↵; it is stored in the macOS Keychain. The Model menu lists what the provider offers and starts on its fastest, cheapest option (Luna for OpenAI, Haiku for Anthropic). The status next to it is a live connection check. The Context toggles decide what leaves the machine with each request.
 
-Ollama needs no key. Point the Server field at your Ollama instance (default `http://localhost:11434`); the Model field then offers the models you have pulled, and nothing leaves the machine.
+**Use a plan instead of a key.** Under OpenAI or Anthropic, switch Account to "ChatGPT plan" or "Claude plan". The app then runs the official command-line tool signed in on your Mac (`codex exec` or `claude -p`) and questions count against that plan. Sign in once in a terminal with `codex login` or `claude` › `/login`.
+
+**Ollama** needs no key. Point the Server field at your Ollama instance (default `http://localhost:11434`); the Model menu then lists the models you have pulled, smallest first, and nothing leaves the machine.
 
 The "Built in" provider is in the design but not connected to a service in this build.
 

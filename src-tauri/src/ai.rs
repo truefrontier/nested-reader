@@ -12,6 +12,9 @@ use tokio_util_lite::CancelToken;
 #[serde(rename_all = "camelCase")]
 pub struct AiRequest {
     pub provider: String,
+    /// "key" (default) or "subscription", which routes OpenAI/Anthropic through their CLIs.
+    #[serde(default)]
+    pub auth: Option<String>,
     pub model: String,
     #[serde(default)]
     pub base_url: Option<String>,
@@ -101,14 +104,17 @@ fn ollama_error(base: &str, e: reqwest::Error) -> AppError {
 
 /// Emits deltas on the channel until the stream ends, the token cancels or an error occurs.
 pub async fn stream(req: AiRequest, channel: Channel<StreamEvent>, cancel: CancelToken) -> Result<()> {
-    let result = match req.provider.as_str() {
-        "anthropic" => stream_anthropic(&req, &channel, &cancel).await,
-        "openai" | "custom" => stream_openai(&req, &channel, &cancel).await,
-        "ollama" => stream_ollama(&req, &channel, &cancel).await,
-        "builtin" => Err(AppError::Message(
+    let subscription = req.auth.as_deref() == Some("subscription");
+    let result = match (req.provider.as_str(), subscription) {
+        ("anthropic", true) => crate::cli::stream_claude(&req, &channel, &cancel).await,
+        ("openai", true) => crate::cli::stream_codex(&req, &channel, &cancel).await,
+        ("anthropic", false) => stream_anthropic(&req, &channel, &cancel).await,
+        ("openai", false) | ("custom", _) => stream_openai(&req, &channel, &cancel).await,
+        ("ollama", _) => stream_ollama(&req, &channel, &cancel).await,
+        ("builtin", _) => Err(AppError::Message(
             "The built-in plan is not available in this build. Choose a provider in Settings › AI.".into(),
         )),
-        other => Err(AppError::Message(format!("Unknown provider: {other}"))),
+        (other, _) => Err(AppError::Message(format!("Unknown provider: {other}"))),
     };
     match result {
         Ok(()) => {
@@ -332,11 +338,29 @@ async fn stream_anthropic(req: &AiRequest, channel: &Channel<StreamEvent>, cance
     .await
 }
 
-/// A cheap authenticated request that proves the key, base URL and network work.
-pub async fn ping(provider: &str, base_url: &str, model: &str) -> PingResult {
+/// Ids from an OpenAI- or Anthropic-style `{ "data": [{ "id": … }] }` listing.
+fn listed_ids(v: &Value) -> Vec<String> {
+    v.get("data")
+        .and_then(|d| d.as_array())
+        .map(|arr| arr.iter().filter_map(|m| m.get("id").and_then(|i| i.as_str()).map(String::from)).collect())
+        .unwrap_or_default()
+}
+
+/// A cheap authenticated request that proves the key, base URL and network work,
+/// and returns the models on offer so Settings can list them.
+pub async fn ping(provider: &str, auth: Option<&str>, base_url: &str, model: &str) -> PingResult {
     let started = Instant::now();
     let mut models: Option<Vec<String>> = None;
     let result: Result<()> = async {
+        if auth == Some("subscription") {
+            let list = match provider {
+                "anthropic" => crate::cli::ping_claude().await?,
+                "openai" => crate::cli::ping_codex().await?,
+                other => return Err(AppError::Message(format!("{other} has no subscription mode"))),
+            };
+            models = Some(list);
+            return Ok(());
+        }
         let c = client()?;
         match provider {
             "ollama" => {
@@ -350,20 +374,33 @@ pub async fn ping(provider: &str, base_url: &str, model: &str) -> PingResult {
                     return Err(AppError::Message(read_error_body(resp).await));
                 }
                 let v: Value = resp.json().await?;
-                let names: Vec<String> = v
+                // Chat-capable models only, local ones first and smallest first, so the
+                // head of the list is the fastest choice.
+                let mut entries: Vec<(bool, u64, String)> = v
                     .get("models")
                     .and_then(|m| m.as_array())
                     .map(|arr| {
                         arr.iter()
-                            .filter_map(|m| m.get("name").and_then(|n| n.as_str()).map(String::from))
+                            .filter_map(|m| {
+                                let name = m.get("name")?.as_str()?.to_string();
+                                let family = m.pointer("/details/family").and_then(|f| f.as_str()).unwrap_or("");
+                                if name.contains("embed") || family.contains("bert") {
+                                    return None;
+                                }
+                                let cloud = m.get("remote_host").is_some() || name.ends_with("cloud");
+                                let size = m.get("size").and_then(|s| s.as_u64()).unwrap_or(0);
+                                Some((cloud, size, name))
+                            })
                             .collect()
                     })
                     .unwrap_or_default();
+                entries.sort();
+                let names: Vec<String> = entries.into_iter().map(|(_, _, n)| n).collect();
                 // Ollama names always carry a tag, so "llama3.2" matches "llama3.2:latest".
                 let installed = model.is_empty() || names.iter().any(|n| n == model || *n == format!("{model}:latest"));
                 models = Some(names);
                 if !installed {
-                    return Err(AppError::Message(format!("\"{model}\" isn't pulled. Run: ollama pull {model}")));
+                    return Err(AppError::Message(format!("\"{model}\" isn't installed")));
                 }
                 Ok(())
             }
@@ -379,12 +416,10 @@ pub async fn ping(provider: &str, base_url: &str, model: &str) -> PingResult {
                     return Err(AppError::Message(read_error_body(resp).await));
                 }
                 let v: Value = resp.json().await?;
-                let known = v
-                    .get("data")
-                    .and_then(|d| d.as_array())
-                    .map(|arr| arr.iter().any(|m| m.get("id").and_then(|i| i.as_str()) == Some(model)))
-                    .unwrap_or(true);
-                if !known && !model.is_empty() {
+                let ids = listed_ids(&v);
+                let known = ids.is_empty() || model.is_empty() || ids.iter().any(|i| i == model);
+                models = Some(ids);
+                if !known {
                     return Err(AppError::Message(format!("Model \"{model}\" not found")));
                 }
                 Ok(())
@@ -402,12 +437,10 @@ pub async fn ping(provider: &str, base_url: &str, model: &str) -> PingResult {
                     return Err(AppError::Message(read_error_body(resp).await));
                 }
                 let v: Value = resp.json().await?;
-                let known = v
-                    .get("data")
-                    .and_then(|d| d.as_array())
-                    .map(|arr| arr.iter().any(|m| m.get("id").and_then(|i| i.as_str()) == Some(model)))
-                    .unwrap_or(true);
-                if !known && !model.is_empty() {
+                let ids = listed_ids(&v);
+                let known = ids.is_empty() || model.is_empty() || ids.iter().any(|i| i == model);
+                models = Some(ids);
+                if !known {
                     return Err(AppError::Message(format!("Model \"{model}\" not found")));
                 }
                 Ok(())
@@ -452,7 +485,7 @@ mod ollama_live {
     #[test]
     #[ignore]
     fn ping_lists_installed_models() {
-        let r = tauri::async_runtime::block_on(ping("ollama", "", MODEL));
+        let r = tauri::async_runtime::block_on(ping("ollama", None, "", MODEL));
         assert!(r.ok, "{:?}", r.error);
         let models = r.models.expect("models");
         assert!(models.iter().any(|m| m == MODEL), "{models:?}");
@@ -461,16 +494,16 @@ mod ollama_live {
     #[test]
     #[ignore]
     fn ping_reports_missing_model_and_still_lists() {
-        let r = tauri::async_runtime::block_on(ping("ollama", "", "not-a-model"));
+        let r = tauri::async_runtime::block_on(ping("ollama", None, "", "not-a-model"));
         assert!(!r.ok);
-        assert!(r.error.unwrap().contains("ollama pull not-a-model"));
+        assert!(r.error.unwrap().contains("\"not-a-model\" isn't installed"));
         assert!(!r.models.unwrap().is_empty());
     }
 
     #[test]
     #[ignore]
     fn ping_names_a_down_server() {
-        let r = tauri::async_runtime::block_on(ping("ollama", "http://127.0.0.1:1", ""));
+        let r = tauri::async_runtime::block_on(ping("ollama", None, "http://127.0.0.1:1", ""));
         assert!(!r.ok);
         assert!(r.error.unwrap().contains("isn't running"), "expected a plain connection message");
     }
@@ -494,6 +527,7 @@ mod ollama_live {
         });
         let req = AiRequest {
             provider: "ollama".into(),
+            auth: None,
             model: MODEL.into(),
             base_url: None,
             system: Some("Answer in one short sentence.".into()),

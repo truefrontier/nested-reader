@@ -14,9 +14,47 @@
  <div style="position:absolute;top:16px;left:16px;display:flex;gap:8px;z-index:5"><span style="width:12px;height:12px;border-radius:50%;background:#ff5f57"></span><span style="width:12px;height:12px;border-radius:50%;background:#febc2e"></span><span style="width:12px;height:12px;border-radius:50%;background:#28c840"></span></div>
  <div onClick="{{ toggleSidebar }}" title="Toggle tree ⌘\" style="position:absolute;top:8px;left:84px;z-index:5;width:28px;height:28px;border-radius:6px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--mute,#8e887e)" style-hover="color:var(--fg);background:var(--card)"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><rect x="2" y="3" width="12" height="10" rx="2"></rect><path d="M6 3v10"></path></svg></div>
 
+ <sc-if value="{{ isHome }}" hint-placeholder-val="{{ false }}">
+ <div data-screen-label="Home" style="display:flex;flex:1;min-width:0;animation:rise .2s ease-out">
+  <div style="width:224px;flex:none;background:var(--side,#f2f0ec);padding:58px 0 16px;display:flex;flex-direction:column;font-size:12.5px;box-sizing:border-box">
+   <div style="padding:0 18px 10px;color:var(--mute,#8e887e);font-size:11.5px;letter-spacing:.02em">Recent Sessions</div>
+   <div style="padding:0 10px;display:grid;gap:1px">
+    <div onClick="{{ goReading }}" style="display:flex;align-items:center;gap:8px;height:28px;padding:0 6px 0 8px;border-radius:6px;cursor:pointer" style-hover="background:var(--card)"><span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Sleep &amp; memory</span><span style="width:5px;height:5px;border-radius:50%;background:var(--acc,#3e8a5a);flex:none;margin-right:6px"></span></div>
+    <div style="position:relative;display:flex;align-items:center;gap:8px;height:28px;padding:0 3px 0 8px;border-radius:6px;cursor:pointer;color:var(--mute,#8e887e);background:{{ rowMenuBg }}" style-hover="background:var(--card);color:var(--fg)"><span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Compilers, from scratch</span><span onClick="{{ toggleRowMenu }}" style="width:22px;height:22px;border-radius:5px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex:none;color:var(--mute,#8e887e)" style-hover="color:var(--fg);background:var(--hair)"><svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><circle cx="7" cy="3" r="1.1"></circle><circle cx="7" cy="7" r="1.1"></circle><circle cx="7" cy="11" r="1.1"></circle></svg></span>
+     <sc-if value="{{ showRowMenu }}">
+     <div style="position:absolute;top:30px;right:0;width:168px;padding:4px;border-radius:9px;background:var(--bg,#faf9f7);border:1px solid var(--hair,rgba(0,0,0,.09));box-shadow:0 8px 30px rgba(0,0,0,.14);font-size:12.5px;color:var(--fg,#1e1c19);z-index:6;animation:rise .15s ease-out">
+      <div style="padding:6px 10px;border-radius:5px;cursor:pointer" style-hover="background:var(--card)">Rename</div>
+      <div style="padding:6px 10px;border-radius:5px;cursor:pointer" style-hover="background:var(--card)">Reveal folder</div>
+      <div style="padding:6px 10px;border-radius:5px;cursor:pointer" style-hover="background:var(--card)">Map</div>
+      <div style="margin:4px 4px 0;border-top:1px solid var(--hair,rgba(0,0,0,.09))"></div>
+      <div style="padding:6px 10px;border-radius:5px;cursor:pointer;color:var(--mute,#8e887e)" style-hover="background:var(--card);color:var(--fg)">Remove from recents</div>
+     </div>
+     </sc-if>
+    </div>
+    <div style="display:flex;align-items:center;height:28px;padding:0 8px;border-radius:6px;cursor:pointer;color:var(--mute,#8e887e)" style-hover="background:var(--card);color:var(--fg)"><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Byzantine generals</span></div>
+    <div style="display:flex;align-items:center;height:28px;padding:0 8px;border-radius:6px;cursor:pointer;color:var(--mute,#8e887e)" style-hover="background:var(--card);color:var(--fg)"><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Attention is all you need</span></div>
+   </div>
+   <div style="flex:1"></div>
+   <div style="margin:0 14px"><div style="display:flex;align-items:center;justify-content:center;gap:8px;height:30px;border-radius:7px;border:1px solid var(--hair,rgba(0,0,0,.09));cursor:pointer;font-size:12.5px;color:var(--fg,#1e1c19)" style-hover="background:var(--card)"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6 2v8M2 6h8"></path></svg><span>New session</span><span style="font-size:11px;color:var(--mute,#8e887e)">⌘O</span></div></div>
+  </div>
+  <div style="flex:1;min-width:0;display:flex;align-items:center;justify-content:center;padding:40px">
+   <div style="width:100%;max-width:460px">
+    <div style="font-family:Literata,Georgia,serif;font-size:26px;font-weight:500;letter-spacing:-.01em;margin-bottom:8px">Start a session</div>
+    <div style="font-size:13px;line-height:1.55;color:var(--mute,#8e887e);margin-bottom:26px">A session grows from whatever you open. New pages are saved beside it as plain .md.</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+     <div style="padding:16px 18px;border-radius:10px;border:1px solid var(--hair,rgba(0,0,0,.09));cursor:pointer;display:grid;gap:6px" style-hover="background:var(--card)"><div style="display:flex;justify-content:space-between;align-items:baseline;font-size:14px;font-weight:500"><span>Open folder…</span><span style="font-size:11px;color:var(--mute,#8e887e);font-weight:400">⌘O</span></div><div style="font-size:12px;line-height:1.5;color:var(--mute,#8e887e)">Every .md inside becomes the corpus. Best for a topic you've been collecting.</div></div>
+     <div style="padding:16px 18px;border-radius:10px;border:1px solid var(--hair,rgba(0,0,0,.09));cursor:pointer;display:grid;gap:6px" style-hover="background:var(--card)"><div style="display:flex;justify-content:space-between;align-items:baseline;font-size:14px;font-weight:500"><span>Open file…</span><span style="font-size:11px;color:var(--mute,#8e887e);font-weight:400">⌘⇧O</span></div><div style="font-size:12px;line-height:1.5;color:var(--mute,#8e887e)">A single .md to read. Pages you create are saved next to it.</div></div>
+    </div>
+    <div style="margin-top:12px;padding:14px;border-radius:10px;border:1px dashed var(--hair,rgba(0,0,0,.09));text-align:center;font-size:12.5px;color:var(--mute,#8e887e)">or drop a folder or file anywhere in this window</div>
+   </div>
+  </div>
+ </div>
+ </sc-if>
+
+ <sc-if value="{{ notHome }}" hint-placeholder-val="{{ true }}">
  <sc-if value="{{ sidebarOpen }}" hint-placeholder-val="{{ true }}">
  <div style="width:224px;flex:none;background:var(--side,#f2f0ec);padding:58px 0 16px;display:flex;flex-direction:column;font-size:12.5px;box-sizing:border-box">
-  <div style="padding:0 18px 12px;display:flex;justify-content:space-between;align-items:baseline;color:var(--mute,#8e887e);font-size:11.5px;letter-spacing:.02em"><span>Sleep &amp; memory</span><span onClick="{{ openMap }}" style="cursor:pointer" style-hover="color:var(--fg)">Map</span></div>
+  <div style="padding:0 18px 12px 12px;display:flex;align-items:center;gap:4px;color:var(--mute,#8e887e);font-size:11.5px;letter-spacing:.02em"><span onClick="{{ goHome }}" title="Home ⌘⇧H" style="width:22px;height:22px;border-radius:5px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex:none;color:var(--mute,#8e887e)" style-hover="color:var(--fg);background:var(--card)"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 3.5 5 7l3.5 3.5"></path></svg></span><span style="flex:1">Sleep &amp; memory</span><span onClick="{{ openMap }}" style="cursor:pointer" style-hover="color:var(--fg)">Map</span></div>
   <div style="margin:0 14px 12px;display:flex;align-items:center;gap:8px;height:26px;padding:0 4px 0 9px;border-radius:6px;background:var(--card,rgba(0,0,0,.035))"><input placeholder="Filter" style="flex:1;min-width:0;border:0;outline:0;background:transparent;font:inherit;font-size:12px;color:var(--fg,#1e1c19)"><span onClick="{{ toggleUnread }}" title="Unread only" style="width:18px;height:18px;border-radius:4px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:{{ unreadBtnBg }}"><span style="width:5px;height:5px;border-radius:50%;background:var(--acc,#3e8a5a)"></span></span></div>
   <div style="padding-left:18px;flex:1"><div style="position:relative">
    <sc-if value="{{ showAll }}" hint-placeholder-val="{{ true }}"><div style="position:absolute;left:3px;top:14px;bottom:14px;width:1px;background:var(--hair,rgba(0,0,0,.09))"></div>
@@ -179,12 +217,13 @@
   </div>
   </sc-if>
  </div>
+ </sc-if>
 </div>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props="{&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;light&quot;,&quot;options&quot;:[&quot;light&quot;,&quot;dark&quot;],&quot;tsType&quot;:&quot;'light'|'dark'&quot;},&quot;screen&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;highlight&quot;,&quot;options&quot;:[&quot;reading&quot;,&quot;highlight&quot;,&quot;lookup&quot;,&quot;split&quot;,&quot;linked&quot;,&quot;refine&quot;,&quot;refine-pane&quot;,&quot;review&quot;,&quot;history&quot;,&quot;viewing&quot;,&quot;confirm&quot;,&quot;map-web&quot;,&quot;map-timeline&quot;],&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;State&quot;},&quot;sidebar&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;State&quot;}}">
+<script type="text/x-dc" data-dc-script data-props="{&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;light&quot;,&quot;options&quot;:[&quot;light&quot;,&quot;dark&quot;],&quot;tsType&quot;:&quot;'light'|'dark'&quot;},&quot;screen&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;highlight&quot;,&quot;options&quot;:[&quot;home&quot;,&quot;reading&quot;,&quot;highlight&quot;,&quot;lookup&quot;,&quot;split&quot;,&quot;linked&quot;,&quot;refine&quot;,&quot;refine-pane&quot;,&quot;review&quot;,&quot;history&quot;,&quot;viewing&quot;,&quot;confirm&quot;,&quot;map-web&quot;,&quot;map-timeline&quot;],&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;State&quot;},&quot;sidebar&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;State&quot;}}">
 class Component extends DCLogic {
-  state = { screen: null, sidebar: null, unreadOnly: false };
+  state = { screen: null, sidebar: null, unreadOnly: false, rowMenu: null };
   askRef = null;
   componentDidMount() { this.focusAsk(); }
   componentDidUpdate() { this.focusAsk(); }
@@ -207,6 +246,7 @@ class Component extends DCLogic {
     const isWeb = screen === 'map-web';
     const isLinked = screen === 'linked';
     const unreadOnly = this.state.unreadOnly;
+    const isHome = screen === 'home';
     const isReview = screen === 'review';
     const isHistory = screen === 'history';
     const isViewing = screen === 'viewing' || screen === 'confirm';
@@ -215,6 +255,7 @@ class Component extends DCLogic {
       ...t, sidebarOpen,
       isSelected: screen === 'highlight' || screen === 'lookup' || screen === 'refine',
       showRefine: screen === 'refine', showPane: screen === 'refine-pane',
+      isHome, notHome: !isHome, showRowMenu: this.state.rowMenu ?? isHome, rowMenuBg: (this.state.rowMenu ?? isHome) ? t.card : 'transparent', goHome: set('home'), toggleRowMenu: () => this.setState({ rowMenu: !(this.state.rowMenu ?? true) }),
       isReview, isViewing, isNewPlain, showTop: isReview || isViewing || isNewPlain, isHistoryPill: isNewPlain, showHistory: isHistory, showNow: screen === 'viewing', showConfirm: screen === 'confirm',
       verPillBg: isHistory ? t.card : 'transparent', goRevised: set('review'), toggleHistory: set(isHistory ? 'reading' : 'history'), goViewing: set('viewing'), goConfirm: set('confirm'),
       isPlain: !(screen === 'highlight' || screen === 'lookup' || screen === 'refine' || isLinked || isReview || isViewing || isNewPlain),

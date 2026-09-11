@@ -1,4 +1,5 @@
 mod ai;
+mod cli;
 mod error;
 mod files;
 
@@ -140,8 +141,8 @@ fn ai_cancel(id: String, streams: State<'_, Streams>) {
 }
 
 #[tauri::command]
-async fn ai_ping(provider: String, base_url: String, model: String) -> Result<PingResult> {
-    Ok(ai::ping(&provider, &base_url, &model).await)
+async fn ai_ping(provider: String, auth: Option<String>, base_url: String, model: String) -> Result<PingResult> {
+    Ok(ai::ping(&provider, auth.as_deref(), &base_url, &model).await)
 }
 
 // ---------- windows ----------

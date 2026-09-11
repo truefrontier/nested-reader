@@ -192,12 +192,20 @@ export const mockPlatform: Platform = {
     };
   },
 
-  async aiPing(provider): Promise<PingResult> {
+  async aiPing(provider, auth): Promise<PingResult> {
     await new Promise((r) => setTimeout(r, 400));
     if (provider === "builtin") return { ok: false, error: "Built-in plan is not available in this build" };
-    if (provider === "ollama") return { ok: true, ms: 9, models: ["gemma4:12b", "llama3.2:latest", "qwen3:8b"] };
+    if (provider === "ollama") return { ok: true, ms: 9, models: ["gemma3:4b", "qwen3.5:4b", "gemma4:12b", "gpt-oss:20b-cloud"] };
+    if (auth === "subscription") {
+      return { ok: true, ms: 130, models: provider === "anthropic" ? ["haiku", "sonnet", "opus"] : ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.5"] };
+    }
     if (!keys.has(provider)) return { ok: false, error: "No API key" };
-    return { ok: true, ms: 410 };
+    const lists: Record<string, string[]> = {
+      openai: ["gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.5-2026-06-01", "gpt-4o-mini-tts", "o3", "text-embedding-3-small"],
+      anthropic: ["claude-fable-5-1", "claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5-20251001"],
+      custom: ["llama-3.3-70b", "mixtral-8x7b"],
+    };
+    return { ok: true, ms: 410, models: lists[provider] ?? [] };
   },
 
   async openSettings() {
