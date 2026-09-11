@@ -76,7 +76,7 @@ export function TopStrip({ path, role, diff, children }: { path: string; role: P
               <span className="t">{relTime(modified, new Date(), "long") || "just now"}</span>
             </div>
             {[...versions].reverse().map((v) => (
-              <div key={v.n} className="item" onClick={() => void store.viewVersion(v.n, role)}>
+              <div key={v.n} className="item" onClick={(e) => void store.viewVersion(v.n, role, store.placementFor(e))}>
                 <span>
                   Version {v.n}
                   {v.n === 1 ? " · original" : ""}

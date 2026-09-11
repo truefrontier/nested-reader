@@ -213,9 +213,12 @@ fn open_settings(app: AppHandle) -> Result<()> {
 }
 
 #[tauri::command]
-fn open_page_window(app: AppHandle, folder: String, path: String) -> Result<()> {
+fn open_page_window(app: AppHandle, folder: String, path: String, version: Option<u32>) -> Result<()> {
     let label = format!("page-{}", app.webview_windows().len());
-    let url = format!("index.html?page={}", urlencode(&path));
+    let mut url = format!("index.html?page={}", urlencode(&path));
+    if let Some(n) = version {
+        url.push_str(&format!("&version={}", n));
+    }
     let _ = folder;
     let builder = WebviewWindowBuilder::new(&app, label, WebviewUrl::App(url.into()))
         .title("Markdown Learner")

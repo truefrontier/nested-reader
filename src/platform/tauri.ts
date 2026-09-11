@@ -105,7 +105,7 @@ export const tauriPlatform: Platform = {
     invoke<PingResult>("ai_ping", { provider, auth, baseUrl, model }),
 
   openSettings: () => invoke("open_settings"),
-  openPageWindow: (folder, path) => invoke("open_page_window", { folder, path }),
+  openPageWindow: (folder, path, version) => invoke("open_page_window", { folder, path, version: version ?? null }),
 
   onCommand(handler) {
     const un = listen<string>("command", (e) => handler(e.payload));

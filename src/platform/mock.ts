@@ -254,8 +254,9 @@ export const mockPlatform: Platform = {
     window.dispatchEvent(new CustomEvent("ml:open-settings"));
   },
 
-  async openPageWindow(_folder, path) {
-    window.open(`${location.pathname}?page=${encodeURIComponent(path)}`, "_blank");
+  async openPageWindow(_folder, path, version) {
+    const v = version === undefined ? "" : `&version=${version}`;
+    window.open(`${location.pathname}?page=${encodeURIComponent(path)}${v}`, "_blank");
   },
 
   onCommand(handler) {

@@ -237,9 +237,11 @@ export class ReaderStore {
       });
       const url = new URL(location.href);
       const page = url.searchParams.get("page");
+      const versionParam = Number(url.searchParams.get("version"));
+      const initialVersion = Number.isInteger(versionParam) && versionParam > 0 ? versionParam : undefined;
       const last = recents[0];
       if (page && settings.folder) {
-        await this.openFolder(settings.folder, { initialPage: page, file: last?.folder === settings.folder ? last.file : undefined });
+        await this.openFolder(settings.folder, { initialPage: page, initialVersion, file: last?.folder === settings.folder ? last.file : undefined });
       } else if (settings.openAtLaunch === "ask") {
         const folder = await platform.pickFolder();
         if (folder) await this.openFolder(folder);
@@ -306,8 +308,8 @@ export class ReaderStore {
    * Loads a folder as the session. With `file`, only that page and the pages grown from it
    * are shown. The folder's saved session is restored, so you land where you left off.
    */
-  async openFolder(folder: string, opts: { initialPage?: string; file?: string } = {}) {
-    const { initialPage, file } = opts;
+  async openFolder(folder: string, opts: { initialPage?: string; initialVersion?: number; file?: string } = {}) {
+    const { initialPage, initialVersion, file } = opts;
     const target = { folder, file };
     this.opening = target;
     try {
@@ -338,6 +340,8 @@ export class ReaderStore {
         current = file ?? sorted[0]?.path;
       }
       if (current) await this.navigate(current, { push: session.trail.length === 0 });
+      // A window opened on an old version (⌘Click on a version with the "window" placement) starts out viewing it.
+      if (initialVersion !== undefined && current && current === initialPage) await this.viewVersion(initialVersion, "main");
       if (session.split) {
         await this.loadBody(session.split);
         await this.refreshVersions(session.split);
@@ -1137,16 +1141,39 @@ export class ReaderStore {
     if (!open) this.setVersionView(role, { history: true });
   }
 
-  async viewVersion(n: number, role: PaneRole = "main") {
-    const path = this.panePath(role);
+  /**
+   * Shows version `n` of the page a pane displays. A ⌘ or ⌘⇧ click on a version passes the New Page or Deep Dive
+   * placement: "beside" and "below" put the page in the other pane and view the version there, "window" opens a
+   * window on it. "background" has no meaning for a version, so it views the version here like a plain click.
+   */
+  async viewVersion(n: number, role: PaneRole = "main", placement: Placement = "active") {
+    let path = this.panePath(role);
     if (!path || !this.state.folder) return;
+    const folder = this.state.folder;
     try {
+      if (placement === "window") {
+        this.setUi({ versionView: this.closedMenus() });
+        await platform.openPageWindow(folder, path, n);
+        return;
+      }
+      if (placement === "beside" || placement === "below") {
+        if (role === "main") {
+          await this.openPage(path, placement);
+          role = "split";
+        } else {
+          // The page already sits in the split pane, so the other pane is the main one.
+          if (this.state.session.current !== path) await this.navigate(path);
+          role = "main";
+        }
+        if (this.panePath(role) !== path) return;
+      }
       if (this.state.versionBodies[path]?.[n] === undefined) {
         const raw = await platform.readVersion(this.state.folder, path, n);
         const forPage = { ...(this.state.versionBodies[path] ?? {}), [n]: stripFrontMatter(raw) };
         this.set({ versionBodies: { ...this.state.versionBodies, [path]: forPage } });
       }
-      this.setUi({ popover: undefined, selection: undefined, lookup: undefined });
+      // Both menus close: the click may have come from the other pane's menu.
+      this.setUi({ popover: undefined, selection: undefined, lookup: undefined, versionView: this.closedMenus() });
       this.setVersionView(role, { viewing: n, history: false, confirmRestore: false });
     } catch (e) {
       this.fail(e);
