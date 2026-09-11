@@ -179,7 +179,8 @@ export interface Platform {
   aiStream(req: AiRequest, onEvent: (e: StreamEvent) => void): StreamHandle;
   aiPing(provider: Provider, auth: Auth | undefined, baseUrl: string, model: string): Promise<PingResult>;
   openSettings(): Promise<void>;
-  openPageWindow(folder: string, path: string): Promise<void>;
+  /** Opens a page in its own window, showing an old version of it when `version` is given. */
+  openPageWindow(folder: string, path: string, version?: number): Promise<void>;
   /** Menu / shortcut commands coming from the native menu bar. */
   onCommand(handler: (id: string) => void): () => void;
   onSettingsChanged(handler: (s: Settings) => void): () => void;

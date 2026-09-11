@@ -1,5 +1,31 @@
 # Progress
 
+## Session: 2026-09-11 — ⌘Click on a version follows the placement settings
+
+### Leading assumptions
+- "According to settings" means the same rule wiki links and the crumb use: ⌘ is the New Page placement, ⌘⇧ the Deep Dive placement, ⌥ flips either. The store's `placementFor` already encodes it.
+- "beside" and "below" mean the other pane. From the main pane's menu the version opens in the split pane. From the split pane's menu it opens in the main pane, navigating there first if the main pane shows another page.
+- "window" opens a page window that starts out viewing that version.
+- "background" has no meaning for a version (there is nothing to read later), so it views the version in place, like a plain click. With default settings ⌘⇧Click therefore behaves like a plain click.
+- After any placement, both panes' history menus close.
+
+### World facts
+- Repo: truefrontier/markdown-learner, branch `claude/festive-mayer-evnlm3`. The earlier work on this branch merged as [pull request #1](https://github.com/truefrontier/markdown-learner/pull/1); the branch was restarted from `main`, so this is a fresh change.
+- `viewVersion(n, role, placement = "active")` in `src/state/store.ts` handles the placements. `TopStrip` passes `store.placementFor(e)` from the item's click.
+- `openPageWindow(folder, path, version?)` gained an optional version. The mock appends `&version=N` to the URL; the Tauri command `open_page_window` takes `version: Option<u32>` and does the same. `init` reads the `version` URL parameter and `openFolder` views it after navigating to `initialPage`.
+- `cargo check` still cannot run here (no GTK dev libraries), so the Rust change is unverified by a compiler. It is a four-line addition: an `Option<u32>` argument and a `push_str` on the URL.
+- Verified in headless Chromium against the Vite dev server: ⌘Click in the main menu opens the page beside, viewing Version 1 there, with the main pane on current, both menus closed, and sync scroll lit. Plain click in the split menu views in the split. ⌘Click in the split menu, with the main pane on another page, navigates the main pane to the page and views the version there. ⌘⇧Click with the default "background" setting views in place. The window placement opens `?page=…&version=1`, and opening a folder with `initialVersion` starts on Viewing Version 1. Typecheck passes.
+
+### Timeline
+1. Kevin asked that ⌘Click on a version in the dropdown open it according to settings.
+2. Added the placement parameter to `viewVersion`, the version parameter to `openPageWindow` in the mock, Tauri bridge, and Rust command, and the URL parameter handling in `init` and `openFolder`.
+3. Ran the browser check; all cases passed. Updated `docs/architecture.md`.
+4. Committed and pushed.
+
+### Possible next steps
+- Run `pnpm tauri dev` locally to compile the Rust change and try the window placement in the real app.
+- Decide whether ⌥ should flip a version click at all; today it follows `placementFor`, so ⌥⌘Click yields "background", which views in place.
+
 ## Session: 2026-09-11 — versions in the split pane, and synced scrolling
 
 ### Leading assumptions

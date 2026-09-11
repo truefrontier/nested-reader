@@ -110,6 +110,8 @@ While a refinement runs, `ui.refining` and `ui.refineText` drive a status card i
 
 `versions` and `versionBodies` in the store are keyed by page path, and `ui.versionView` holds one `{ history, viewing, confirmRestore }` per pane role (`main`, `split`). So each pane shows the version pill for its own page and can view, and restore from, an old version on its own; the same page can sit in both panes at two different versions. `toggleHistory`, `viewVersion`, `backToCurrent`, `askRestore`, `cancelRestore` and `restore` take the pane role and read the page from `session.current` or `session.split`. Esc closes the reading pane's history menu or version view first (the split when it is fullscreen, else the main pane), then the other's. A restore drops every newer snapshot, so a pane showing one of them on the same page returns to current too.
 
+A version in the menu is a link like any other: ⌘Click and ⌘⇧Click pass the New Page and Deep Dive placement settings (via `placementFor`) to `viewVersion`. "beside" and "below" put the page in the other pane and view the version there (from the split's menu, the other pane is the main one). "window" opens a page window at that version: the window URL carries `&version=N`, which `init` hands to `openFolder` as `initialVersion`. "background" means nothing for a version, so it views the version in place like a plain click.
+
 When both panes show the same page they scroll together: `useSyncScroll` (used by `App`) links the two `.pane` scroll containers in proportion, since the split renders the same text a little shorter. The split pane's tools show a link button, lit while `ui.syncScroll` is on; clicking it turns the link off and on. Opening a page beside or below turns it back on.
 
 ## Find and filter
