@@ -594,6 +594,14 @@ button {
   border-top: 1px solid var(--hair);
   margin: 0 0 22px;
 }
+.article table {
+  margin: 0 0 22px;
+}
+/* The first column is usually a label or an ID: it stays on one line and the wider columns take the wrapping. */
+.article th:first-child,
+.article td:first-child {
+  white-space: nowrap;
+}
 .article a.wl {
   text-decoration: none;
   border-bottom: 1px solid var(--acc);
