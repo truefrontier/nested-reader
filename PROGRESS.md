@@ -10,7 +10,7 @@
 - Esc closes the reading pane's history menu or version view first (split when fullscreen, else main), then the other pane's.
 
 ### World facts
-- Repo: truefrontier/markdown-learner, branch `claude/festive-mayer-evnlm3`.
+- Repo: truefrontier/markdown-learner, branch `claude/festive-mayer-evnlm3`, [pull request #1](https://github.com/truefrontier/markdown-learner/pull/1) into `main`. The repo has no CI workflow, so the PR shows no checks.
 - Before this change, `versions` and `versionBodies` were single slots refreshed only for the main pane's page, and `TopStrip` hid version history unless `role === "main"`. That is why the dropdown never showed in the split pane.
 - Now `versions: Record<path, VersionInfo[]>`, `versionBodies: Record<path, Record<n, string>>`, and `ui.versionView: Record<"main" | "split", { history, viewing?, confirmRestore }>`. The old `ui.history`, `ui.viewing`, `ui.confirmRestore` are gone.
 - `refreshVersions(path)` now runs for the split page too: on open beside/below, on session load, after a refine writes a page shown in either pane, after Undo all, and after Restore.
@@ -26,6 +26,7 @@
 4. Added the sync scroll hook, the icon, the button in the split pane's tools, and the `.tbtn.on` style.
 5. Ran the browser check, fixed nothing (it passed), took screenshots, updated `docs/architecture.md`.
 6. Committed and pushed.
+7. Kevin opened [pull request #1](https://github.com/truefrontier/markdown-learner/pull/1) from the Claude Code UI. The session is subscribed to its activity. At open it was mergeable with no CI checks and no comments.
 
 ### Possible next steps
 - Consider aligning by block index instead of by fraction when both panes show the same version, for a tighter match on very long pages.
