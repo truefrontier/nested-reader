@@ -6,6 +6,7 @@ import {
   readingWidthCss,
   sidebarWidthPx,
   type AiRequest,
+  type Ask,
   type ChatMessage,
   type PageMeta,
   type Placement,
@@ -40,11 +41,15 @@ export type Lookup = {
   /** The pane the answer card sits in. */
   pane: PaneRole;
   block: number;
+  /** The highlighted text the ask is about, so the answer can be remembered against it. */
+  anchor?: { start: number; end: number; text: string };
   thread: { question: string; answer: string }[];
   question: string;
   answer: string;
   streaming: boolean;
   error?: string;
+  /** Shown because the pointer is over a remembered ask; it goes away when the pointer leaves. */
+  peek?: boolean;
 };
 
 export type Popover = "ask" | "refine";
@@ -557,7 +562,7 @@ export class ReaderStore {
     const selection = ui.selection?.pane === role;
     const lookup = ui.lookup?.pane === role;
     if (!selection && !lookup) return;
-    if (lookup) this.stopStream("lookup");
+    if (lookup) this.dropLookup();
     this.setUi({ ...(selection ? { selection: undefined, popover: undefined } : {}), ...(lookup ? { lookup: undefined } : {}) });
   }
 
@@ -674,23 +679,82 @@ export class ReaderStore {
       if (this.state.ui.popover) this.setUi({ selection: undefined, popover: undefined });
       return;
     }
-    this.setUi({ selection, popover: "ask", panePopover: undefined, versionView: this.closedMenus(), refineError: undefined, refineText: undefined });
+    const lookup = this.state.ui.lookup?.peek ? undefined : this.state.ui.lookup;
+    this.setUi({ selection, popover: "ask", panePopover: undefined, lookup, versionView: this.closedMenus(), refineError: undefined, refineText: undefined });
   }
 
   closePopover() {
     this.setUi({ popover: undefined, selection: undefined, panePopover: undefined, refineError: undefined, refineText: undefined });
   }
 
+  /** Hides the answer card. The answer is not lost: it stays under a dotted line on the text it was asked about. */
   closeLookup() {
-    this.stopStream("lookup");
+    this.dropLookup();
     this.setUi({ lookup: undefined, selection: undefined, popover: undefined });
+  }
+
+  /** Stops a running answer, keeping whatever has streamed in so far so nothing that was read disappears. */
+  private dropLookup() {
+    const cur = this.state.ui.lookup;
+    if (cur?.streaming) this.stopStream("lookup");
+    if (cur) this.rememberLookup(cur);
+  }
+
+  /**
+   * Files an answered ask under its page, keyed on the text it was asked about, so a follow-up
+   * replaces the earlier exchange rather than sitting beside it.
+   */
+  private rememberLookup(lookup: Lookup) {
+    const path = this.panePath(lookup.pane);
+    if (!path || !lookup.anchor || !lookup.answer.trim() || lookup.error) return;
+    const { start, end, text } = lookup.anchor;
+    const ask: Ask = { block: lookup.block, start, end, text, thread: lookup.thread, question: lookup.question, answer: lookup.answer };
+    const asks = this.state.session.asks ?? {};
+    const list = asks[path] ?? [];
+    // Matched on the text alone: a refine may have moved it to another block since it was first asked about.
+    const at = list.findIndex((a) => a.text === text);
+    const next = at >= 0 ? list.map((a, i) => (i === at ? ask : a)) : [...list, ask];
+    this.setSession({ asks: { ...asks, [path]: next } });
+  }
+
+  /**
+   * Reopens a remembered ask on its text. Peeked (from hover) the card goes away when the pointer leaves;
+   * opened (from a click) it stays until Esc. `block`, `start` and `end` are where the page found the text now.
+   */
+  showAsk(pane: PaneRole, ask: Ask, at: { block: number; start: number; end: number }, peek: boolean) {
+    const ui = this.state.ui;
+    // A live answer, or one opened on purpose, is not taken over by a hover.
+    if (peek && ui.lookup && !ui.lookup.peek) return;
+    if (ui.popover || ui.panePopover) return;
+    const path = this.panePath(pane);
+    if (!path) return;
+    const body = this.state.bodies[path] ?? "";
+    const paragraph = lexBlocks(body)[at.block]?.text ?? ask.text;
+    const lookup: Lookup = { pane, block: at.block, anchor: { ...at, text: ask.text }, thread: ask.thread, question: ask.question, answer: ask.answer, streaming: false, peek };
+    const selection: Selection = { pane, block: at.block, start: at.start, end: at.end, text: ask.text, paragraph, caretX: 0 };
+    this.setUi({ lookup, selection, popover: undefined, versionView: this.closedMenus() });
+  }
+
+  /** A peeked card the pointer has left: closes it unless it was pinned by a click in the meantime. */
+  hideAskPeek() {
+    if (!this.state.ui.lookup?.peek) return;
+    this.setUi({ lookup: undefined, selection: undefined });
+  }
+
+  /** Keeps a peeked card open after a click on it or its text, so a follow-up can be typed. */
+  pinAsk() {
+    const cur = this.state.ui.lookup;
+    if (cur?.peek) this.setUi({ lookup: { ...cur, peek: false } });
   }
 
   toggleRefine() {
     const ui = this.state.ui;
     if (ui.selection && ui.popover === "ask") return this.setUi({ popover: "refine" });
     if (ui.popover === "refine") return this.setUi({ popover: "ask" });
-    if (ui.selection && ui.lookup) return this.setUi({ popover: "refine", lookup: undefined });
+    if (ui.selection && ui.lookup) {
+      this.dropLookup();
+      return this.setUi({ popover: "refine", lookup: undefined });
+    }
     this.setUi({ panePopover: ui.panePopover === "refine" ? undefined : "refine", popover: undefined, selection: undefined });
   }
 
@@ -698,6 +762,7 @@ export class ReaderStore {
   toggleNewFile() {
     const ui = this.state.ui;
     if (!this.state.session.current) return;
+    this.dropLookup();
     this.setUi({ panePopover: ui.panePopover === "new" ? undefined : "new", popover: undefined, selection: undefined, lookup: undefined });
   }
 
@@ -812,7 +877,8 @@ export class ReaderStore {
     if (block === undefined || !pane) return;
     const thread = existing ? (existing.answer ? [...existing.thread, { question: existing.question, answer: existing.answer }] : existing.thread) : [];
     const q = question || (selection ? `Explain: ${selection.text}` : "");
-    const lookup: Lookup = { pane, block, thread, question: q, answer: "", streaming: true };
+    const anchor = selection ? { start: selection.start, end: selection.end, text: selection.text } : existing?.anchor;
+    const lookup: Lookup = { pane, block, anchor, thread, question: q, answer: "", streaming: true };
     this.setUi({ lookup, popover: undefined, selection: existing?.block === block ? this.state.ui.selection : selection, panePopover: undefined });
     try {
       const ctx = await this.askContext(selection ?? this.state.ui.selection, thread, this.panePath(pane));
@@ -825,7 +891,10 @@ export class ReaderStore {
         },
         done: () => {
           const cur = this.state.ui.lookup;
-          if (cur) this.setUi({ lookup: { ...cur, streaming: false } });
+          if (!cur) return;
+          const finished = { ...cur, streaming: false };
+          this.setUi({ lookup: finished });
+          this.rememberLookup(finished);
         },
         error: (m) => {
           const cur = this.state.ui.lookup;
@@ -869,6 +938,7 @@ export class ReaderStore {
       // Link the source text to the new page so the file itself remembers the branch.
       if (sourceText && opts.block !== undefined) await this.linkSelection(current, opts.block, sourceText, slug);
       this.setSession({ loading: [...this.state.session.loading, path] });
+      this.dropLookup();
       this.setUi({ popover: undefined, selection: undefined, lookup: undefined, panePopover: undefined });
       if (opts.placement === "active") await this.navigate(path);
       else if (opts.placement === "beside" || opts.placement === "below") {
@@ -1227,6 +1297,7 @@ export class ReaderStore {
         this.set({ versionBodies: { ...this.state.versionBodies, [path]: forPage } });
       }
       // Both menus close: the click may have come from the other pane's menu.
+      this.dropLookup();
       this.setUi({ popover: undefined, selection: undefined, lookup: undefined, versionView: this.closedMenus() });
       this.setVersionView(role, { viewing: n, history: false, confirmRestore: false });
     } catch (e) {

@@ -42,6 +42,19 @@ export type Session = {
   splitDirection: SplitDirection;
   /** Display name chosen with Rename on the Home screen; the folder name otherwise. */
   name?: string;
+  /** Answered quick asks, by page path, kept so the answer can be read again from the text it was asked about. */
+  asks?: Record<string, Ask[]>;
+};
+
+/** A quick ask whose answer has come back: the text it was asked about, where that text sat, and the exchange. */
+export type Ask = {
+  block: number;
+  start: number;
+  end: number;
+  text: string;
+  thread: { question: string; answer: string }[];
+  question: string;
+  answer: string;
 };
 
 /** A session the Home screen can reopen. */

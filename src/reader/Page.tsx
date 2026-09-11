@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactElement } from "react";
 import { store, useReader, type PaneRole, type Selection } from "../state/store";
-import { isStubBody, lexBlocks, resolveWikiTarget, type Block } from "../lib/markdown";
+import type { Ask } from "../platform";
+import { flexiblePattern, isStubBody, lexBlocks, resolveWikiTarget, type Block } from "../lib/markdown";
 import { diffBodies, type Change, type PageDiff } from "../lib/diff";
 import { applyWraps, rangeOffsets, type Wrap } from "../lib/wraps";
 import { AnswerCard, AskPopover, BeforeCard, FailedCard, NowCard, RefinePopover, RefineStatus } from "./Popovers";
@@ -11,6 +12,38 @@ type LinkState = "loading" | "unread" | "read" | "missing";
 
 /** How long the skeleton takes to fade before the first streamed text shows. Matches `.skeleton` in app.css. */
 const SKELETON_FADE_MS = 260;
+
+/** How long the pointer may be off a remembered ask and its card before the peeked card closes. */
+const PEEK_GRACE_MS = 220;
+
+/** A remembered ask placed on the page as it reads now. */
+type PlacedAsk = { ask: Ask; index: number; block: number; start: number; end: number };
+
+/**
+ * Finds where each remembered ask's text sits in the page now. The saved offsets are tried first;
+ * when a refine has moved the text, it is searched for; an ask whose text is gone is not shown.
+ */
+function placeAsks(asks: Ask[], blocks: Block[]): PlacedAsk[] {
+  const squash = (t: string) => t.replace(/\s+/g, " ").trim();
+  const out: PlacedAsk[] = [];
+  asks.forEach((ask, index) => {
+    const at = blocks[ask.block];
+    if (at && at.type !== "space" && squash(at.text.slice(ask.start, ask.end)) === ask.text) {
+      out.push({ ask, index, block: ask.block, start: ask.start, end: ask.end });
+      return;
+    }
+    const re = flexiblePattern(ask.text);
+    if (!re) return;
+    for (let i = 0; i < blocks.length; i++) {
+      if (blocks[i].type === "space") continue;
+      const m = re.exec(blocks[i].text);
+      if (!m) continue;
+      out.push({ ask, index, block: i, start: m.index, end: m.index + m[0].length });
+      return;
+    }
+  });
+  return out;
+}
 
 /** A span to tint. Empty spans (pure insertions or deletions) borrow the word before them so there is something to see. */
 function displayRange(text: string, start: number, end: number): { start: number; end: number } {
@@ -105,6 +138,10 @@ export function Page({ path, role }: Props) {
 
   const selection = ui.selection?.pane === role && !viewDiff ? ui.selection : undefined;
 
+  // Remembered asks stay on the page as dotted text; hovering one shows its answer again.
+  const asks = s.session.asks?.[path];
+  const placedAsks = useMemo(() => (asks?.length && !viewDiff ? placeAsks(asks, blocks) : []), [asks, blocks, viewDiff]);
+
   // ----- find in page -----
   // The find bar lives in the pane being read: the main one, or the split when it is fullscreen.
   const findHere = ui.find && (isMain ? !(ui.fullscreen && s.session.split) : ui.fullscreen);
@@ -175,6 +212,10 @@ export function Page({ path, role }: Props) {
         }),
       );
     }
+    for (const p of placedAsks) {
+      const list = out.get(p.block) ?? [];
+      out.set(p.block, [...list, { start: p.start, end: p.end, className: "asked", attrs: { "data-asked": String(p.index) } }]);
+    }
     if (selection) {
       const list = out.get(selection.block) ?? [];
       out.set(selection.block, [...list, { start: selection.start, end: selection.end, className: "sel" }]);
@@ -184,7 +225,7 @@ export function Page({ path, role }: Props) {
       out.set(m.block, [...list, { start: m.start, end: m.end, className: j === findCurrent ? "fnd cur" : "fnd" }]);
     });
     return out;
-  }, [changesByBlock, selection, viewDiff, blocks, matches, findCurrent]);
+  }, [changesByBlock, placedAsks, selection, viewDiff, blocks, matches, findCurrent]);
 
   const EMPTY: Wrap[] = useMemo(() => [], []);
 
@@ -270,8 +311,38 @@ export function Page({ path, role }: Props) {
     store.setSelection(selectionState);
   };
 
+  // ----- remembered asks: hover peeks at the answer, a click keeps it open -----
+
+  // Esc usually leaves the pointer on the text it was asked about; that text does not peek again until the pointer has left it.
+  const suppressed = useRef<{ block: number; text: string } | undefined>(undefined);
+  const lastLookup = useRef(ui.lookup);
+  if (lastLookup.current !== ui.lookup) {
+    const prev = lastLookup.current;
+    lastLookup.current = ui.lookup;
+    if (!ui.lookup && prev && !prev.peek && prev.pane === role && prev.anchor) suppressed.current = { block: prev.block, text: prev.anchor.text };
+  }
+  const peekTimer = useRef<number | undefined>(undefined);
+  const cancelPeekClose = () => {
+    window.clearTimeout(peekTimer.current);
+    peekTimer.current = undefined;
+  };
+  useEffect(() => cancelPeekClose, []);
+  const placedAskFor = (el: HTMLElement | null): PlacedAsk | undefined => {
+    const span = el?.closest<HTMLElement>(".asked");
+    if (!span) return undefined;
+    return placedAsks.find((p) => String(p.index) === span.dataset.asked);
+  };
+  /** True when the element is the dotted text of the ask on show, or the card showing it. */
+  const keepsPeek = (el: HTMLElement | null): boolean => {
+    if (!el || !ui.lookup?.peek) return false;
+    if (el.closest(".card")) return true;
+    const p = placedAskFor(el);
+    return !!p && p.block === ui.lookup.block && p.ask.text === ui.lookup.anchor?.text;
+  };
+
   const onMouseDown = (e: ReactMouseEvent) => {
     const t = e.target as HTMLElement;
+    if (t.closest(".card") && ui.lookup?.peek) store.pinAsk();
     if (t.closest(".pop-wrap, .card, .top")) return;
     if (t.closest(".chg, .oldchg")) return;
     setActiveChange(undefined);
@@ -286,13 +357,46 @@ export function Page({ path, role }: Props) {
       void store.followWikiLink(a.dataset.target ?? "", e);
       return;
     }
+    const asked = placedAskFor(t);
+    if (asked) {
+      cancelPeekClose();
+      if (ui.lookup?.peek) store.pinAsk();
+      else store.showAsk(role, asked.ask, asked, false);
+      return;
+    }
     const chg = t.closest<HTMLElement>(".chg, .oldchg");
     if (chg) setActiveChange(chg.dataset.change);
   };
 
   const onMouseOver = (e: ReactMouseEvent) => {
-    const chg = (e.target as HTMLElement).closest<HTMLElement>(".chg, .oldchg");
+    const t = e.target as HTMLElement;
+    if (keepsPeek(t)) {
+      cancelPeekClose();
+      return;
+    }
+    const asked = placedAskFor(t);
+    if (asked && !ui.lookup) {
+      const held = suppressed.current;
+      if (held && held.block === asked.block && held.text === asked.ask.text) return;
+      cancelPeekClose();
+      store.showAsk(role, asked.ask, asked, true);
+      return;
+    }
+    const chg = t.closest<HTMLElement>(".chg, .oldchg");
     if (chg && chg.dataset.change !== activeChange) setActiveChange(chg.dataset.change);
+  };
+
+  const onMouseOut = (e: ReactMouseEvent) => {
+    const from = placedAskFor(e.target as HTMLElement);
+    const to = placedAskFor(e.relatedTarget as HTMLElement | null);
+    if (from && from.index !== to?.index) suppressed.current = undefined;
+    if (!ui.lookup?.peek || !keepsPeek(e.target as HTMLElement)) return;
+    if (keepsPeek(e.relatedTarget as HTMLElement | null)) return;
+    cancelPeekClose();
+    peekTimer.current = window.setTimeout(() => {
+      peekTimer.current = undefined;
+      store.hideAskPeek();
+    }, PEEK_GRACE_MS);
   };
 
   const source = meta?.source ? s.pages[meta.source] : undefined;
@@ -405,7 +509,7 @@ export function Page({ path, role }: Props) {
       <TopStrip path={path} role={role} diff={reviewDiff}>
         {findHere && <FindBar count={matches.length} current={findCurrent} />}
       </TopStrip>
-      <div className="article" ref={articleRef} onMouseUp={onMouseUp} onMouseDown={onMouseDown} onClick={onClick} onMouseOver={onMouseOver}>
+      <div className="article" ref={articleRef} onMouseUp={onMouseUp} onMouseDown={onMouseDown} onClick={onClick} onMouseOver={onMouseOver} onMouseOut={onMouseOut}>
         {source && (
           <div className="crumb" onClick={onCrumb} title={`Back to ${source.title}`}>
             <span className="arrow">↩</span>

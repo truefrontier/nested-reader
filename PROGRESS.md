@@ -1,5 +1,36 @@
 # Progress
 
+## Session: 2026-09-11 — quick asks stay on the page after Esc
+
+### Leading assumptions
+- "Persist" means the answer is kept with the session, not only until the next render: `session.asks` goes into `.reader/session.json` with the rest of the session, so the dotted text survives navigating away, closing the app and reopening the folder.
+- "Shows again on hover" means a peek: the card appears while the pointer is on the dotted text or the card itself, and closes shortly after the pointer leaves both. A click pins it open so a follow-up can be typed; Esc closes it again.
+- An answer that came back as an error is not remembered. An answer closed while still streaming keeps the part that had arrived.
+- The dotted line is muted grey, turning accent on hover, so it reads as quieter than a wiki link (solid accent) and a pending change (dotted accent).
+
+### World facts
+- `Ask` (`src/platform/types.ts`) holds the block, offsets, text and the exchange. `Lookup` gained `anchor` (the highlighted text) and `peek`.
+- `rememberLookup` in the store files the ask when streaming finishes, and `dropLookup` does the same for partial answers wherever a card used to be dropped (Esc, pane change, ⌘R, ⌘N, a new page, viewing a version). Matching is by text alone so a follow-up replaces the earlier exchange, even after a refine moved the text.
+- `placeAsks` in `Page.tsx` tries the saved offsets, then searches with `flexiblePattern`; text that is gone draws nothing. The wrap class is `.asked`, with `data-asked` carrying the ask's index.
+- Hover, leave and click are handled in the article's mouse handlers; `PEEK_GRACE_MS` is the leave delay. After Esc the text does not peek again until the pointer has left it once, otherwise the card came straight back because the pointer was still resting on the text.
+- The browser build's mock only answers when a model is chosen; with none it returns "Choose a model in Settings › AI." as an error, which is not remembered.
+
+### Timeline
+1. Kevin reported that a quick answer is gone for good after Esc and asked for a dotted-line link on the text that shows the answer on hover.
+2. Added the remembered-asks list to the session, the store methods, the page wraps, the hover and click handling, and the styles.
+3. Drove the browser build with Playwright: ask, Esc, hover, leave, hover into the card, click to pin, follow-up, Esc, follow a link and come back. The dotted text was there at every step and the card showed and hid as intended.
+4. Committed on `claude/blissful-ritchie-ihfr0w` and pushed.
+
+### Verification
+- `tsc` and `pnpm build` pass.
+- Playwright run against `pnpm dev` on the sample folder, with a model set in the mock's settings: the card is present after the ask, absent after Esc (pointer still on the text, wiggled, and away), present on hover, absent after leaving, present after moving from the text into the card, present after a click even when the pointer leaves, and the follow-up produced one dotted span holding a two-answer thread.
+- Not checked: the desktop app, and survival across a relaunch (the mock keeps sessions in memory; the Tauri side writes the same JSON to disk).
+
+### Possible next steps
+- Try it in the desktop app: ask, quit, relaunch, hover.
+- A way to forget a remembered ask (a small "Forget" in the pinned card).
+- The peek sets the highlight as well as the card; if that feels heavy, the highlight could be left to the pinned state only.
+
 ## Session: 2026-09-11 — the bundle identifier follows nestedreader.app
 
 ### Leading assumptions

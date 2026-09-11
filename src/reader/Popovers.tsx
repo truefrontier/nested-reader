@@ -49,12 +49,13 @@ function verbFor(e: KeyboardEvent): Verb | null {
   return "quick";
 }
 
-function useAutoFocus() {
+function useAutoFocus(enabled = true) {
   const ref = useRef<HTMLInputElement>(null);
   useEffect(() => {
+    if (!enabled) return;
     const t = window.setTimeout(() => ref.current?.focus({ preventScroll: true }), 60);
     return () => window.clearTimeout(t);
-  }, []);
+  }, [enabled]);
   return ref;
 }
 
@@ -329,7 +330,8 @@ export function RefineStatus({
 }
 
 export function AnswerCard({ lookup, onFollowUp, onEsc, onRefine }: { lookup: Lookup; onFollowUp: Submit; onEsc: () => void; onRefine?: () => void }) {
-  const ref = useAutoFocus();
+  // A card peeked at from hover must not pull focus; it takes it once a click keeps it open.
+  const ref = useAutoFocus(!lookup.peek);
   const [q, setQ] = useState("");
   const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Escape") {

@@ -631,6 +631,16 @@ button {
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
 }
+/* A remembered quick ask: dotted under its text; hovering shows the answer again, a click keeps it open. */
+.asked {
+  border-bottom: 1px dotted var(--mute);
+  cursor: pointer;
+}
+.asked:hover,
+.sel .asked,
+.asked .sel {
+  border-bottom-color: var(--acc);
+}
 .chg {
   background: var(--rev);
   border-bottom: 1px dotted var(--acc);
