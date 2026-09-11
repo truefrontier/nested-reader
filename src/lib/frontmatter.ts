@@ -13,8 +13,16 @@ export function parseFrontMatter(raw: string): ParsedPage {
     if (i <= 0) continue;
     const key = line.slice(0, i).trim();
     let value = line.slice(i + 1).trim();
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-      value = value.slice(1, -1);
+    if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) {
+      // serializeFrontMatter writes these as JSON strings, so quotes and backslashes inside are escaped.
+      try {
+        value = JSON.parse(value) as string;
+      } catch {
+        value = value.slice(1, -1);
+      }
+    } else if (value.length >= 2 && value.startsWith("'") && value.endsWith("'")) {
+      // YAML single quotes double a quote to escape it.
+      value = value.slice(1, -1).replace(/''/g, "'");
     }
     meta[key] = value;
   }

@@ -103,7 +103,7 @@ export function Page({ path, role }: Props) {
     return lexBlocks(shownBody ?? "");
   }, [viewDiff, reviewDiff, shownBody]);
 
-  const selection = isMain && !viewDiff ? ui.selection : undefined;
+  const selection = ui.selection?.pane === role && !viewDiff ? ui.selection : undefined;
 
   // ----- find in page -----
   // The find bar lives in the pane being read: the main one, or the split when it is fullscreen.
@@ -134,12 +134,12 @@ export function Page({ path, role }: Props) {
   }, [currentMatch?.block, currentMatch?.start, findQuery]);
   // Stepping to a match (⌘G, ↵, the arrows) selects it, so the ask or refine box opens there as if it had been dragged over.
   useEffect(() => {
-    if (!ui.findSelect || !findHere || !isMain || viewDiff || !currentMatch) return;
+    if (!ui.findSelect || !findHere || viewDiff || !currentMatch) return;
     const block = blocks[currentMatch.block];
     if (!block) return;
     const text = block.text.slice(currentMatch.start, currentMatch.end).replace(/\s+/g, " ").trim();
     if (!text) return;
-    store.selectMatch({ block: currentMatch.block, start: currentMatch.start, end: currentMatch.end, text, paragraph: block.text, caretX: midXFor(".fnd.cur") });
+    store.selectMatch({ pane: role, block: currentMatch.block, start: currentMatch.start, end: currentMatch.end, text, paragraph: block.text, caretX: midXFor(".fnd.cur") });
   }, [ui.findSelect]);
   // What has been typed into the ask/refine box; survives the ⌘R switch, resets with a new selection.
   const [draft, setDraft] = useState("");
@@ -229,10 +229,10 @@ export function Page({ path, role }: Props) {
   /** Horizontal midpoint of a change's highlight. */
   const caretXFor = (id: string): number => midXFor(`[data-change="${id}"]`);
 
-  // ----- selection handling (main pane only) -----
+  // ----- selection handling: either pane, with the box opening in the pane the text was highlighted in -----
 
   const onMouseUp = () => {
-    if (!isMain || viewDiff) return;
+    if (viewDiff) return;
     const sel = window.getSelection();
     const root = articleRef.current;
     if (!sel || !root) return;
@@ -258,6 +258,7 @@ export function Page({ path, role }: Props) {
     const blockRect = block.getBoundingClientRect();
     const bounds = range.getBoundingClientRect();
     const selectionState: Selection = {
+      pane: role,
       block: index,
       start,
       end,
@@ -274,7 +275,7 @@ export function Page({ path, role }: Props) {
     if (t.closest(".pop-wrap, .card, .top")) return;
     if (t.closest(".chg, .oldchg")) return;
     setActiveChange(undefined);
-    if (isMain && (ui.popover || ui.selection) && !ui.lookup) store.closePopover();
+    if ((ui.popover || ui.selection) && !ui.lookup) store.closePopover();
   };
 
   const onClick = (e: ReactMouseEvent) => {
@@ -301,83 +302,81 @@ export function Page({ path, role }: Props) {
 
   const renderAfter = (i: number) => {
     const out: ReactElement[] = [];
-    if (isMain) {
-      // Keyed on the range so moving between find matches in one block refocuses the box.
-      if (selection?.block === i && ui.popover === "ask") {
-        out.push(
-          <AskPopover
-            key={`ask-${selection.start}-${selection.end}`}
-            caretLeft={selection.caretX}
-            value={draft}
-            onChange={setDraft}
-            onSubmit={(q, verb, alt) => {
-              setDraft("");
-              void store.ask(q, verb, alt);
-            }}
-            onEsc={() => store.closePopover()}
-            onRefine={() => store.toggleRefine()}
-          />,
-        );
-      }
-      if (selection?.block === i && ui.popover === "refine") {
-        out.push(
-          <RefinePopover
-            key={`refine-${selection.start}-${selection.end}`}
-            caretLeft={selection.caretX}
-            value={draft}
-            onChange={setDraft}
-            onSubmit={(text, scope) => void store.refine(text, scope)}
-            onEsc={() => store.closePopover()}
-            onToggle={() => store.toggleRefine()}
-          />,
-        );
-      }
-      if (selection?.block === i && !ui.popover && (ui.refining === "selection" || ui.refineError?.scope === "selection")) {
-        out.push(
-          <RefineStatus
-            key="refine-status"
-            scope="selection"
-            text={ui.refineText}
-            error={ui.refineError?.message}
-            caretLeft={selection.caretX}
-            onRetry={() => store.retryRefine()}
-            onDismiss={() => store.closePopover()}
-          />,
-        );
-      }
-      if (ui.lookup?.block === i) {
-        out.push(
-          <AnswerCard
-            key="lookup"
-            lookup={ui.lookup}
-            onFollowUp={(q, verb, alt) => void store.ask(q, verb, alt)}
-            onEsc={() => store.closeLookup()}
-            onRefine={() => store.toggleRefine()}
-          />,
-        );
-      }
-      if (activeChange) {
-        const list = changesByBlock.get(i) ?? [];
-        const c = list.find((x) => x.id === activeChange);
-        if (c) {
-          if (viewDiff) {
-            out.push(<NowCard key="now" change={c} versionN={versionsCurrentN} caretLeft={caretXFor(c.id)} />);
-          } else {
-            const index = reviewChanges.findIndex((x) => x.id === c.id) + 1;
-            out.push(
-              <BeforeCard
-                key="before"
-                change={c}
-                index={index}
-                total={reviewChanges.length}
-                caretLeft={caretXFor(c.id)}
-                onUndo={() => {
-                  setActiveChange(undefined);
-                  void store.undoChange(c, path);
-                }}
-              />,
-            );
-          }
+    // Keyed on the range so moving between find matches in one block refocuses the box.
+    if (selection?.block === i && ui.popover === "ask") {
+      out.push(
+        <AskPopover
+          key={`ask-${selection.start}-${selection.end}`}
+          caretLeft={selection.caretX}
+          value={draft}
+          onChange={setDraft}
+          onSubmit={(q, verb, alt) => {
+            setDraft("");
+            void store.ask(q, verb, alt);
+          }}
+          onEsc={() => store.closePopover()}
+          onRefine={() => store.toggleRefine()}
+        />,
+      );
+    }
+    if (selection?.block === i && ui.popover === "refine") {
+      out.push(
+        <RefinePopover
+          key={`refine-${selection.start}-${selection.end}`}
+          caretLeft={selection.caretX}
+          value={draft}
+          onChange={setDraft}
+          onSubmit={(text, scope) => void store.refine(text, scope)}
+          onEsc={() => store.closePopover()}
+          onToggle={() => store.toggleRefine()}
+        />,
+      );
+    }
+    if (selection?.block === i && !ui.popover && (ui.refining === "selection" || ui.refineError?.scope === "selection")) {
+      out.push(
+        <RefineStatus
+          key="refine-status"
+          scope="selection"
+          text={ui.refineText}
+          error={ui.refineError?.message}
+          caretLeft={selection.caretX}
+          onRetry={() => store.retryRefine()}
+          onDismiss={() => store.closePopover()}
+        />,
+      );
+    }
+    if (ui.lookup?.pane === role && ui.lookup.block === i) {
+      out.push(
+        <AnswerCard
+          key="lookup"
+          lookup={ui.lookup}
+          onFollowUp={(q, verb, alt) => void store.ask(q, verb, alt)}
+          onEsc={() => store.closeLookup()}
+          onRefine={() => store.toggleRefine()}
+        />,
+      );
+    }
+    if (isMain && activeChange) {
+      const list = changesByBlock.get(i) ?? [];
+      const c = list.find((x) => x.id === activeChange);
+      if (c) {
+        if (viewDiff) {
+          out.push(<NowCard key="now" change={c} versionN={versionsCurrentN} caretLeft={caretXFor(c.id)} />);
+        } else {
+          const index = reviewChanges.findIndex((x) => x.id === c.id) + 1;
+          out.push(
+            <BeforeCard
+              key="before"
+              change={c}
+              index={index}
+              total={reviewChanges.length}
+              caretLeft={caretXFor(c.id)}
+              onUndo={() => {
+                setActiveChange(undefined);
+                void store.undoChange(c, path);
+              }}
+            />,
+          );
         }
       }
     }

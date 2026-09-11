@@ -23,6 +23,8 @@ import { newFileMessages, newPageMessages, quickAnswerMessages, refineMessages, 
 import { growsFrom, sessionPages } from "../lib/tree";
 
 export type Selection = {
+  /** The pane the text was highlighted in: the box opens there and its verbs act on that pane's page. */
+  pane: PaneRole;
   block: number;
   start: number;
   end: number;
@@ -33,6 +35,8 @@ export type Selection = {
 };
 
 export type Lookup = {
+  /** The pane the answer card sits in. */
+  pane: PaneRole;
   block: number;
   thread: { question: string; answer: string }[];
   question: string;
@@ -496,6 +500,7 @@ export class ReaderStore {
       return;
     }
     await this.loadBody(path);
+    this.dropPaneUi("split");
     this.setSession({ split: path, splitDirection: placement, sidebar: false });
     this.setUi({ versionView: { ...this.state.ui.versionView, split: closedVersionView }, syncScroll: true });
     await this.refreshVersions(path);
@@ -540,8 +545,19 @@ export class ReaderStore {
   }
 
   closeSplit() {
+    this.dropPaneUi("split");
     this.setSession({ split: undefined });
     this.setUi({ fullscreen: false, versionView: { ...this.state.ui.versionView, split: closedVersionView } });
+  }
+
+  /** Drops the highlight, its box and the answer card sitting in `role` when that pane's page changes or the pane closes. */
+  private dropPaneUi(role: PaneRole) {
+    const ui = this.state.ui;
+    const selection = ui.selection?.pane === role;
+    const lookup = ui.lookup?.pane === role;
+    if (!selection && !lookup) return;
+    if (lookup) this.stopStream("lookup");
+    this.setUi({ ...(selection ? { selection: undefined, popover: undefined } : {}), ...(lookup ? { lookup: undefined } : {}) });
   }
 
   /** Turns linked scrolling of two panes showing the same page on or off. */
@@ -713,7 +729,7 @@ export class ReaderStore {
     this.streams.delete(key);
   }
 
-  private async askContext(selection?: Selection, thread?: Lookup["thread"], pagePath?: string): Promise<AskContext | null> {
+  private async askContext(selection?: Pick<Selection, "text" | "paragraph">, thread?: Lookup["thread"], pagePath?: string): Promise<AskContext | null> {
     const current = pagePath ?? this.state.session.current;
     if (!current) return null;
     const body = await this.loadBody(current);
@@ -752,18 +768,21 @@ export class ReaderStore {
     const mode = verb === "deep" ? "deep-dive" : "new-page";
     const preferred = verb === "deep" ? this.state.settings.deepDiveOpens : this.state.settings.newPageOpens;
     const placement = alt ? flipPlacement(preferred) : preferred;
-    await this.createPage({ question, mode, placement, sourceText: selection?.text, block: selection?.block ?? ui.lookup?.block });
+    // The page grows from the page the highlight (or the answer card) is in, which may be the split pane's.
+    const source = this.panePath(selection?.pane ?? ui.lookup?.pane ?? "main");
+    await this.createPage({ question, mode, placement, source, sourceText: selection?.text, block: selection?.block ?? ui.lookup?.block });
   }
 
   private async quickAnswer(question: string, selection: Selection | undefined, existing?: Lookup) {
     const block = selection?.block ?? existing?.block;
-    if (block === undefined) return;
+    const pane = selection?.pane ?? existing?.pane;
+    if (block === undefined || !pane) return;
     const thread = existing ? (existing.answer ? [...existing.thread, { question: existing.question, answer: existing.answer }] : existing.thread) : [];
     const q = question || (selection ? `Explain: ${selection.text}` : "");
-    const lookup: Lookup = { block, thread, question: q, answer: "", streaming: true };
+    const lookup: Lookup = { pane, block, thread, question: q, answer: "", streaming: true };
     this.setUi({ lookup, popover: undefined, selection: existing?.block === block ? this.state.ui.selection : selection, panePopover: undefined });
     try {
-      const ctx = await this.askContext(selection ?? this.state.ui.selection, thread);
+      const ctx = await this.askContext(selection ?? this.state.ui.selection, thread, this.panePath(pane));
       if (!ctx) return;
       const { system, messages } = quickAnswerMessages(ctx, q);
       this.stream("lookup", this.request(system, messages, 400), {
@@ -799,10 +818,11 @@ export class ReaderStore {
     await this.createPage({ question: brief, mode, placement, from: "session" });
   }
 
-  async createPage(opts: { question: string; mode: "new-page" | "deep-dive"; placement: Placement; sourceText?: string; block?: number; from?: PageOrigin }) {
+  async createPage(opts: { question: string; mode: "new-page" | "deep-dive"; placement: Placement; source?: string; sourceText?: string; block?: number; from?: PageOrigin }) {
     const { folder, session, settings, pages } = this.state;
-    const current = session.current;
-    if (!folder || !current) return;
+    // The new page hangs off `source`: the page the highlight was in, or the main page when nothing says otherwise.
+    const current = opts.source ?? session.current;
+    if (!folder || !current || !pages[current]) return;
     const sourceText = opts.sourceText?.trim();
     const question = opts.question.trim() || (sourceText ? sourceText : "");
     const title = titleFromQuestion(question || pages[current].title);
@@ -953,9 +973,10 @@ export class ReaderStore {
 
   async refine(instruction: string, scope: RefineScope) {
     const { session, folder } = this.state;
-    const current = session.current;
-    if (!folder || !current || !instruction.trim()) return;
     const selection = this.state.ui.selection;
+    // The box under a highlight acts on the page of the pane the highlight is in; the pane-level box (⌘R) acts on the main page.
+    const current = selection ? this.panePath(selection.pane) : session.current;
+    if (!folder || !current || !instruction.trim()) return;
     if (scope === "selection" && !selection) return;
     this.setUi({ refining: scope, refineText: instruction, refineError: undefined, popover: undefined, panePopover: undefined });
     let ok = true;
@@ -983,7 +1004,7 @@ export class ReaderStore {
         const body = await this.loadBody(path);
         const blocks = lexBlocks(body);
         const target = selection ? selection.text : body;
-        const ctx = await this.askContext(selection);
+        const ctx = await this.askContext(selection, undefined, path);
         if (!ctx) return resolve();
         const { system, messages } = refineMessages({ ...ctx, page: { meta: this.state.pages[path], body } }, instruction, selection ? "selection" : "page", target);
         let out = "";

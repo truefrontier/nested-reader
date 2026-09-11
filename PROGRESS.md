@@ -191,3 +191,28 @@
 - Let ⌘N inside the refine box swap to the new-page box and back, the way ⌘R swaps ask and refine.
 - Show a status card for a ⌘N page sent to the background, since the only signal today is the tree's loading dot and a toast on failure.
 - Consider recording the origin in front matter (rather than inferring it from the missing link) if other origins appear later.
+
+## Session: 2026-09-11 — highlights in the split pane, nested tree, quoted titles
+
+### Leading assumptions
+- "Highlighting in a nest page doesn't show the popover" means a child page: New Page ⌘↵ opens it beside by default, and the split pane ignored highlights on purpose (an earlier session's "main pane only" rule). The fix makes a highlight belong to the pane it was dragged in rather than moving the page to the main pane.
+- "Nested pages aren't nested in the sidebar or timeline (map works)" means the tree should hang every page under its `source`, the way the Web map already does, not only Deep Dives.
+- Titles showing `\"` come from `serializeFrontMatter` writing JSON strings while `parseFrontMatter` only stripped the outer quotes.
+
+### World facts
+- `Selection` and `Lookup` now carry `pane: PaneRole`; `Page` filters by its role, and `ask`, `quickAnswer`, `createPage` (new `source` option) and `refine` read the page through `panePath(pane)`. `dropPaneUi("split")` runs when the split pane's page changes or closes.
+- `buildTree` nests any page whose `source` is in the folder (roots newest first, children oldest first) and lists pages caught in a source cycle flat so they stay reachable.
+- `parseFrontMatter` JSON-parses double-quoted values (falling back to stripping the quotes) and unescapes `''` in single-quoted ones. Files written before the fix hold valid JSON strings, so they read correctly now with no migration.
+- The change cards for a pending review (Before / Now) are still drawn in the main pane only; that was not part of the report.
+
+### Timeline
+1. Pulled `origin/main` (pull request #2 had landed). Reproduced all three in the browser mock: a highlight in the split pane selected text with no box, the sidebar listed the three session pages flat, and the round trip of a quoted title kept the backslashes.
+2. Made the selection pane-aware, nested the tree by `source`, fixed the parser. Updated `docs/architecture.md`.
+3. Verified in the mock: the ask box opens in the split pane; ⌘↵ there grows a page whose crumb points at the split page and links the highlight in that page; ↵ puts the answer card in the split pane; ⌘R ↵ refines the split page (its strip shows 1 change, the main page untouched); closing the split drops its highlight; the sidebar and Timeline show four levels (d0–d3). A script round-tripped titles with quotes, colons, backslashes and YAML single quotes.
+
+### Verification
+- `tsc` and `pnpm build` pass. No Rust changes.
+
+### Possible next steps
+- Show the Before / Now change cards in the split pane too, since the tints and strip already appear there.
+- Keep a split-pane highlight when the main pane navigates (today `navigate` resets all of `ui`).
