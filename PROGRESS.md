@@ -17,6 +17,7 @@
 1. Kevin sent a screenshot of the README's Milestones table with a fifth column and asked for the first column not to wrap.
 2. Read the renderer, the diff, the wrap code and the article CSS; found no table CSS at all.
 3. Reproduced the fifth column with a probe page under the dev server, fixed `applyWraps`, added the table CSS, re-ran the probe, then built and committed.
+4. Kevin asked to commit and merge into main. Fast-forwarded `main` to the branch commit (7de5f1d) and pushed it.
 
 ### Possible next steps
 - Tables wider than the reading column overflow it; a horizontal scroll container around `.article table` would keep them inside the pane.
