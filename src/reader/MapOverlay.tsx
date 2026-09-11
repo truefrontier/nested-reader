@@ -57,7 +57,7 @@ function Web({ open }: { open: Opener }) {
         return (
           <div key={n.path} className={cls.join(" ")} style={{ left: `${n.x * 100}%`, top: `${n.y * 100}%` }} onClick={open(n.path)} title={s.pages[n.path]?.title}>
             <span className="label">{s.pages[n.path]?.title}</span>
-            {(d === "unread" || d === "pending") && <span className="gdot" />}
+            {(d === "unread" || d === "pending" || !!s.session.pending[n.path]) && <span className="gdot" />}
           </div>
         );
       })}

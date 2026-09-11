@@ -218,3 +218,6 @@ export const mockPlatform: Platform = {
     return () => settingsListeners.delete(handler);
   },
 };
+
+// Module-level state cannot survive a hot update; reload instead.
+if (import.meta.hot) import.meta.hot.accept(() => location.reload());

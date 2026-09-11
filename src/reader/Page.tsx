@@ -8,6 +8,21 @@ import { TopStrip } from "./TopStrip";
 
 type LinkState = "loading" | "unread" | "read" | "missing";
 
+/** A span to tint. Empty spans (pure insertions or deletions) borrow the word before them so there is something to see. */
+function displayRange(text: string, start: number, end: number): { start: number; end: number } {
+  if (end > start) return { start, end };
+  let s = start;
+  while (s > 0 && /\s/.test(text[s - 1])) s--;
+  while (s > 0 && !/\s/.test(text[s - 1])) s--;
+  if (s === start) {
+    let e = end;
+    while (e < text.length && /\s/.test(text[e])) e++;
+    while (e < text.length && !/\s/.test(text[e])) e++;
+    return { start, end: e };
+  }
+  return { start: s, end: Math.max(end, start) };
+}
+
 function BlockView({ html, wraps, className, index, linkState }: { html: string; wraps: Wrap[]; className: string; index: number; linkState: (target: string) => LinkState }) {
   const ref = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -74,13 +89,13 @@ export function Page({ path, role }: Props) {
   const wrapsFor = useMemo(() => {
     const out = new Map<number, Wrap[]>();
     for (const [i, list] of changesByBlock) {
+      const text = blocks[i]?.text ?? "";
       out.set(
         i,
-        list.map((c) =>
-          viewDiff
-            ? { start: c.oldStart, end: c.oldEnd, className: "oldchg", attrs: { "data-change": c.id } }
-            : { start: c.start, end: c.end, className: "chg", attrs: { "data-change": c.id } },
-        ),
+        list.map((c) => {
+          const range = viewDiff ? displayRange(text, c.oldStart, c.oldEnd) : displayRange(text, c.start, c.end);
+          return { ...range, className: viewDiff ? "oldchg" : "chg", attrs: { "data-change": c.id } };
+        }),
       );
     }
     if (selection) {
@@ -88,7 +103,7 @@ export function Page({ path, role }: Props) {
       out.set(selection.block, [...list, { start: selection.start, end: selection.end, className: "sel" }]);
     }
     return out;
-  }, [changesByBlock, selection, viewDiff]);
+  }, [changesByBlock, selection, viewDiff, blocks]);
 
   const EMPTY: Wrap[] = useMemo(() => [], []);
 

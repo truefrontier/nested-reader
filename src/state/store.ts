@@ -99,6 +99,7 @@ export class ReaderStore {
   private streams = new Map<string, StreamHandle>();
   private saveTimer: number | undefined;
   private writeTimers = new Map<string, number>();
+  private initialized = false;
 
   get = () => this.state;
 
@@ -146,6 +147,8 @@ export class ReaderStore {
   // ---------- lifecycle ----------
 
   async init() {
+    if (this.initialized) return;
+    this.initialized = true;
     try {
       const settings = await platform.getSettings();
       this.set({ settings });
@@ -825,3 +828,6 @@ export const store = new ReaderStore();
 export function useReader(): ReaderState {
   return useSyncExternalStore(store.subscribe, store.get, store.get);
 }
+
+// Module-level state cannot survive a hot update; reload instead.
+if (import.meta.hot) import.meta.hot.accept(() => location.reload());

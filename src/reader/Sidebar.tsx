@@ -56,7 +56,7 @@ export function Sidebar() {
                 {showTick && <span className="tick" />}
                 <span className={`dot ${d === "current" ? "current" : d === "loading" ? "loading" : ""}`} />
                 <span className={`label${d === "loading" ? " shimmer" : ""}`}>{p.title}</span>
-                {(d === "unread" || d === "pending") && <span className="gdot" />}
+                {(d === "unread" || d === "pending" || !!s.session.pending[it.path]) && <span className="gdot" />}
               </div>
             );
           })}

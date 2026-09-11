@@ -111,14 +111,26 @@ export function layoutWeb(pages: Record<string, PageMeta>, focus: string | undef
   measure(root);
   const nodes: MapNode[] = [];
   const edges: MapEdge[] = [];
+  const depthOf = (path: string): number => {
+    const kids = children.get(path) ?? [];
+    return kids.length ? 1 + Math.max(...kids.map((k) => depthOf(k.path))) : 0;
+  };
+  const maxDepth = Math.max(1, depthOf(root));
+  const step = 0.3 / maxDepth;
+  const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
   const place = (path: string, depth: number, a0: number, a1: number) => {
     const angle = (a0 + a1) / 2;
-    const r = depth === 0 ? 0 : 0.16 + depth * 0.14;
-    nodes.push({ path, x: 0.5 + Math.cos(angle) * r * 1.35, y: 0.5 + Math.sin(angle) * r * 1.1, depth });
+    const r = depth === 0 ? 0 : 0.08 + depth * step;
+    nodes.push({
+      path,
+      x: clamp(0.5 + Math.cos(angle) * r * 1.4, 0.12, 0.88),
+      y: clamp(0.5 + Math.sin(angle) * r * 1.05, 0.14, 0.9),
+      depth,
+    });
     const kids = children.get(path) ?? [];
     const total = kids.reduce((acc, k) => acc + (size.get(k.path) ?? 1), 0);
-    let a = depth === 0 ? a0 : a0;
-    const span = depth === 0 ? Math.PI * 2 : a1 - a0;
+    let a = a0;
+    const span = a1 - a0;
     for (const k of kids) {
       const w = (span * (size.get(k.path) ?? 1)) / Math.max(total, 1);
       edges.push({ from: path, to: k.path });
