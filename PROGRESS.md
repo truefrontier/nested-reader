@@ -1,5 +1,37 @@
 # Progress
 
+## Session: 2026-09-11 — ⌘O opens a folder or a file, and the app is called Nested
+
+### Leading assumptions
+- "⌘O should be the only open shortcut and it should open folders and/or files" means one Open… item on ⌘O, and one panel where a folder and a `.md` are both selectable. ⌘⇧O and Open File… go away rather than pointing at the same panel.
+- The panel is a standalone window (`runModal`), the macOS convention for Open… in TextEdit and Xcode. The dialog plugin's panel was a sheet on the main window.
+- Settings › General › Folder is a default folder, not an open shortcut, so it keeps a folder-only picker. "Ask" at launch uses the new panel.
+- "App name should be Nested" means every name a user sees. The bundle identifier `com.truefrontier.markdown-learner` and the crate and package names stay: the identifier names the Keychain service and the settings folder, so renaming it would orphan saved API keys, `settings.json` and `recents.json` unless migrated.
+
+### World facts
+- `pick_path` in `src-tauri/src/lib.rs` runs `open_panel::folder_or_markdown()` (`src-tauri/src/open_panel.rs`) on the main thread: an NSOpenPanel with files and directories both choosable, `.md`/`.markdown` filtered, and a message line. Non-macOS builds fall back to `pick_folder`. `objc2`, `objc2-app-kit` and `objc2-foundation` are direct macOS dependencies now, with the feature lists `rfd` already enables, so nothing new compiles.
+- `Platform.pickPath` replaces `pickFile`; `pickFolder` stays for Settings. The store's `openPath(path, otherwise)` dispatches by `pathKind` and is shared by ⌘O, drops and the launch-time "ask". The menu id is `"open"`; the browser build's ⌘O branch ignores ⌘⇧O.
+- Home shows one card, "Open a folder or file… ⌘O"; `.home-cards` is a single column.
+- Visible name: `productName`, both window titles, the app menu, About, `index.html`, README and `docs/architecture.md`.
+- A `src-tauri/target` copied from another checkout fails `tauri dev` with `failed to read plugin permissions` pointing at the old path. `cargo clean -p` on the packages whose `target/debug/build/*/output` holds the old path fixes it in one rebuild.
+
+### Timeline
+1. Pulled `main` (already up to date), fixed the stale build cache, ran `pnpm tauri dev`.
+2. Kevin asked for ⌘O as the only open shortcut, taking folders and files. Replaced the two dialog-plugin commands with the NSOpenPanel command, rewired the store, key handler, Home and docs.
+3. Kevin asked to pull before committing; `main` had gained pull request #5 (folders in the sidebar). Pulled under the working changes with no conflicts.
+4. Kevin asked for the app to be called Nested. Renamed every visible name.
+5. Committed on `feature/open-panel-and-nested-name`.
+
+### Verification
+- `tsc` and `pnpm build` pass; the Rust side rebuilds with no warnings.
+- In the dev app, checked through System Events: the File menu is New Page…, Open…, Close Pane; Open… carries ⌘O with no other modifier; choosing it opens a panel whose message reads "Open a folder of Markdown notes, or a single .md file.", with folders selectable and `.md` files enabled beside them; Escape closes it. The menu bar reads Nested, About Nested, and the window title is Nested.
+- In the browser mock: Home shows the one card; ⌘O opens the sample folder; ⌘⇧O does nothing.
+
+### Possible next steps
+- Decide whether the bundle identifier, crate and package names follow the rename; that needs a one-time move of the Keychain entries and the config folder.
+- `design/Research Reader.dc.html` and `design/Research Reader Wireframes.dc.html` still show Open file… beside Open folder….
+- The browser mock's ⌘O always opens the sample folder, so file sessions can only be tried in the app now.
+
 ## Session: 2026-09-11 — folders in the sidebar, and a draggable sidebar width
 
 ### Leading assumptions

@@ -26,6 +26,13 @@ walkdir = "2"
 chrono = "0.4"
 thiserror = "2"
 
+# ⌘O shows one Open panel for a folder or a single Markdown file. rfd, behind the dialog
+# plugin, cannot do both in one panel, so macOS talks to NSOpenPanel directly.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSOpenPanel", "NSPanel", "NSResponder", "NSSavePanel", "NSWindow"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSString", "NSURL"] }
+
 [profile.release]
 codegen-units = 1
 lto = true

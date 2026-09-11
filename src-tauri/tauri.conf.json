@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Markdown Learner",
+  "productName": "Nested",
   "version": "0.1.0",
   "identifier": "com.truefrontier.markdown-learner",
   "build": {
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Markdown Learner",
+        "title": "Nested",
         "width": 1120,
         "height": 720,
         "minWidth": 720,
