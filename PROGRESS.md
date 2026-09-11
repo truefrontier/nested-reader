@@ -23,6 +23,7 @@
 2. Read Sidebar, tree.ts, the store, the Rust page walker (already recursive, paths relative with `/`) and the settings plumbing.
 3. Added the folder tree, the session field, the store methods, the sidebar rendering and CSS; then the width setting, grip and store methods.
 4. Checked both in the browser build, updated `docs/architecture.md`, committed and pushed to `claude/sweet-einstein-q75jqd`.
+5. Opened [pull request #5](https://github.com/truefrontier/nested-reader/pull/5) and merged it into `main` at Kevin's request.
 
 ### Possible next steps
 - Show folder headers in the Timeline map too, if the long list is a problem there as well.
