@@ -25,6 +25,64 @@
 - Run `pnpm tauri dev` on a Mac to confirm the native window closes on blur, that Change… survives its picker, and that ⌘W reaches the Rust handler.
 - If closing on ⌘Tab to another app feels wrong, limit the blur-close to focus moving to another window of this app (check `webview_windows()` on the Rust side).
 
+## Session: 2026-09-11 — the bundle identifier follows nestedreader.app
+
+### Leading assumptions
+- "Bundle id should follow the domain name" means Apple's reverse-DNS convention: `nestedreader.app` reversed is `app.nestedreader`, plus a product segment, so `app.nestedreader.nested`. No platform segment, because universal purchase on the App Store needs one bundle ID across Mac and iOS.
+- The Keychain service string follows the identifier, so the two do not drift. The crate, lib, package and binary names follow the product name: `nested`, `nested_lib`, `target/debug/nested`.
+- "Migrate" means the first launch under the new identifier carries over what the old one held: `settings.json`, `recents.json` and each provider's API key. The old copies stay as a backup; nothing is deleted.
+
+### World facts
+- `src-tauri/src/migrate.rs` runs first in the setup hook, only while the new config folder does not exist. It creates that folder (closing the gate, so a key deleted later is not brought back on the next launch), copies the two files from `<config parent>/com.truefrontier.markdown-learner`, and copies the `openai`, `anthropic` and `custom` Keychain passwords from the old service to the new one. Failures are printed, never fatal.
+- The identifier lives in `tauri.conf.json`; the Keychain service is `ai::KEYCHAIN_SERVICE`. The Caches and WebKit folders under the old identifier are disposable and were left alone.
+- Everything else that carried the old name: `Cargo.toml`, `main.rs`, `package.json`, the CLI scratch folder in `cli.rs`, and `docs/architecture.md`.
+
+### Timeline
+1. Kevin asked whether the bundle id should follow the domain; answered with the reverse-DNS convention and what changing it moves.
+2. Kevin chose `app.nestedreader.nested` with a migration. Wrote the migration, changed the identifier, the Keychain service and the crate names.
+3. Verified the migration on this Mac, then committed on `main` after a fetch and pushed.
+
+### Verification
+- `tsc` and `pnpm build` pass; the Rust side compiles as `nested` with no warnings.
+- Planted a throwaway item under the old Keychain service before the rebuild. On relaunch the new config folder appeared with `settings.json` byte-identical to the old and `recents.json` copied (the app then updated its last-opened stamp), and the throwaway item was present under the new service with the same value. Both throwaway items were deleted afterwards.
+- The process is `target/debug/nested`; the menu bar reads Nested, About Nested, and the window title is Nested.
+
+### Possible next steps
+- Once every Mac that ran the old identifier has launched the new build, `migrate.rs` and the old-identifier constant can go.
+- The old `~/Library/Application Support/com.truefrontier.markdown-learner`, Caches and WebKit folders can be removed by hand when nobody needs the backup.
+
+## Session: 2026-09-11 — ⌘O opens a folder or a file, and the app is called Nested
+
+### Leading assumptions
+- "⌘O should be the only open shortcut and it should open folders and/or files" means one Open… item on ⌘O, and one panel where a folder and a `.md` are both selectable. ⌘⇧O and Open File… go away rather than pointing at the same panel.
+- The panel is a standalone window (`runModal`), the macOS convention for Open… in TextEdit and Xcode. The dialog plugin's panel was a sheet on the main window.
+- Settings › General › Folder is a default folder, not an open shortcut, so it keeps a folder-only picker. "Ask" at launch uses the new panel.
+- "App name should be Nested" means every name a user sees. The bundle identifier `com.truefrontier.markdown-learner` and the crate and package names stay: the identifier names the Keychain service and the settings folder, so renaming it would orphan saved API keys, `settings.json` and `recents.json` unless migrated.
+
+### World facts
+- `pick_path` in `src-tauri/src/lib.rs` runs `open_panel::folder_or_markdown()` (`src-tauri/src/open_panel.rs`) on the main thread: an NSOpenPanel with files and directories both choosable, `.md`/`.markdown` filtered, and a message line. Non-macOS builds fall back to `pick_folder`. `objc2`, `objc2-app-kit` and `objc2-foundation` are direct macOS dependencies now, with the feature lists `rfd` already enables, so nothing new compiles.
+- `Platform.pickPath` replaces `pickFile`; `pickFolder` stays for Settings. The store's `openPath(path, otherwise)` dispatches by `pathKind` and is shared by ⌘O, drops and the launch-time "ask". The menu id is `"open"`; the browser build's ⌘O branch ignores ⌘⇧O.
+- Home shows one card, "Open a folder or file… ⌘O"; `.home-cards` is a single column.
+- Visible name: `productName`, both window titles, the app menu, About, `index.html`, README and `docs/architecture.md`.
+- A `src-tauri/target` copied from another checkout fails `tauri dev` with `failed to read plugin permissions` pointing at the old path. `cargo clean -p` on the packages whose `target/debug/build/*/output` holds the old path fixes it in one rebuild.
+
+### Timeline
+1. Pulled `main` (already up to date), fixed the stale build cache, ran `pnpm tauri dev`.
+2. Kevin asked for ⌘O as the only open shortcut, taking folders and files. Replaced the two dialog-plugin commands with the NSOpenPanel command, rewired the store, key handler, Home and docs.
+3. Kevin asked to pull before committing; `main` had gained pull request #5 (folders in the sidebar). Pulled under the working changes with no conflicts.
+4. Kevin asked for the app to be called Nested. Renamed every visible name.
+5. Committed on `feature/open-panel-and-nested-name`, then fast-forwarded `main` to it and pushed at Kevin's request.
+
+### Verification
+- `tsc` and `pnpm build` pass; the Rust side rebuilds with no warnings.
+- In the dev app, checked through System Events: the File menu is New Page…, Open…, Close Pane; Open… carries ⌘O with no other modifier; choosing it opens a panel whose message reads "Open a folder of Markdown notes, or a single .md file.", with folders selectable and `.md` files enabled beside them; Escape closes it. The menu bar reads Nested, About Nested, and the window title is Nested.
+- In the browser mock: Home shows the one card; ⌘O opens the sample folder; ⌘⇧O does nothing.
+
+### Possible next steps
+- Decide whether the bundle identifier, crate and package names follow the rename; that needs a one-time move of the Keychain entries and the config folder.
+- `design/Research Reader.dc.html` and `design/Research Reader Wireframes.dc.html` still show Open file… beside Open folder….
+- The browser mock's ⌘O always opens the sample folder, so file sessions can only be tried in the app now.
+
 ## Session: 2026-09-11 — folders in the sidebar, and a draggable sidebar width
 
 ### Leading assumptions

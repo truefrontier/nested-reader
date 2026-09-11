@@ -94,12 +94,13 @@ function fakeAnswer(req: AiRequest): string {
 export const mockPlatform: Platform = {
   isTauri: false,
 
-  async pickFolder() {
+  /** The browser has no Open panel, so ⌘O opens the sample folder. */
+  async pickPath() {
     return SAMPLE_FOLDER;
   },
 
-  async pickFile() {
-    return `${SAMPLE_FOLDER}/sharp-wave-ripples.md`;
+  async pickFolder() {
+    return SAMPLE_FOLDER;
   },
 
   async pathKind(path) {

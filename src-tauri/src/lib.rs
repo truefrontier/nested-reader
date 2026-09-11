@@ -2,6 +2,9 @@ mod ai;
 mod cli;
 mod error;
 mod files;
+mod migrate;
+#[cfg(target_os = "macos")]
+mod open_panel;
 
 use ai::tokio_util_lite::CancelToken;
 use ai::{AiRequest, PingResult, StreamEvent};
@@ -21,6 +24,7 @@ struct Streams(Mutex<HashMap<String, CancelToken>>);
 
 // ---------- files ----------
 
+/// Folder only: Settings uses it for the default folder.
 #[tauri::command]
 async fn pick_folder(app: AppHandle) -> Result<Option<String>> {
     let (tx, rx) = tokio::sync::oneshot::channel();
@@ -30,13 +34,21 @@ async fn pick_folder(app: AppHandle) -> Result<Option<String>> {
     Ok(rx.await.map_err(|_| AppError::Message("dialog closed".into()))?)
 }
 
+/// ⌘O: one Open panel for both kinds of session, a folder or a single Markdown file.
 #[tauri::command]
-async fn pick_file(app: AppHandle) -> Result<Option<String>> {
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    app.dialog().file().add_filter("Markdown", &["md", "markdown"]).pick_file(move |p| {
-        let _ = tx.send(p.map(|p| p.to_string()));
-    });
-    Ok(rx.await.map_err(|_| AppError::Message("dialog closed".into()))?)
+async fn pick_path(app: AppHandle) -> Result<Option<String>> {
+    #[cfg(target_os = "macos")]
+    {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        app.run_on_main_thread(move || {
+            let _ = tx.send(open_panel::folder_or_markdown());
+        })
+        .map_err(|e| AppError::Message(e.to_string()))?;
+        Ok(rx.await.map_err(|_| AppError::Message("dialog closed".into()))?)
+    }
+    // Other platforms have no panel that takes both, so they get the folder picker.
+    #[cfg(not(target_os = "macos"))]
+    pick_folder(app).await
 }
 
 #[tauri::command]
@@ -221,7 +233,7 @@ fn open_page_window(app: AppHandle, folder: String, path: String, version: Optio
     }
     let _ = folder;
     let builder = WebviewWindowBuilder::new(&app, label, WebviewUrl::App(url.into()))
-        .title("Markdown Learner")
+        .title("Nested")
         .inner_size(900.0, 680.0)
         .min_inner_size(640.0, 420.0);
     #[cfg(target_os = "macos")]
@@ -245,9 +257,9 @@ fn urlencode(s: &str) -> String {
 }
 
 fn build_menu(app: &AppHandle) -> tauri::Result<()> {
-    let about = PredefinedMenuItem::about(app, Some("About Markdown Learner"), Some(AboutMetadata::default()))?;
+    let about = PredefinedMenuItem::about(app, Some("About Nested"), Some(AboutMetadata::default()))?;
     let settings = MenuItemBuilder::with_id("settings", "Settings…").accelerator("CmdOrCtrl+,").build(app)?;
-    let app_menu = SubmenuBuilder::new(app, "Markdown Learner")
+    let app_menu = SubmenuBuilder::new(app, "Nested")
         .item(&about)
         .separator()
         .item(&settings)
@@ -263,14 +275,12 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
 
     // ⌘N stays in the webview, like ⌘R, so it also works while the ask box has focus.
     let new_page = MenuItemBuilder::with_id("new-page", "New Page… (⌘N)").build(app)?;
-    let open_folder = MenuItemBuilder::with_id("open-folder", "Open Folder…").accelerator("CmdOrCtrl+O").build(app)?;
-    let open_file = MenuItemBuilder::with_id("open-file", "Open File…").accelerator("CmdOrCtrl+Shift+O").build(app)?;
+    let open = MenuItemBuilder::with_id("open", "Open…").accelerator("CmdOrCtrl+O").build(app)?;
     let close_pane = MenuItemBuilder::with_id("close-pane", "Close Pane").accelerator("CmdOrCtrl+W").build(app)?;
     let file_menu = SubmenuBuilder::new(app, "File")
         .item(&new_page)
         .separator()
-        .item(&open_folder)
-        .item(&open_file)
+        .item(&open)
         .separator()
         .item(&close_pane)
         .build()?;
@@ -330,6 +340,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(Streams::default())
         .setup(|app| {
+            migrate::run(app.handle());
             build_menu(app.handle())?;
             app.on_menu_event(|app, event| {
                 let id = event.id().0.clone();
@@ -361,7 +372,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             pick_folder,
-            pick_file,
+            pick_path,
             path_kind,
             reveal_in_finder,
             get_recents,

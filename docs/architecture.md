@@ -1,6 +1,6 @@
 # Architecture
 
-Markdown Learner is a Tauri 2 desktop app. The window is a React + TypeScript webview; the Rust side owns the filesystem, the Keychain and the network.
+Nested is a Tauri 2 desktop app. The window is a React + TypeScript webview; the Rust side owns the filesystem, the Keychain and the network.
 
 ## The idea in one paragraph
 
@@ -39,13 +39,13 @@ Everything about a session stays inside the folder you opened.
 | `.reader/session-<page>.json` | The same, for a session opened from a single file in this folder. |
 | `.reader/versions/<page>/vN.md` | Snapshots taken before each refine. The live file is always the newest version. |
 
-Settings are stored in the app config directory as `settings.json`, and the Home screen's list of recent sessions as `recents.json` beside it (folder, optional file, name, last opened, unread count). API keys are stored in the macOS Keychain under the service `com.truefrontier.markdown-learner`, one entry per provider. The frontend never holds a key after saving it; Rust reads it when it makes a request.
+Settings are stored in the app config directory as `settings.json`, and the Home screen's list of recent sessions as `recents.json` beside it (folder, optional file, name, last opened, unread count). API keys are stored in the macOS Keychain under the service `app.nestedreader.nested`, the bundle identifier, one entry per provider. The app first shipped as `com.truefrontier.markdown-learner`; the first launch under the new identifier copies `settings.json`, `recents.json` and the keys across (`src-tauri/src/migrate.rs`) and leaves the old copies in place. The frontend never holds a key after saving it; Rust reads it when it makes a request.
 
 ## Home and sessions
 
 Home replaces the window: recent sessions on the left, the ways to start one on the right. The ‹ beside the session title in the sidebar (⌘⇧H) steps up to it; the open session stays loaded, so leaving Home (Esc, or clicking that session) lands exactly where you were. Clicking another recent session loads that folder and restores its saved session.
 
-A session is either a **folder** (every `.md` under it, `pick_folder` or a dropped folder) or a **file** (`pick_file`, ⌘⇧O, or a dropped `.md`). A file session lists only that page and the pages whose `source` chain leads back to it (`growsFrom` in `src/lib/tree.ts`); new pages are still written beside the file, so the folder stays the unit on disk and the session keeps its own `session-<page>.json`. Drops arrive through the webview's drag-drop events; `path_kind` tells the frontend whether a path is a folder, a Markdown file, or neither.
+A session is either a **folder** (every `.md` under it) or a **file**. Both come from the one Open panel behind ⌘O (`pick_path`, an NSOpenPanel in `src-tauri/src/open_panel.rs` that takes a folder or a `.md`, which the dialog plugin cannot do in one panel) or from a drop; `path_kind` decides which kind the path is. A file session lists only that page and the pages whose `source` chain leads back to it (`growsFrom` in `src/lib/tree.ts`); new pages are still written beside the file, so the folder stays the unit on disk and the session keeps its own `session-<page>.json`. Drops arrive through the webview's drag-drop events; `path_kind` tells the frontend whether a path is a folder, a Markdown file, or neither.
 
 At launch, `openAtLaunch: "last-session"` reopens the first entry of `recents.json` (so a file session comes back as one), `"ask"` shows the folder picker, and `"nothing"` or a cancelled picker leaves you on Home.
 

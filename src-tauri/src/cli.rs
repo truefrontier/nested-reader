@@ -43,7 +43,7 @@ fn find_bin(name: &str) -> Result<PathBuf> {
 
 /// A folder with no CLAUDE.md or project settings, so the CLIs start clean and cheap.
 fn neutral_cwd() -> PathBuf {
-    let dir = std::env::temp_dir().join("markdown-learner-cli");
+    let dir = std::env::temp_dir().join("nested-cli");
     let _ = std::fs::create_dir_all(&dir);
     dir
 }

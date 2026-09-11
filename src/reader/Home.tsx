@@ -137,7 +137,7 @@ export function Home() {
             );
           })}
         </div>
-        <button className="home-new" onClick={() => void store.pickFolder()}>
+        <button className="home-new" onClick={() => void store.pickPath()}>
           <PlusIcon />
           <span>New session</span>
           <span className="k">⌘O</span>
@@ -148,19 +148,12 @@ export function Home() {
           <div className="home-title">Start a session</div>
           <div className="home-sub">A session grows from whatever you open. New pages are saved beside it as plain .md.</div>
           <div className="home-cards">
-            <button className="home-card" onClick={() => void store.pickFolder()}>
+            <button className="home-card" onClick={() => void store.pickPath()}>
               <span className="t">
-                <span>Open folder…</span>
+                <span>Open a folder or file…</span>
                 <span className="k">⌘O</span>
               </span>
-              <span className="d">Every .md inside becomes the corpus. Best for a topic you've been collecting.</span>
-            </button>
-            <button className="home-card" onClick={() => void store.pickFile()}>
-              <span className="t">
-                <span>Open file…</span>
-                <span className="k">⌘⇧O</span>
-              </span>
-              <span className="d">A single .md to read. Pages you create are saved next to it.</span>
+              <span className="d">A folder makes every .md inside the corpus. A single .md reads just that page, and pages you create are saved next to it.</span>
             </button>
           </div>
           <div className={`home-drop${s.ui.dragging ? " active" : ""}`}>or drop a folder or file anywhere in this window</div>

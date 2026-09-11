@@ -1,4 +1,4 @@
-# Markdown Learner
+# Nested
 
 A calm research reader for a folder of Markdown notes. Built with Tauri 2, React and Rust for macOS.
 
@@ -6,7 +6,7 @@ Read a page. Select text to ask about it. **Quick Answer** puts a short answer i
 
 Every page is a plain `.md` file in the folder you opened. Nothing else is required to read your notes elsewhere.
 
-**Home** is one level up from a session: the ‹ beside the session title (or ⌘⇧H) shows your recent sessions and the two ways to start one. **Open folder…** makes every `.md` inside the corpus. **Open file…** reads a single `.md`; pages you create are saved next to it. Dropping a folder or file anywhere in the window does the same. Clicking a recent session returns you to it where you left off; its ··· menu can rename it, reveal it in Finder, open its map, or drop it from the list.
+**Home** is one level up from a session: the ‹ beside the session title (or ⌘⇧H) shows your recent sessions and the way to start one. **Open…** (⌘O) takes a folder, so every `.md` inside is the corpus, or a single `.md`, so pages you create are saved next to it. Dropping a folder or file anywhere in the window does the same. Clicking a recent session returns you to it where you left off; its ··· menu can rename it, reveal it in Finder, open its map, or drop it from the list.
 
 ## Run
 
@@ -49,8 +49,7 @@ The "Built in" provider is in the design but not connected to a service in this 
 | ⌘K | Session map |
 | ⌘⇧F | Fullscreen the split pane |
 | ⌘[ / ⌘] | Back / forward along the trail |
-| ⌘O | Open a folder |
-| ⌘⇧O | Open a single file |
+| ⌘O | Open a folder or a single file |
 | ⌘⇧H | Home (recent sessions) |
 | Esc | Dismiss, or leave Home |
 

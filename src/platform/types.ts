@@ -182,9 +182,10 @@ export type StreamHandle = { cancel(): void };
 
 export interface Platform {
   isTauri: boolean;
+  /** Shows the Open panel; resolves to the chosen folder or Markdown file, or null when cancelled. */
+  pickPath(): Promise<string | null>;
+  /** Picks a folder only; Settings uses it for the default folder. */
   pickFolder(): Promise<string | null>;
-  /** Picks one Markdown file; resolves to its absolute path. */
-  pickFile(): Promise<string | null>;
   /** Whether a dropped path is a folder, a Markdown file, or something else. */
   pathKind(path: string): Promise<PathKind>;
   /** Selects the path in the system file manager. */

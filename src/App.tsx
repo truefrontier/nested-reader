@@ -87,12 +87,9 @@ export default function App() {
       } else if (e.key === "]") {
         e.preventDefault();
         store.command("forward");
-      } else if (k === "o" && e.shiftKey) {
+      } else if (k === "o" && !e.shiftKey) {
         e.preventDefault();
-        store.command("open-file");
-      } else if (k === "o") {
-        e.preventDefault();
-        store.command("open-folder");
+        store.command("open");
       } else if (k === "h" && e.shiftKey) {
         e.preventDefault();
         store.command("home");

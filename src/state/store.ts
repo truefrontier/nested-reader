@@ -249,8 +249,8 @@ export class ReaderStore {
       if (page && settings.folder) {
         await this.openFolder(settings.folder, { initialPage: page, initialVersion, file: last?.folder === settings.folder ? last.file : undefined });
       } else if (settings.openAtLaunch === "ask") {
-        const folder = await platform.pickFolder();
-        if (folder) await this.openFolder(folder);
+        const path = await platform.pickPath();
+        if (path) await this.openPath(path, "Open a folder or a .md file.");
       } else if (settings.openAtLaunch === "last-session") {
         if (last) await this.openFolder(last.folder, { file: last.file });
         else if (settings.folder) await this.openFolder(settings.folder);
@@ -273,22 +273,22 @@ export class ReaderStore {
     root.dataset.font = s.readingFont;
   }
 
-  async pickFolder() {
+  /** ⌘O: one Open panel for a folder or a single .md, then the session that path starts. */
+  async pickPath() {
     try {
-      const folder = await platform.pickFolder();
-      if (folder) await this.openFolder(folder);
+      const path = await platform.pickPath();
+      if (path) await this.openPath(path, "Open a folder or a .md file.");
     } catch (e) {
       this.fail(e);
     }
   }
 
-  async pickFile() {
-    try {
-      const path = await platform.pickFile();
-      if (path) await this.openFile(path);
-    } catch (e) {
-      this.fail(e);
-    }
+  /** A folder or a .md file starts a session; anything else is refused with `otherwise`. */
+  async openPath(path: string, otherwise: string) {
+    const kind = await platform.pathKind(path);
+    if (kind === "folder") await this.openFolder(path);
+    else if (kind === "file") await this.openFile(path);
+    else this.fail(otherwise);
   }
 
   /** Opens one .md as a session: that page and the pages grown from it, saved beside it. */
@@ -303,10 +303,7 @@ export class ReaderStore {
     const path = paths[0];
     if (!path) return this.fail("Drop a folder or a .md file.");
     try {
-      const kind = await platform.pathKind(path);
-      if (kind === "folder") await this.openFolder(path);
-      else if (kind === "file") await this.openFile(path);
-      else this.fail("Drop a folder or a .md file.");
+      await this.openPath(path, "Drop a folder or a .md file.");
     } catch (e) {
       this.fail(e);
     }
@@ -1275,13 +1272,10 @@ export class ReaderStore {
 
   command(id: string) {
     // Home replaces the window, so only the commands that make sense there get through.
-    if (this.state.home && !["open-folder", "open-file", "home", "settings"].includes(id)) return;
+    if (this.state.home && !["open", "home", "settings"].includes(id)) return;
     switch (id) {
-      case "open-folder":
-        void this.pickFolder();
-        break;
-      case "open-file":
-        void this.pickFile();
+      case "open":
+        void this.pickPath();
         break;
       case "home":
         this.toggleHome();
