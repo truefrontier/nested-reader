@@ -17,6 +17,9 @@
 1. Read the crumb handler, store navigation, and split pane code.
 2. Changed `onCrumb` in `Page.tsx`: in the split pane, when the parent is the main pane's current page, call `store.closeSplit()` instead of navigating.
 3. Type check passed. Committed and pushed to the feature branch.
+4. Follow-up request: the crumb should respect the ⌘Click and ⌘⇧Click settings. `onCrumb` now reads `store.placementFor(e)`, the same helper wiki links, the sidebar, and the map use. A non-active placement calls `store.openPage(source, placement)`. A plain click keeps the close-or-navigate behavior from step 2. Type check passed again. Committed and pushed.
+
+- ⌥ flips the placement, as it does for wiki links, because `placementFor` handles it.
 
 ### Possible next steps
 - Decide whether the same rule should apply in reverse: the main pane's crumb when the parent is open in the split pane. Left unchanged, since the request was about the split panel.

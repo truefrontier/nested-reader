@@ -313,8 +313,14 @@ export function Page({ path, role }: Props) {
     return out;
   };
 
-  const onCrumb = () => {
+  const onCrumb = (e: ReactMouseEvent) => {
     if (!meta?.source) return;
+    // The crumb is a link to the parent, so ⌘ and ⌘⇧ clicks use the same placement settings as wiki links.
+    const placement = store.placementFor(e);
+    if (placement !== "active") {
+      void store.openPage(meta.source, placement);
+      return;
+    }
     // In the split pane, going back to a parent the main pane already shows means "refocus on the parent":
     // closing this pane does that, and leaves the trail and read marks alone.
     if (!isMain && s.session.current === meta.source) {
