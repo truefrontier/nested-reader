@@ -31,6 +31,14 @@ export function ChevronLeft() {
   );
 }
 
+export function ChevronRight() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M5.5 3.5 9 7l-3.5 3.5" />
+    </svg>
+  );
+}
+
 export function PlusIcon() {
   return (
     <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">

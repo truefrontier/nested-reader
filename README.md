@@ -40,6 +40,10 @@ The "Built in" provider is in the design but not connected to a service in this 
 | ↵ / ⌘↵ / ⌘⇧↵ | Quick Answer / New Page / Deep Dive from the ask popover |
 | ⌥ + verb | Use the other placement (beside ↔ background) |
 | ⌘R | Refine the selection, or the page when nothing is selected |
+| ⌘F | Find in the page; a fresh selection becomes the search |
+| ↵ in the find box | Select the match: the ask box opens on it, ready to type |
+| ⌘G / ⌘⇧G | Next / previous match, selected the same way (⌘R switches to refine) |
+| / or ⌘/ | Filter the tree (shows it if hidden); Esc clears, then leaves the box |
 | ⌘\ | Toggle the tree |
 | ⌘K | Session map |
 | ⌘⇧F | Fullscreen the split pane |

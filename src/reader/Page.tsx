@@ -5,6 +5,7 @@ import { diffBodies, type Change, type PageDiff } from "../lib/diff";
 import { applyWraps, rangeOffsets, type Wrap } from "../lib/wraps";
 import { AnswerCard, AskPopover, BeforeCard, FailedCard, NowCard, RefinePopover, RefineStatus } from "./Popovers";
 import { TopStrip } from "./TopStrip";
+import { FindBar } from "./FindBar";
 
 type LinkState = "loading" | "unread" | "read" | "missing";
 
@@ -78,6 +79,43 @@ export function Page({ path, role }: Props) {
   }, [viewDiff, reviewDiff, body]);
 
   const selection = isMain && !viewDiff ? ui.selection : undefined;
+
+  // ----- find in page -----
+  // The find bar lives in the pane being read: the main one, or the split when it is fullscreen.
+  const findHere = ui.find && (isMain ? !(ui.fullscreen && s.session.split) : ui.fullscreen);
+  const findQuery = findHere ? ui.findQuery : "";
+  const matches = useMemo(() => {
+    const out: { block: number; start: number; end: number }[] = [];
+    const q = findQuery.toLowerCase();
+    if (!q.trim()) return out;
+    blocks.forEach((b, i) => {
+      if (b.type === "space") return;
+      const text = b.text.toLowerCase();
+      let from = 0;
+      for (;;) {
+        const at = text.indexOf(q, from);
+        if (at < 0) break;
+        out.push({ block: i, start: at, end: at + q.length });
+        from = at + q.length;
+      }
+    });
+    return out;
+  }, [blocks, findQuery]);
+  const findCurrent = matches.length ? ((ui.findIndex % matches.length) + matches.length) % matches.length : -1;
+  const currentMatch = findCurrent >= 0 ? matches[findCurrent] : undefined;
+  useEffect(() => {
+    if (!currentMatch) return;
+    articleRef.current?.querySelector(".fnd.cur")?.scrollIntoView({ block: "center" });
+  }, [currentMatch?.block, currentMatch?.start, findQuery]);
+  // Stepping to a match (⌘G, ↵, the arrows) selects it, so the ask or refine box opens there as if it had been dragged over.
+  useEffect(() => {
+    if (!ui.findSelect || !findHere || !isMain || viewDiff || !currentMatch) return;
+    const block = blocks[currentMatch.block];
+    if (!block) return;
+    const text = block.text.slice(currentMatch.start, currentMatch.end).replace(/\s+/g, " ").trim();
+    if (!text) return;
+    store.selectMatch({ block: currentMatch.block, start: currentMatch.start, end: currentMatch.end, text, paragraph: block.text, caretX: midXFor(".fnd.cur") });
+  }, [ui.findSelect]);
   // What has been typed into the ask/refine box; survives the ⌘R switch, resets with a new selection.
   const [draft, setDraft] = useState("");
   useEffect(() => {
@@ -116,8 +154,12 @@ export function Page({ path, role }: Props) {
       const list = out.get(selection.block) ?? [];
       out.set(selection.block, [...list, { start: selection.start, end: selection.end, className: "sel" }]);
     }
+    matches.forEach((m, j) => {
+      const list = out.get(m.block) ?? [];
+      out.set(m.block, [...list, { start: m.start, end: m.end, className: j === findCurrent ? "fnd cur" : "fnd" }]);
+    });
     return out;
-  }, [changesByBlock, selection, viewDiff, blocks]);
+  }, [changesByBlock, selection, viewDiff, blocks, matches, findCurrent]);
 
   const EMPTY: Wrap[] = useMemo(() => [], []);
 
@@ -143,9 +185,9 @@ export function Page({ path, role }: Props) {
     setActiveChange(undefined);
   }, [reviewDiff, viewDiff]);
 
-  /** Horizontal midpoint of a change's highlight, in px from its block's left edge. */
-  const caretXFor = (id: string): number => {
-    const els = Array.from(articleRef.current?.querySelectorAll<HTMLElement>(`[data-change="${id}"]`) ?? []);
+  /** Horizontal midpoint of the elements a selector finds, in px from their block's left edge. */
+  const midXFor = (selector: string): number => {
+    const els = Array.from(articleRef.current?.querySelectorAll<HTMLElement>(selector) ?? []);
     const blockEl = els[0]?.closest<HTMLElement>(".block");
     if (!els.length || !blockEl) return 0;
     let left = Infinity;
@@ -159,6 +201,8 @@ export function Page({ path, role }: Props) {
     if (!Number.isFinite(left)) return 0;
     return (left + right) / 2 - blockEl.getBoundingClientRect().left;
   };
+  /** Horizontal midpoint of a change's highlight. */
+  const caretXFor = (id: string): number => midXFor(`[data-change="${id}"]`);
 
   // ----- selection handling (main pane only) -----
 
@@ -232,10 +276,11 @@ export function Page({ path, role }: Props) {
   const renderAfter = (i: number) => {
     const out: ReactElement[] = [];
     if (isMain) {
+      // Keyed on the range so moving between find matches in one block refocuses the box.
       if (selection?.block === i && ui.popover === "ask") {
         out.push(
           <AskPopover
-            key="ask"
+            key={`ask-${selection.start}-${selection.end}`}
             caretLeft={selection.caretX}
             value={draft}
             onChange={setDraft}
@@ -251,7 +296,7 @@ export function Page({ path, role }: Props) {
       if (selection?.block === i && ui.popover === "refine") {
         out.push(
           <RefinePopover
-            key="refine"
+            key={`refine-${selection.start}-${selection.end}`}
             caretLeft={selection.caretX}
             value={draft}
             onChange={setDraft}
@@ -320,7 +365,9 @@ export function Page({ path, role }: Props) {
 
   return (
     <>
-      <TopStrip path={path} role={role} diff={reviewDiff} />
+      <TopStrip path={path} role={role} diff={reviewDiff}>
+        {findHere && <FindBar count={matches.length} current={findCurrent} />}
+      </TopStrip>
       <div className="article" ref={articleRef} onMouseUp={onMouseUp} onMouseDown={onMouseDown} onClick={onClick} onMouseOver={onMouseOver}>
         {source && (
           <div className="crumb" onClick={onCrumb} title={`Back to ${source.title}`}>

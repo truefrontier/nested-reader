@@ -29,9 +29,15 @@ export default function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const inInput = (e.target as HTMLElement)?.closest("input, textarea");
+      const inInput = (e.target as HTMLElement)?.closest("input, textarea, [contenteditable]");
       if (e.key === "Escape") {
         store.escape();
+        return;
+      }
+      // A bare / jumps to the tree's Filter box, as long as nothing is being typed.
+      if (e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey && !inInput) {
+        e.preventDefault();
+        store.command("filter");
         return;
       }
       if (!e.metaKey) return;
@@ -40,6 +46,22 @@ export default function App() {
       if (k === "r" && !inInput) {
         e.preventDefault();
         store.command("refine");
+        return;
+      }
+      // Find and filter have to work while typing in their boxes, so they stay in the webview like ⌘R.
+      if (k === "f" && !e.shiftKey) {
+        e.preventDefault();
+        store.command("find");
+        return;
+      }
+      if (k === "g") {
+        e.preventDefault();
+        store.command(e.shiftKey ? "find-prev" : "find-next");
+        return;
+      }
+      if (e.key === "/") {
+        e.preventDefault();
+        store.command("filter");
         return;
       }
       if (menuHandled) return;

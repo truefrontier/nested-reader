@@ -102,7 +102,11 @@ export function AskPopover({
 }) {
   const ref = useAutoFocus();
   const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Escape") return onEsc();
+    if (e.key === "Escape") {
+      // Only this box closes; the window's Esc would otherwise also close whatever sits behind it.
+      e.stopPropagation();
+      return onEsc();
+    }
     if (e.key === "r" && e.metaKey) {
       e.preventDefault();
       return onRefine();
@@ -187,7 +191,11 @@ export function RefinePopover({
   const text = value ?? local;
   const setText = onChange ?? setLocal;
   const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Escape") return onEsc();
+    if (e.key === "Escape") {
+      // Only this box closes; the window's Esc would otherwise also close whatever sits behind it.
+      e.stopPropagation();
+      return onEsc();
+    }
     if (e.key === "r" && e.metaKey) {
       e.preventDefault();
       return onToggle();
@@ -281,7 +289,11 @@ export function AnswerCard({ lookup, onFollowUp, onEsc, onRefine }: { lookup: Lo
   const ref = useAutoFocus();
   const [q, setQ] = useState("");
   const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Escape") return onEsc();
+    if (e.key === "Escape") {
+      // Only this box closes; the window's Esc would otherwise also close whatever sits behind it.
+      e.stopPropagation();
+      return onEsc();
+    }
     const v = verbFor(e);
     if (v) {
       e.preventDefault();

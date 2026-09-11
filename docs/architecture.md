@@ -106,6 +106,10 @@ A refinement snapshots the page (`.reader/versions/<page>/vN.md`), writes the ne
 
 While a refinement runs, `ui.refining` and `ui.refineText` drive a status card in the place of the refine box (in the page for a selection, at the pane's bottom for page and corpus scope). A failure sets `ui.refineError` and keeps the selection and text, so the card offers Try again. The ask and refine boxes share the typed draft, held by the page, across the ⌘R switch.
 
+## Find and filter
+
+`ui.find`, `ui.findQuery` and `ui.findIndex` describe the find bar; the page being read (the main pane, or the split when it is fullscreen) matches the query case-insensitively against each block's text, wraps the hits with `.fnd` (the current one `.fnd.cur`) through the same `applyWraps` path as selections and change tints, and scrolls the current hit into view. `findIndex` only counts steps; the page wraps it around the match count, so ⌘G keeps working across pages with different counts. ↵ in the box and every step also bump `ui.findSelect`; the main page answers by measuring the current hit and calling `selectMatch`, which makes it the selection and opens the ask box (or the refine box, if that was open), so a question can follow a search without the mouse. ⌘F, ⌘G, ⌘⇧G and ⌘/ are handled in the webview (like ⌘R) so they work while a box has focus; the menu items carry the keys in their labels. `/` outside any box, or ⌘/, shows the tree and focuses its Filter box via `ui.filterFocus`.
+
 ## Clicks, marks and pages that failed to generate
 
 A plain click on a link or tree row opens the page here. ⌘‑click uses the "⌘‑click opens" setting (`newPageOpens`, also where New Page ⌘↵ goes) and ⌘⇧‑click the "⌘⇧‑click opens" setting (`deepDiveOpens`, also where Deep Dive ⌘⇧↵ goes); ⌥ flips either (`placementFor` in the store). For a page that already exists, the "background" placement is a read‑later mark: it adds the page to `session.unread`, and doing it again removes it. Both settings sit under General.

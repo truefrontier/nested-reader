@@ -13,6 +13,7 @@
   --rev: oklch(0.55 0.1 150 / 0.13);
   --old: oklch(0.7 0.13 75 / 0.16);
   --warn: oklch(0.7 0.13 75);
+  --find: oklch(0.85 0.12 95 / 0.45);
   --shadow-pop: 0 8px 30px rgba(0, 0, 0, 0.12);
   --shadow-strip: 0 4px 16px rgba(0, 0, 0, 0.08);
   --sans: "Instrument Sans", system-ui, -apple-system, sans-serif;
@@ -34,6 +35,7 @@
   --rev: oklch(0.76 0.1 150 / 0.18);
   --old: oklch(0.78 0.12 75 / 0.2);
   --warn: oklch(0.78 0.12 75);
+  --find: oklch(0.62 0.1 95 / 0.4);
   --shadow-pop: 0 8px 30px rgba(0, 0, 0, 0.5);
   --shadow-strip: 0 4px 16px rgba(0, 0, 0, 0.35);
   color-scheme: dark;
@@ -561,6 +563,17 @@ button {
 .chg.hover {
   background: var(--hl);
 }
+.fnd {
+  background: var(--find);
+  border-radius: 2px;
+  padding: 1px 0;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+.fnd.cur {
+  background: var(--hl);
+  outline: 1.5px solid var(--warn);
+}
 .oldchg {
   background: var(--old);
   border-radius: 2px;
@@ -826,6 +839,10 @@ button {
 .top-inner {
   position: relative;
   margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
 }
 .strip {
   display: inline-flex;
@@ -1140,6 +1157,50 @@ button {
   color: var(--mute);
   font-size: 12.5px;
   margin-top: 2px;
+}
+
+/* ---------- find bar ---------- */
+
+.strip.find {
+  gap: 6px;
+  padding: 0 4px 0 12px;
+}
+.strip.find input {
+  width: 170px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: inherit;
+  color: var(--fg);
+  user-select: text;
+  -webkit-user-select: text;
+}
+.strip.find input::placeholder {
+  color: var(--mute);
+}
+.strip.find .count {
+  min-width: 56px;
+  text-align: right;
+  color: var(--mute);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.strip.find .count.none {
+  color: var(--warn);
+}
+.strip.find .nav {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--mute);
+  cursor: pointer;
+}
+.strip.find .nav:hover {
+  color: var(--fg);
+  background: var(--card);
 }
 
 /* ---------- misc ---------- */
