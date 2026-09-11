@@ -43,7 +43,7 @@ export default function App() {
         return;
       }
       if (menuHandled) return;
-      if (e.key === "\\") {
+      if (k === "b") {
         e.preventDefault();
         store.command("toggle-sidebar");
       } else if (k === "k") {
@@ -96,7 +96,7 @@ export default function App() {
         <Home />
       ) : (
         <>
-          <button className="tbtn side-toggle" title="Toggle tree ⌘\" onClick={() => store.toggleSidebar()}>
+          <button className="tbtn side-toggle" title="Toggle tree ⌘B" onClick={() => store.toggleSidebar()}>
             <SidebarIcon />
           </button>
           {s.session.sidebar && <Sidebar />}
