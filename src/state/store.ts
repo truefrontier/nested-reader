@@ -57,6 +57,9 @@ export type UiState = {
   filter: string;
   unreadOnly: boolean;
   refining?: RefineScope;
+  /** The instruction being (or last) refined, shown while it runs and kept for a retry. */
+  refineText?: string;
+  refineError?: { scope: RefineScope; message: string };
   error?: string;
   /** Something is being dragged over the window. */
   dragging: boolean;
@@ -79,7 +82,8 @@ export type ReaderState = {
   settings: Settings;
   versions: VersionInfo[];
   versionBodies: Record<number, string>;
-  reviewBase?: ReviewBase;
+  /** The snapshot each pending page is being reviewed against, by path. */
+  reviewBases: Record<string, ReviewBase>;
   apiKeyMissing?: boolean;
   ui: UiState;
 };
@@ -103,6 +107,7 @@ export class ReaderStore {
     settings: DEFAULT_SETTINGS,
     versions: [],
     versionBodies: {},
+    reviewBases: {},
     ui: initialUi,
   };
 
@@ -280,7 +285,7 @@ export class ReaderStore {
       session.trailIndex = before.length - 1;
       const recent = this.findRecent(folder, file);
       const folderName = session.name || recent?.name || (file ? pages[file].title : prettyFolderName(folder));
-      this.set({ folder, rootFile: file, folderName, pages, bodies: {}, session, versions: [], versionBodies: {}, reviewBase: undefined, home: false, ui: { ...initialUi } });
+      this.set({ folder, rootFile: file, folderName, pages, bodies: {}, session, versions: [], versionBodies: {}, reviewBases: {}, home: false, ui: { ...initialUi } });
       let current = initialPage && pages[initialPage] ? initialPage : session.current;
       if (!current || !pages[current]) {
         const sorted = Object.values(pages).sort((a, b) => Date.parse(b.created ?? b.modified ?? "") - Date.parse(a.created ?? a.modified ?? ""));
@@ -505,11 +510,11 @@ export class ReaderStore {
       if (this.state.ui.popover) this.setUi({ selection: undefined, popover: undefined });
       return;
     }
-    this.setUi({ selection, popover: "ask", panePopover: false, history: false });
+    this.setUi({ selection, popover: "ask", panePopover: false, history: false, refineError: undefined, refineText: undefined });
   }
 
   closePopover() {
-    this.setUi({ popover: undefined, selection: undefined, panePopover: false });
+    this.setUi({ popover: undefined, selection: undefined, panePopover: false, refineError: undefined, refineText: undefined });
   }
 
   closeLookup() {
@@ -525,13 +530,22 @@ export class ReaderStore {
     this.setUi({ panePopover: !ui.panePopover, popover: undefined, selection: undefined });
   }
 
+  /** Reopens the refine box, pre-filled, after a failed attempt. */
+  retryRefine() {
+    const ui = this.state.ui;
+    const err = ui.refineError;
+    if (!err) return;
+    if (err.scope === "selection" && ui.selection) return this.setUi({ refineError: undefined, popover: "refine" });
+    this.setUi({ refineError: undefined, panePopover: true, popover: undefined, selection: undefined });
+  }
+
   escape() {
     const ui = this.state.ui;
     if (this.state.home) return this.leaveHome();
     if (ui.confirmRestore) return this.setUi({ confirmRestore: false });
     if (ui.history) return this.setUi({ history: false });
     if (ui.viewing !== undefined) return this.backToCurrent();
-    if (ui.popover || ui.panePopover) return this.closePopover();
+    if (ui.popover || ui.panePopover || ui.refineError) return this.closePopover();
     if (ui.lookup) return this.closeLookup();
     if (ui.map) return this.closeMap();
     if (ui.fullscreen) return this.setUi({ fullscreen: false });
@@ -747,7 +761,8 @@ export class ReaderStore {
     if (!folder || !current || !instruction.trim()) return;
     const selection = this.state.ui.selection;
     if (scope === "selection" && !selection) return;
-    this.setUi({ refining: scope, popover: undefined, panePopover: false });
+    this.setUi({ refining: scope, refineText: instruction, refineError: undefined, popover: undefined, panePopover: false });
+    let ok = true;
     try {
       if (scope === "corpus") {
         const targets = [current, ...sessionPages(current, this.state.pages).map((p) => p.path)];
@@ -756,14 +771,16 @@ export class ReaderStore {
         await this.refinePage(current, instruction, scope === "selection" ? selection : undefined);
       }
     } catch (e) {
-      this.fail(e);
+      // The failure is shown where the refine box was, with the text kept for a retry.
+      ok = false;
+      this.setUi({ refineError: { scope, message: e instanceof Error ? e.message : String(e) } });
     } finally {
-      this.setUi({ refining: undefined, selection: undefined });
+      this.setUi(ok ? { refining: undefined, selection: undefined, refineText: undefined } : { refining: undefined });
     }
   }
 
   private refinePage(path: string, instruction: string, selection: Selection | undefined): Promise<void> {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       void (async () => {
         const folder = this.state.folder;
         if (!folder) return resolve();
@@ -797,90 +814,94 @@ export class ReaderStore {
                 await platform.writePage(folder, path, serializePage(this.state.pages[path], next));
                 this.set({ bodies: { ...this.state.bodies, [path]: next } });
                 this.setSession({ pending: { ...this.state.session.pending, [path]: n } });
-                if (this.state.session.current === path) {
-                  await this.refreshVersions(path);
-                  await this.refreshReview(path);
-                }
+                if (this.state.session.current === path) await this.refreshVersions(path);
+                // Every changed page gets its review base, so the split pane and later visits show the tints.
+                await this.refreshReview(path);
               } catch (e) {
-                this.fail(e);
+                reject(e);
+                return;
               }
               resolve();
             })();
           },
-          error: (m) => {
-            this.fail(m);
-            resolve();
-          },
+          error: (m) => reject(new Error(m)),
         });
       })();
     });
   }
 
+  private withoutReview(path: string): Record<string, ReviewBase> {
+    const bases = { ...this.state.reviewBases };
+    delete bases[path];
+    return bases;
+  }
+
   private async refreshReview(path: string) {
     const n = this.state.session.pending[path];
     if (!n || !this.state.folder) {
-      if (this.state.reviewBase) this.set({ reviewBase: undefined });
+      if (this.state.reviewBases[path]) this.set({ reviewBases: this.withoutReview(path) });
       return;
     }
-    if (this.state.reviewBase?.path === path && this.state.reviewBase.n === n) return;
+    if (this.state.reviewBases[path]?.n === n) return;
     try {
       const raw = await platform.readVersion(this.state.folder, path, n);
-      this.set({ reviewBase: { path, n, body: stripFrontMatter(raw) } });
+      this.set({ reviewBases: { ...this.state.reviewBases, [path]: { path, n, body: stripFrontMatter(raw) } } });
     } catch {
       const pending = { ...this.state.session.pending };
       delete pending[path];
       this.setSession({ pending });
-      this.set({ reviewBase: undefined });
+      this.set({ reviewBases: this.withoutReview(path) });
     }
   }
 
-  reviewDiff(): PageDiff | null {
-    const { reviewBase, session, bodies } = this.state;
-    const path = session.current;
-    if (!path || !reviewBase || reviewBase.path !== path) return null;
-    const body = bodies[path];
-    if (body === undefined) return null;
-    return diffBodies(reviewBase.body, body);
+  /** Loads the review base for a page shown outside the main pane, such as the split pane. */
+  ensureReview(path: string) {
+    if (this.state.session.pending[path] && !this.state.reviewBases[path]) void this.refreshReview(path);
   }
 
-  async undoChange(change: Change) {
-    const diff = this.reviewDiff();
-    const path = this.state.session.current;
+  reviewDiff(path = this.state.session.current): PageDiff | null {
+    if (!path) return null;
+    const base = this.state.reviewBases[path];
+    const body = this.state.bodies[path];
+    if (!base || body === undefined) return null;
+    return diffBodies(base.body, body);
+  }
+
+  async undoChange(change: Change, path = this.state.session.current) {
+    const diff = this.reviewDiff(path);
     if (!diff || !path || !this.state.folder) return;
     try {
       const next = revertChange(diff, change);
       await platform.writePage(this.state.folder, path, serializePage(this.state.pages[path], next));
       this.set({ bodies: { ...this.state.bodies, [path]: next } });
-      if (diffBodies(this.state.reviewBase?.body ?? "", next).changes.length === 0) await this.undoAll();
+      if (diffBodies(this.state.reviewBases[path]?.body ?? "", next).changes.length === 0) await this.undoAll(path);
     } catch (e) {
       this.fail(e);
     }
   }
 
-  async undoAll() {
-    const path = this.state.session.current;
-    const base = this.state.reviewBase;
+  async undoAll(path = this.state.session.current) {
+    const base = path ? this.state.reviewBases[path] : undefined;
     if (!path || !base || !this.state.folder) return;
     try {
       await platform.writePage(this.state.folder, path, serializePage(this.state.pages[path], base.body));
       await platform.deleteVersion(this.state.folder, path, base.n);
       const pending = { ...this.state.session.pending };
       delete pending[path];
-      this.set({ bodies: { ...this.state.bodies, [path]: base.body }, reviewBase: undefined });
+      this.set({ bodies: { ...this.state.bodies, [path]: base.body }, reviewBases: this.withoutReview(path) });
       this.setSession({ pending });
-      await this.refreshVersions(path);
+      if (path === this.state.session.current) await this.refreshVersions(path);
     } catch (e) {
       this.fail(e);
     }
   }
 
-  done() {
-    const path = this.state.session.current;
+  done(path = this.state.session.current) {
     if (!path) return;
     const pending = { ...this.state.session.pending };
     delete pending[path];
     this.setSession({ pending });
-    this.set({ reviewBase: undefined });
+    this.set({ reviewBases: this.withoutReview(path) });
   }
 
   // ---------- versions ----------
@@ -934,7 +955,7 @@ export class ReaderStore {
       const page = await platform.readPage(this.state.folder, path);
       const pending = { ...this.state.session.pending };
       delete pending[path];
-      this.set({ bodies: { ...this.state.bodies, [path]: page.body }, reviewBase: undefined });
+      this.set({ bodies: { ...this.state.bodies, [path]: page.body }, reviewBases: this.withoutReview(path) });
       this.setSession({ pending });
       this.setUi({ viewing: undefined, confirmRestore: false });
       await this.refreshVersions(path);

@@ -83,7 +83,8 @@ function fakeAnswer(req: AiRequest): string {
         if (hits >= 2) break;
       }
     }
-    if (hits === 0) out = out.replace(/^(\S+)/, "In plain terms, $1");
+    // Prefix the first body word, skipping a leading heading line.
+    if (hits === 0) out = out.replace(/^((?:#[^\n]*\n+)?)(\S+)/, "$1In plain terms, $2");
     return out;
   }
   return "Selective disruption means firing a short electrical pulse the moment a ripple is detected, aborting it. Animals stay asleep, sleep architecture is unchanged, yet next-day recall of the route drops to near the level of rats that never slept.";
@@ -203,6 +204,11 @@ export const mockPlatform: Platform = {
   },
 
   aiStream(req, onEvent): StreamHandle {
+    // Dev hook: an instruction containing "__fail__" simulates a provider error.
+    if (req.messages.some((m) => m.content.includes("__fail__"))) {
+      const t = setTimeout(() => onEvent({ type: "error", message: "Simulated provider error: 429 rate limited" }), 400);
+      return { cancel: () => clearTimeout(t) };
+    }
     const text = fakeAnswer(req);
     const words = text.split(/(?<=\s)/);
     let i = 0;

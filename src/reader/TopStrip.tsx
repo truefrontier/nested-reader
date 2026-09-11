@@ -4,15 +4,15 @@ import type { PageDiff } from "../lib/diff";
 import { relTime } from "../lib/time";
 import { ChevronDown } from "./Icons";
 
-export function TopStrip({ diff }: { diff: PageDiff | null }) {
+/** Review strip for any pane; version history and viewing belong to the main pane only. */
+export function TopStrip({ path, role, diff }: { path: string; role: "main" | "split"; diff: PageDiff | null }) {
   const s = useReader();
   const ui = s.ui;
-  const path = s.session.current;
-  if (!path) return null;
-  const versions = s.versions;
+  const isMain = role === "main";
+  const versions = isMain ? s.versions : [];
   const currentN = versions.length ? versions[versions.length - 1].n + 1 : 1;
-  const review = !!diff && diff.changes.length > 0 && ui.viewing === undefined;
-  const viewing = ui.viewing !== undefined ? versions.find((v) => v.n === ui.viewing) : undefined;
+  const review = !!diff && diff.changes.length > 0 && (!isMain || ui.viewing === undefined);
+  const viewing = isMain && ui.viewing !== undefined ? versions.find((v) => v.n === ui.viewing) : undefined;
   const hasHistory = versions.length > 0;
   if (!review && !viewing && !hasHistory) return null;
   const modified = s.pages[path]?.modified;
@@ -26,10 +26,10 @@ export function TopStrip({ diff }: { diff: PageDiff | null }) {
           <span className="sdot" />
           {n} {n === 1 ? "change" : "changes"}
         </span>
-        <span className="quiet" onClick={() => void store.undoAll()}>
+        <span className="quiet" onClick={() => void store.undoAll(path)}>
           Undo all
         </span>
-        <span className="loud" onClick={() => store.done()}>
+        <span className="loud" onClick={() => store.done(path)}>
           Done
         </span>
       </div>

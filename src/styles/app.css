@@ -605,9 +605,15 @@ button {
 }
 .verbs {
   display: flex;
-  gap: 14px;
+  flex-wrap: wrap;
+  gap: 6px 14px;
   font-size: 11.5px;
   color: var(--mute);
+}
+.verbs .tail {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 14px;
 }
 .verb {
   cursor: pointer;
@@ -628,6 +634,45 @@ button {
 }
 .verb.esc {
   margin-left: auto;
+}
+.status-card .working {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--mute);
+}
+.status-card .working em {
+  font-style: normal;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.status-card .pulse {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--acc);
+  flex: none;
+  animation: pulse 1.1s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.status-card.failed .msg {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--fg);
+  overflow-wrap: anywhere;
 }
 .kbd {
   font-size: 10.5px;

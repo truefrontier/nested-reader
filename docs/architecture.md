@@ -99,3 +99,9 @@ pnpm tauri dev        # the app
 pnpm dev              # browser-only preview with the mock backend
 pnpm tauri build      # .app and .dmg in src-tauri/target/release/bundle
 ```
+
+## Refine and review state
+
+A refinement snapshots the page (`.reader/versions/<page>/vN.md`), writes the new body and records `session.pending[path] = n`. `reviewBases` in the store holds, per path, the snapshot each pending page is reviewed against, so any pane showing that page (main or split) renders the tints and its own strip with Undo all and Done. `done(path)`, `undoAll(path)` and `undoChange(change, path)` act on one page. A corpus refine therefore leaves every touched page pending until each is reviewed; the sidebar dot follows `session.pending`.
+
+While a refinement runs, `ui.refining` and `ui.refineText` drive a status card in the place of the refine box (in the page for a selection, at the pane's bottom for page and corpus scope). A failure sets `ui.refineError` and keeps the selection and text, so the card offers Try again. The ask and refine boxes share the typed draft, held by the page, across the ⌘R switch.

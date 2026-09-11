@@ -58,7 +58,7 @@ function useAutoFocus() {
   return ref;
 }
 
-export function AskVerbs({ onVerb, onEsc }: { onVerb: (v: Verb, alt: boolean) => void; onEsc: () => void }) {
+export function AskVerbs({ onVerb, onEsc, onToggle }: { onVerb: (v: Verb, alt: boolean) => void; onEsc: () => void; onToggle?: () => void }) {
   return (
     <div className="verbs">
       <span className="verb" onClick={(e) => onVerb("quick", e.altKey)}>
@@ -70,16 +70,37 @@ export function AskVerbs({ onVerb, onEsc }: { onVerb: (v: Verb, alt: boolean) =>
       <span className="verb" onClick={(e) => onVerb("deep", e.altKey)}>
         <Kbd>⌘⇧↵</Kbd>Deep Dive
       </span>
-      <span className="verb esc" onClick={onEsc}>
-        Esc
+      <span className="tail">
+        {onToggle && (
+          <span className="verb" onClick={onToggle}>
+            <Kbd>⌘R</Kbd>Refine
+          </span>
+        )}
+        <span className="verb esc" onClick={onEsc}>
+          Esc
+        </span>
       </span>
     </div>
   );
 }
 
-export function AskPopover({ caretLeft, onSubmit, onEsc, onRefine }: { caretLeft: number; onSubmit: Submit; onEsc: () => void; onRefine: () => void }) {
+/** The typed text lives in the parent so it survives the ⌘R switch to the refine box and back. */
+export function AskPopover({
+  caretLeft,
+  value,
+  onChange,
+  onSubmit,
+  onEsc,
+  onRefine,
+}: {
+  caretLeft: number;
+  value: string;
+  onChange: (v: string) => void;
+  onSubmit: Submit;
+  onEsc: () => void;
+  onRefine: () => void;
+}) {
   const ref = useAutoFocus();
-  const [q, setQ] = useState("");
   const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Escape") return onEsc();
     if (e.key === "r" && e.metaKey) {
@@ -89,20 +110,30 @@ export function AskPopover({ caretLeft, onSubmit, onEsc, onRefine }: { caretLeft
     const v = verbFor(e);
     if (v) {
       e.preventDefault();
-      onSubmit(q, v, e.altKey);
+      onSubmit(value, v, e.altKey);
     }
   };
   return (
-    <PopWrap caretX={caretLeft} className="narrow">
+    <PopWrap caretX={caretLeft}>
       <div className="pop">
-        <input ref={ref} data-ask="1" placeholder="Ask something…" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} spellCheck={false} />
-        <AskVerbs onVerb={(v, alt) => onSubmit(q, v, alt)} onEsc={onEsc} />
+        <input ref={ref} data-ask="1" placeholder="Ask something…" value={value} onChange={(e) => onChange(e.target.value)} onKeyDown={onKey} spellCheck={false} />
+        <AskVerbs onVerb={(v, alt) => onSubmit(value, v, alt)} onEsc={onEsc} onToggle={onRefine} />
       </div>
     </PopWrap>
   );
 }
 
-export function RefineVerbs({ onScope, onEsc, selectionEnabled }: { onScope: (s: RefineScope) => void; onEsc: () => void; selectionEnabled: boolean }) {
+export function RefineVerbs({
+  onScope,
+  onEsc,
+  onToggle,
+  selectionEnabled,
+}: {
+  onScope: (s: RefineScope) => void;
+  onEsc: () => void;
+  onToggle?: () => void;
+  selectionEnabled: boolean;
+}) {
   return (
     <div className="verbs">
       <span className={`verb${selectionEnabled ? "" : " off"}`} onClick={() => selectionEnabled && onScope("selection")}>
@@ -114,28 +145,47 @@ export function RefineVerbs({ onScope, onEsc, selectionEnabled }: { onScope: (s:
       <span className="verb" onClick={() => onScope("corpus")}>
         <Kbd>⌘⇧↵</Kbd>Refine corpus
       </span>
-      <span className="verb esc" onClick={onEsc}>
-        Esc
+      <span className="tail">
+        {onToggle && (
+          <span className="verb" onClick={onToggle}>
+            <Kbd>⌘R</Kbd>Ask
+          </span>
+        )}
+        <span className="verb esc" onClick={onEsc}>
+          Esc
+        </span>
       </span>
     </div>
   );
 }
 
+/**
+ * In-flow, the text is controlled by the page (`value`/`onChange`) so ⌘R keeps it;
+ * the pane variant keeps its own, seeded with `initial` when reopened for a retry.
+ */
 export function RefinePopover({
   caretLeft,
   pane,
+  value,
+  onChange,
+  initial,
   onSubmit,
   onEsc,
   onToggle,
 }: {
   caretLeft?: number;
   pane?: boolean;
+  value?: string;
+  onChange?: (v: string) => void;
+  initial?: string;
   onSubmit: (instruction: string, scope: RefineScope) => void;
   onEsc: () => void;
   onToggle: () => void;
 }) {
   const ref = useAutoFocus();
-  const [text, setText] = useState("");
+  const [local, setLocal] = useState(initial ?? "");
+  const text = value ?? local;
+  const setText = onChange ?? setLocal;
   const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Escape") return onEsc();
     if (e.key === "r" && e.metaKey) {
@@ -159,7 +209,7 @@ export function RefinePopover({
         onKeyDown={onKey}
         spellCheck={false}
       />
-      <RefineVerbs selectionEnabled={!pane} onScope={(scope) => onSubmit(text, scope)} onEsc={onEsc} />
+      <RefineVerbs selectionEnabled={!pane} onScope={(scope) => onSubmit(text, scope)} onEsc={onEsc} onToggle={pane ? undefined : onToggle} />
     </div>
   );
   if (pane) return <div className="pane-pop">{body}</div>;
@@ -170,7 +220,64 @@ export function RefinePopover({
   );
 }
 
-export function AnswerCard({ lookup, onFollowUp, onEsc }: { lookup: Lookup; onFollowUp: Submit; onEsc: () => void }) {
+const SCOPE_LABEL: Record<RefineScope, string> = { selection: "selection", page: "page", corpus: "corpus" };
+
+/** Takes the refine box's place while a refinement runs, and holds the failure until retried or dismissed. */
+export function RefineStatus({
+  scope,
+  text,
+  error,
+  caretLeft,
+  pane,
+  onRetry,
+  onDismiss,
+}: {
+  scope: RefineScope;
+  text?: string;
+  error?: string;
+  caretLeft?: number;
+  pane?: boolean;
+  onRetry: () => void;
+  onDismiss: () => void;
+}) {
+  useEffect(() => {
+    if (!error) return;
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Enter" && !(e.target as HTMLElement)?.closest("input, textarea")) {
+        e.preventDefault();
+        onRetry();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [error, onRetry]);
+  const body = error ? (
+    <div className="pop small-card status-card failed">
+      <div className="lab">Couldn't refine the {SCOPE_LABEL[scope]}</div>
+      <div className="msg">{error}</div>
+      <div className="acts">
+        <span className="do" onClick={onRetry}>
+          <Kbd>↵</Kbd> Try again
+        </span>
+        <span className="r verb esc" onClick={onDismiss}>
+          Esc
+        </span>
+      </div>
+    </div>
+  ) : (
+    <div className="pop small-card status-card">
+      <div className="working">
+        <span className="pulse" />
+        <span>Refining the {SCOPE_LABEL[scope]}…</span>
+        {text && <em title={text}>“{text}”</em>}
+      </div>
+    </div>
+  );
+  if (pane) return <div className="pane-pop">{body}</div>;
+  return <PopWrap caretX={caretLeft ?? 0}>{body}</PopWrap>;
+}
+
+export function AnswerCard({ lookup, onFollowUp, onEsc, onRefine }: { lookup: Lookup; onFollowUp: Submit; onEsc: () => void; onRefine?: () => void }) {
   const ref = useAutoFocus();
   const [q, setQ] = useState("");
   const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -196,7 +303,7 @@ export function AnswerCard({ lookup, onFollowUp, onEsc }: { lookup: Lookup; onFo
         <div className={`answer${lookup.streaming ? " streaming-cursor" : ""}`}>{lookup.answer}</div>
       )}
       <input ref={ref} data-ask="1" placeholder="Follow up…" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} spellCheck={false} />
-      <AskVerbs onVerb={(v, alt) => q.trim() && onFollowUp(q, v, alt)} onEsc={onEsc} />
+      <AskVerbs onVerb={(v, alt) => q.trim() && onFollowUp(q, v, alt)} onEsc={onEsc} onToggle={onRefine} />
     </div>
   );
 }

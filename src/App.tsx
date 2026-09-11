@@ -6,7 +6,7 @@ import { Home } from "./reader/Home";
 import { Page } from "./reader/Page";
 import { SplitPane } from "./reader/SplitPane";
 import { MapOverlay } from "./reader/MapOverlay";
-import { RefinePopover } from "./reader/Popovers";
+import { RefinePopover, RefineStatus } from "./reader/Popovers";
 import { SidebarIcon } from "./reader/Icons";
 import { SettingsApp } from "./settings/SettingsApp";
 
@@ -117,9 +117,24 @@ export default function App() {
             )}
             {split && <SplitPane />}
             {s.ui.panePopover && current && (
-              <RefinePopover pane onSubmit={(text, scope) => void store.refine(text, scope)} onEsc={() => store.closePopover()} onToggle={() => store.toggleRefine()} />
+              <RefinePopover
+                pane
+                initial={s.ui.refineText}
+                onSubmit={(text, scope) => void store.refine(text, scope)}
+                onEsc={() => store.closePopover()}
+                onToggle={() => store.toggleRefine()}
+              />
             )}
-            {s.ui.refining && <div className="busy">Refining {s.ui.refining === "corpus" ? "corpus" : s.ui.refining}…</div>}
+            {((s.ui.refining && s.ui.refining !== "selection") || (s.ui.refineError && s.ui.refineError.scope !== "selection")) && (
+              <RefineStatus
+                pane
+                scope={s.ui.refineError?.scope ?? s.ui.refining ?? "page"}
+                text={s.ui.refineText}
+                error={s.ui.refineError?.message}
+                onRetry={() => store.retryRefine()}
+                onDismiss={() => store.closePopover()}
+              />
+            )}
             {s.ui.map && <MapOverlay />}
           </div>
         </>

@@ -3,7 +3,7 @@ import { store, useReader, type Selection } from "../state/store";
 import { lexBlocks, resolveWikiTarget, type Block } from "../lib/markdown";
 import { diffBodies, type Change, type PageDiff } from "../lib/diff";
 import { applyWraps, rangeOffsets, type Wrap } from "../lib/wraps";
-import { AnswerCard, AskPopover, BeforeCard, NowCard, RefinePopover } from "./Popovers";
+import { AnswerCard, AskPopover, BeforeCard, NowCard, RefinePopover, RefineStatus } from "./Popovers";
 import { TopStrip } from "./TopStrip";
 
 type LinkState = "loading" | "unread" | "read" | "missing";
@@ -50,10 +50,16 @@ export function Page({ path, role }: Props) {
   const [activeChange, setActiveChange] = useState<string | undefined>();
   const articleRef = useRef<HTMLDivElement>(null);
 
+  // Any pane shows its page's pending changes, not just the main one.
+  const reviewBase = s.reviewBases[path];
+  const pendingN = s.session.pending[path];
   const reviewDiff: PageDiff | null = useMemo(() => {
-    if (!isMain || !s.reviewBase || s.reviewBase.path !== path || body === undefined) return null;
-    return diffBodies(s.reviewBase.body, body);
-  }, [isMain, s.reviewBase, path, body]);
+    if (!reviewBase || body === undefined) return null;
+    return diffBodies(reviewBase.body, body);
+  }, [reviewBase, body]);
+  useEffect(() => {
+    if (pendingN && !reviewBase) store.ensureReview(path);
+  }, [path, pendingN, reviewBase]);
 
   const viewDiff: PageDiff | null = useMemo(() => {
     if (viewingN === undefined || body === undefined) return null;
@@ -69,6 +75,11 @@ export function Page({ path, role }: Props) {
   }, [viewDiff, reviewDiff, body]);
 
   const selection = isMain && !viewDiff ? ui.selection : undefined;
+  // What has been typed into the ask/refine box; survives the ⌘R switch, resets with a new selection.
+  const [draft, setDraft] = useState("");
+  useEffect(() => {
+    setDraft("");
+  }, [selection?.block, selection?.start, selection?.end]);
 
   const changesByBlock = useMemo(() => {
     const map = new Map<number, Change[]>();
@@ -223,7 +234,12 @@ export function Page({ path, role }: Props) {
           <AskPopover
             key="ask"
             caretLeft={selection.caretX}
-            onSubmit={(q, verb, alt) => void store.ask(q, verb, alt)}
+            value={draft}
+            onChange={setDraft}
+            onSubmit={(q, verb, alt) => {
+              setDraft("");
+              void store.ask(q, verb, alt);
+            }}
             onEsc={() => store.closePopover()}
             onRefine={() => store.toggleRefine()}
           />,
@@ -234,14 +250,37 @@ export function Page({ path, role }: Props) {
           <RefinePopover
             key="refine"
             caretLeft={selection.caretX}
+            value={draft}
+            onChange={setDraft}
             onSubmit={(text, scope) => void store.refine(text, scope)}
             onEsc={() => store.closePopover()}
             onToggle={() => store.toggleRefine()}
           />,
         );
       }
+      if (selection?.block === i && !ui.popover && (ui.refining === "selection" || ui.refineError?.scope === "selection")) {
+        out.push(
+          <RefineStatus
+            key="refine-status"
+            scope="selection"
+            text={ui.refineText}
+            error={ui.refineError?.message}
+            caretLeft={selection.caretX}
+            onRetry={() => store.retryRefine()}
+            onDismiss={() => store.closePopover()}
+          />,
+        );
+      }
       if (ui.lookup?.block === i) {
-        out.push(<AnswerCard key="lookup" lookup={ui.lookup} onFollowUp={(q, verb, alt) => void store.ask(q, verb, alt)} onEsc={() => store.closeLookup()} />);
+        out.push(
+          <AnswerCard
+            key="lookup"
+            lookup={ui.lookup}
+            onFollowUp={(q, verb, alt) => void store.ask(q, verb, alt)}
+            onEsc={() => store.closeLookup()}
+            onRefine={() => store.toggleRefine()}
+          />,
+        );
       }
       if (activeChange) {
         const list = changesByBlock.get(i) ?? [];
@@ -260,7 +299,7 @@ export function Page({ path, role }: Props) {
                 caretLeft={caretXFor(c.id)}
                 onUndo={() => {
                   setActiveChange(undefined);
-                  void store.undoChange(c);
+                  void store.undoChange(c, path);
                 }}
               />,
             );
@@ -278,7 +317,7 @@ export function Page({ path, role }: Props) {
 
   return (
     <>
-      {isMain && <TopStrip diff={reviewDiff} />}
+      <TopStrip path={path} role={role} diff={reviewDiff} />
       <div className="article" ref={articleRef} onMouseUp={onMouseUp} onMouseDown={onMouseDown} onClick={onClick} onMouseOver={onMouseOver}>
         {source && (
           <div className="crumb" onClick={onCrumb} title={`Back to ${source.title}`}>
