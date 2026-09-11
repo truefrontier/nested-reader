@@ -1,5 +1,5 @@
 import { diffArrays, diffWordsWithSpace } from "diff";
-import { lexBlocks, type Block } from "./markdown";
+import { lexBlocks, replaceFlexible, type Block } from "./markdown";
 
 /**
  * One changed span between two versions of a page.
@@ -188,8 +188,8 @@ export function revertChange(diff: PageDiff, change: Change): string {
   }
   const raw = blocks[change.block];
   let replaced: string | null = null;
-  if (change.after && raw.includes(change.after)) {
-    replaced = raw.replace(change.after, change.before);
+  if (change.after.trim()) {
+    replaced = replaceFlexible(raw, change.after, change.before);
   }
   if (replaced === null) {
     replaced = change.oldBlock >= 0 ? diff.oldBlocks[change.oldBlock].raw : "";

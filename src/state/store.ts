@@ -13,7 +13,7 @@ import {
   type VersionInfo,
 } from "../platform";
 import { diffBodies, revertChange, type Change, type PageDiff } from "../lib/diff";
-import { joinBlocks, lexBlocks, linkTextInRaw, resolveWikiTarget } from "../lib/markdown";
+import { joinBlocks, lexBlocks, linkTextInRaw, replaceFlexible, resolveWikiTarget } from "../lib/markdown";
 import { serializePage, titleFromBody } from "../lib/frontmatter";
 import { slugify, titleFromQuestion, uniquePath } from "../lib/slug";
 import { nowIso } from "../lib/time";
@@ -618,8 +618,9 @@ export class ReaderStore {
                 const cleaned = stripFences(out).trim();
                 if (selection) {
                   const b = blocks[selection.block];
-                  if (!b || !b.raw.includes(selection.text)) throw new Error("Could not find the selection in the page source.");
-                  blocks[selection.block] = { ...b, raw: b.raw.replace(selection.text, cleaned) };
+                  const raw = b ? replaceFlexible(b.raw, selection.text, cleaned) : null;
+                  if (!b || raw === null) throw new Error("Could not find the selection in the page source.");
+                  blocks[selection.block] = { ...b, raw };
                   next = joinBlocks(blocks);
                 } else {
                   next = cleaned.endsWith("\n") ? cleaned : cleaned + "\n";

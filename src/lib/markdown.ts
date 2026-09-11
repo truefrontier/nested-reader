@@ -92,9 +92,32 @@ export function resolveWikiTarget(target: string, paths: Iterable<string>): stri
   return null;
 }
 
-/** Wraps the first occurrence of `text` in `raw` with a wiki-link. */
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * A pattern that finds `text` in markdown source even when the source is
+ * hard-wrapped or uses different runs of whitespace.
+ */
+export function flexiblePattern(text: string): RegExp | null {
+  const parts = text.trim().split(/\s+/).filter(Boolean).map(escapeRegExp);
+  if (!parts.length) return null;
+  // Leading/trailing whitespace in `text` is part of the match (a reverted insertion must take its space with it).
+  const lead = /^\s/.test(text) ? "\\s+" : "";
+  const trail = /\s$/.test(text) ? "\\s+" : "";
+  return new RegExp(lead + parts.join("\\s+") + trail);
+}
+
+/** Replaces the first flexible match of `text` in `raw`, or returns null when absent. */
+export function replaceFlexible(raw: string, text: string, replacement: string | ((match: string) => string)): string | null {
+  const re = flexiblePattern(text);
+  if (!re || !re.test(raw)) return null;
+  // A function replacer keeps `$` in the replacement literal.
+  return raw.replace(re, (m) => (typeof replacement === "function" ? replacement(m) : replacement));
+}
+
+/** Wraps the first occurrence of `text` in `raw` with a wiki-link, keeping the source's own spelling of it. */
 export function linkTextInRaw(raw: string, text: string, target: string): string | null {
-  const i = raw.indexOf(text);
-  if (i < 0) return null;
-  return raw.slice(0, i) + `[[${target}|${text}]]` + raw.slice(i + text.length);
+  return replaceFlexible(raw, text, (m) => `[[${target}|${m}]]`);
 }
