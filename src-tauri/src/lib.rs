@@ -2,6 +2,7 @@ mod ai;
 mod cli;
 mod error;
 mod files;
+mod migrate;
 #[cfg(target_os = "macos")]
 mod open_panel;
 
@@ -339,6 +340,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(Streams::default())
         .setup(|app| {
+            migrate::run(app.handle());
             build_menu(app.handle())?;
             app.on_menu_event(|app, event| {
                 let id = event.id().0.clone();

@@ -39,7 +39,7 @@ Everything about a session stays inside the folder you opened.
 | `.reader/session-<page>.json` | The same, for a session opened from a single file in this folder. |
 | `.reader/versions/<page>/vN.md` | Snapshots taken before each refine. The live file is always the newest version. |
 
-Settings are stored in the app config directory as `settings.json`, and the Home screen's list of recent sessions as `recents.json` beside it (folder, optional file, name, last opened, unread count). API keys are stored in the macOS Keychain under the service `com.truefrontier.markdown-learner`, one entry per provider. The frontend never holds a key after saving it; Rust reads it when it makes a request.
+Settings are stored in the app config directory as `settings.json`, and the Home screen's list of recent sessions as `recents.json` beside it (folder, optional file, name, last opened, unread count). API keys are stored in the macOS Keychain under the service `app.nestedreader.nested`, the bundle identifier, one entry per provider. The app first shipped as `com.truefrontier.markdown-learner`; the first launch under the new identifier copies `settings.json`, `recents.json` and the keys across (`src-tauri/src/migrate.rs`) and leaves the old copies in place. The frontend never holds a key after saving it; Rust reads it when it makes a request.
 
 ## Home and sessions
 

@@ -51,7 +51,7 @@ pub struct PingResult {
     pub models: Option<Vec<String>>,
 }
 
-pub const KEYCHAIN_SERVICE: &str = "com.truefrontier.markdown-learner";
+pub const KEYCHAIN_SERVICE: &str = "app.nestedreader.nested";
 
 pub fn api_key(provider: &str) -> Result<String> {
     let entry = keyring::Entry::new(KEYCHAIN_SERVICE, provider)?;

@@ -1,5 +1,31 @@
 # Progress
 
+## Session: 2026-09-11 — the bundle identifier follows nestedreader.app
+
+### Leading assumptions
+- "Bundle id should follow the domain name" means Apple's reverse-DNS convention: `nestedreader.app` reversed is `app.nestedreader`, plus a product segment, so `app.nestedreader.nested`. No platform segment, because universal purchase on the App Store needs one bundle ID across Mac and iOS.
+- The Keychain service string follows the identifier, so the two do not drift. The crate, lib, package and binary names follow the product name: `nested`, `nested_lib`, `target/debug/nested`.
+- "Migrate" means the first launch under the new identifier carries over what the old one held: `settings.json`, `recents.json` and each provider's API key. The old copies stay as a backup; nothing is deleted.
+
+### World facts
+- `src-tauri/src/migrate.rs` runs first in the setup hook, only while the new config folder does not exist. It creates that folder (closing the gate, so a key deleted later is not brought back on the next launch), copies the two files from `<config parent>/com.truefrontier.markdown-learner`, and copies the `openai`, `anthropic` and `custom` Keychain passwords from the old service to the new one. Failures are printed, never fatal.
+- The identifier lives in `tauri.conf.json`; the Keychain service is `ai::KEYCHAIN_SERVICE`. The Caches and WebKit folders under the old identifier are disposable and were left alone.
+- Everything else that carried the old name: `Cargo.toml`, `main.rs`, `package.json`, the CLI scratch folder in `cli.rs`, and `docs/architecture.md`.
+
+### Timeline
+1. Kevin asked whether the bundle id should follow the domain; answered with the reverse-DNS convention and what changing it moves.
+2. Kevin chose `app.nestedreader.nested` with a migration. Wrote the migration, changed the identifier, the Keychain service and the crate names.
+3. Verified the migration on this Mac, then committed on `main` after a fetch and pushed.
+
+### Verification
+- `tsc` and `pnpm build` pass; the Rust side compiles as `nested` with no warnings.
+- Planted a throwaway item under the old Keychain service before the rebuild. On relaunch the new config folder appeared with `settings.json` byte-identical to the old and `recents.json` copied (the app then updated its last-opened stamp), and the throwaway item was present under the new service with the same value. Both throwaway items were deleted afterwards.
+- The process is `target/debug/nested`; the menu bar reads Nested, About Nested, and the window title is Nested.
+
+### Possible next steps
+- Once every Mac that ran the old identifier has launched the new build, `migrate.rs` and the old-identifier constant can go.
+- The old `~/Library/Application Support/com.truefrontier.markdown-learner`, Caches and WebKit folders can be removed by hand when nobody needs the backup.
+
 ## Session: 2026-09-11 — ⌘O opens a folder or a file, and the app is called Nested
 
 ### Leading assumptions
