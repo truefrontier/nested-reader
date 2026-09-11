@@ -20,6 +20,7 @@
 2. Added the remembered-asks list to the session, the store methods, the page wraps, the hover and click handling, and the styles.
 3. Drove the browser build with Playwright: ask, Esc, hover, leave, hover into the card, click to pin, follow-up, Esc, follow a link and come back. The dotted text was there at every step and the card showed and hid as intended.
 4. Committed on `claude/blissful-ritchie-ihfr0w` and pushed.
+5. Kevin asked for a merge into `main`. Main had moved (Settings close on Esc, table tints, the top fade), so main was merged into the branch first; the only conflict was this file, resolved by keeping both session entries. Build and the Playwright drive passed on the merged code, then `main` was fast-forwarded and pushed.
 
 ### Verification
 - `tsc` and `pnpm build` pass.
