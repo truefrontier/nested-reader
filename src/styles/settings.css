@@ -160,6 +160,10 @@ body.settings-body {
   gap: 6px;
   min-width: 96px;
 }
+.note.wrap {
+  white-space: normal;
+  line-height: 1.4;
+}
 .note .gdot {
   width: 6px;
   height: 6px;

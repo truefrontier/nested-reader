@@ -825,6 +825,24 @@ button {
   white-space: nowrap;
   min-width: 0;
 }
+.status-card .working.tool {
+  margin-top: 5px;
+  padding-left: 16px;
+}
+.card .answer.tool,
+.tool-line {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-family: var(--sans);
+  font-size: 12.5px;
+  color: var(--mute);
+}
+.tool-line {
+  margin-top: 14px;
+}
+.card .answer.tool .pulse,
+.tool-line .pulse,
 .status-card .pulse {
   width: 7px;
   height: 7px;

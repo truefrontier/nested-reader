@@ -29,6 +29,8 @@ Open Settings (⌘,) › AI. Pick OpenAI, Anthropic, Ollama, or Custom (any Open
 
 **Use a plan instead of a key.** Under OpenAI or Anthropic, switch Account to "ChatGPT plan" or "Claude plan". The app then runs the official command-line tool signed in on your Mac (`codex exec` or `claude -p`) and questions count against that plan. Sign in once in a terminal with `codex login` or `claude` › `/login`.
 
+**Let it look things up.** With "Let the model read the folder itself" on (Settings › AI › Tools, on by default), the model can list, read and search the pages of the open folder while it answers, instead of relying only on the context sent with the question. The card or page says what it is reading ("Reading sharp-wave-ripples.md…") until the text starts. The tools are read-only and never reach outside the folder. Under a plan, the official CLI gets the same reach: Claude Code with its Read, Grep and Glob tools pointed at the folder, Codex with its read-only sandbox in the folder.
+
 **Ollama** needs no key. Point the Server field at your Ollama instance (default `http://localhost:11434`); the Model menu then lists the models you have pulled, smallest first, and nothing leaves the machine.
 
 The "Built in" provider is in the design but not connected to a service in this build.

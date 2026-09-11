@@ -88,12 +88,24 @@ Diffing happens in TypeScript on the rendered text of each block (`src/lib/diff.
 - **Anthropic**: `POST /v1/messages` with `stream: true`.
 - **Ollama**: `POST {server}/api/chat` with `stream: true` and `think: false`, read as newline-delimited JSON; `GET {server}/api/tags` for the ping and the installed-model list (chat models only, local and smallest first). No key; the server URL is `ollamaUrl` in settings. The client has no overall timeout because local models can be slow.
 - **Custom**: any OpenAI-compatible server; set the base URL in Settings.
-- **Plans** (`auth: "subscription"` on the request, `cli.rs`): Anthropic runs `claude -p --output-format stream-json --include-partial-messages --tools "" --setting-sources "" --strict-mcp-config` from a neutral folder and forwards `text_delta` events; OpenAI runs `codex exec --json` and forwards `agent_message` items. The pings are `claude auth status --json` and `codex login status`. The CLIs hold the sign-in; the app never handles a token.
+- **Plans** (`auth: "subscription"` on the request, `cli.rs`): Anthropic runs `claude -p --output-format stream-json --include-partial-messages --setting-sources "" --strict-mcp-config` from a neutral folder and forwards `text_delta` events, with `--tools ""` and one turn when no folder is given and the read-only tools (below) when one is; OpenAI runs `codex exec --json` and forwards `agent_message` items. The pings are `claude auth status --json` and `codex login status`. The CLIs hold the sign-in; the app never handles a token.
 
 Every ping returns the provider's model list (`PingResult.models`). Settings shows it as a menu and, when nothing has been chosen for that provider and account mode, picks the cheapest tier it recognises (`src/lib/models.ts`: Luna, nano or mini for OpenAI; Haiku for Anthropic; the smallest local model for Ollama; the CLI aliases for plans).
 - **Built in** is present in the UI but not wired to a service in this build.
 
 Prompts are built in `src/lib/prompts.ts`. What gets sent is controlled by the Context toggles in Settings: the highlight and its paragraph, the other pages in this session, or every page in the folder.
+
+### Tools
+
+With `tools` on in settings (the default), every request carries `folder`, and the model may call three read-only tools defined in `src-tauri/src/tools.rs`: `list_pages` (path and title of every page), `read_page` (one page in full, clipped at 40k characters) and `search_pages` (case-insensitive line matches across the folder, at most 60). They go through `files.rs`, so they cannot leave the folder, and they refuse hidden directories such as `.reader`. Without `folder` no tools are offered, and the system prompt gains a sentence about them only when they are (`tools()` in `prompts.ts`).
+
+Each API provider runs a loop of at most `MAX_ROUNDS` (8) turns in `ai.rs`: stream one turn, and if it ends in tool calls, run them and send the whole turn back with the results. Anthropic keeps every streamed content block (text, `tool_use`, thinking with its signature) and replays it as the assistant message, then a user message of `tool_result` blocks; an empty text block is dropped because the API rejects it. The OpenAI shape accumulates `delta.tool_calls` fragments by index and replays `tool_calls` plus `role: "tool"` messages; Ollama shares that shape, with arguments already as an object and `tool_name` on the result. Ollama, and the Custom provider, retry once without tools when the server rejects them ("does not support tools"), so a model without tool support answers plainly. Before each call the stream sends a `tool` event with a short line for the UI ("Reading replay.md", "Searching for “ripple”", "Listing the pages").
+
+The plans get the CLI's own tools instead. Claude Code runs with `--tools Read,Grep,Glob --allowedTools Read,Grep,Glob --add-dir <folder> --max-turns 12` (print mode cannot ask for permission, so the read-only set is approved up front), still from the neutral folder; Codex runs with the session folder as its working directory under `--sandbox read-only`. Both get a line in their instructions naming the folder. Their `tool_use` blocks and `command_execution` items become the same `tool` events.
+
+The store keeps `working[key]` per stream (`lookup`, `page:<path>`, `refine:<path>`) from those events, clearing it on the next text delta and at the end. The answer card shows the line in place of the empty answer, a page being written shows it under its skeleton (`.tool-line`), and the refine status card adds it under the instruction.
+
+`tsc` and the Playwright drive cover the browser build (the mock sends two tool events before its answer when `folder` is set). The tool loops are tested in `ai.rs` against a fake HTTP server on localhost for all three API shapes, and `tools.rs` has unit tests; both run with `cargo test` (on a Mac, or off a Mac against a stub `tauri` crate, since the real one needs the platform's webview libraries).
 
 ## Appearance
 

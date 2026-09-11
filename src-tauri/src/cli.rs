@@ -61,9 +61,41 @@ fn transcript(req: &AiRequest) -> String {
     out
 }
 
-fn spawn(mut cmd: Command) -> Result<Child> {
+/// Claude Code's read-only tools; enough to look around the folder, nothing that writes or runs.
+const CLAUDE_TOOLS: &str = "Read,Grep,Glob";
+
+/// The line added to the instructions when the CLI may read the session folder.
+fn folder_note(req: &AiRequest) -> Option<String> {
+    let folder = req.folder.as_deref()?;
+    let note = format!(
+        "The session folder is {folder}. Its Markdown files are the pages; read only inside it, and ignore its .reader directory."
+    );
+    Some(match &req.system {
+        Some(s) if !s.trim().is_empty() => format!("{s}\n\n{note}"),
+        _ => note,
+    })
+}
+
+/// A short line for the UI from a CLI tool call, in the words the app's own tools use.
+fn cli_tool_detail(name: &str, input: &Value) -> String {
+    let path = input["file_path"].as_str().or_else(|| input["path"].as_str()).unwrap_or("");
+    let base = path.rsplit('/').next().unwrap_or(path);
+    match name {
+        "Read" if !base.is_empty() => format!("Reading {base}"),
+        "Read" => "Reading a page".to_string(),
+        "Grep" => match input["pattern"].as_str().map(str::trim).filter(|p| !p.is_empty()) {
+            Some(p) => format!("Searching for “{}”", p.chars().take(40).collect::<String>()),
+            None => "Searching the pages".to_string(),
+        },
+        "Glob" | "LS" => "Listing the pages".to_string(),
+        "Bash" => "Running a command".to_string(),
+        other => format!("Using {other}"),
+    }
+}
+
+fn spawn(mut cmd: Command, cwd: Option<&str>) -> Result<Child> {
     Ok(cmd
-        .current_dir(neutral_cwd())
+        .current_dir(cwd.map(PathBuf::from).unwrap_or_else(neutral_cwd))
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -113,31 +145,35 @@ fn last_line(text: &str) -> Option<String> {
 
 pub async fn stream_claude(req: &AiRequest, channel: &Channel<StreamEvent>, cancel: &CancelToken) -> Result<()> {
     let mut cmd = Command::new(find_bin("claude")?);
-    // Print mode, streamed; one turn, no tools, no session file, and none of the user's
-    // hooks, settings or MCP servers, which would otherwise be loaded on every question.
+    // Print mode, streamed; no session file, and none of the user's hooks, settings or MCP
+    // servers, which would otherwise be loaded on every question.
     cmd.args([
         "-p",
         "--output-format",
         "stream-json",
         "--verbose",
         "--include-partial-messages",
-        "--max-turns",
-        "1",
         "--no-session-persistence",
-        "--tools",
-        "",
         "--setting-sources",
         "",
         "--strict-mcp-config",
     ]);
+    match &req.folder {
+        // Read-only tools, approved up front (print mode cannot ask), reaching only the
+        // session folder, with enough turns to look around before answering.
+        Some(folder) => cmd.args(["--max-turns", "12", "--tools", CLAUDE_TOOLS, "--allowedTools", CLAUDE_TOOLS, "--add-dir", folder]),
+        // One turn and no tools at all.
+        None => cmd.args(["--max-turns", "1", "--tools", ""]),
+    };
     if !req.model.is_empty() {
         cmd.args(["--model", &req.model]);
     }
-    if let Some(sys) = &req.system {
+    let system = folder_note(req).or_else(|| req.system.clone());
+    if let Some(sys) = &system {
         cmd.args(["--system-prompt", sys]);
     }
     cmd.arg(transcript(req));
-    let child = spawn(cmd)?;
+    let child = spawn(cmd, None)?;
     let mut streamed = false;
     let mut failure: Option<String> = None;
     let (ok, stderr) = run_lines(child, cancel, |v| {
@@ -150,12 +186,20 @@ pub async fn stream_claude(req: &AiRequest, channel: &Channel<StreamEvent>, canc
                     }
                 }
             }
-            // A CLI without partial messages sends whole text blocks instead.
-            Some("assistant") if !streamed => {
+            // Each finished assistant turn arrives whole: its tool calls tell the UI what the
+            // model is reading, and a CLI without partial messages gives its text here too.
+            Some("assistant") => {
                 if let Some(blocks) = v["message"]["content"].as_array() {
                     for b in blocks {
-                        if let (Some("text"), Some(t)) = (b["type"].as_str(), b["text"].as_str()) {
-                            let _ = channel.send(StreamEvent::Delta { text: t.to_string() });
+                        match (b["type"].as_str(), b["text"].as_str()) {
+                            (Some("text"), Some(t)) if !streamed => {
+                                let _ = channel.send(StreamEvent::Delta { text: t.to_string() });
+                            }
+                            (Some("tool_use"), _) => {
+                                let name = b["name"].as_str().unwrap_or("");
+                                let _ = channel.send(StreamEvent::Tool { name: name.to_string(), detail: cli_tool_detail(name, &b["input"]) });
+                            }
+                            _ => {}
                         }
                     }
                 }
@@ -212,16 +256,25 @@ pub async fn stream_codex(req: &AiRequest, channel: &Channel<StreamEvent>, cance
         cmd.args(["--model", &req.model]);
     }
     // `codex exec` has no system-prompt flag, so the instructions lead the prompt.
-    let prompt = match &req.system {
+    let system = folder_note(req).or_else(|| req.system.clone());
+    let prompt = match &system {
         Some(s) if !s.trim().is_empty() => format!("{s}\n\n---\n\n{}", transcript(req)),
         _ => transcript(req),
     };
     cmd.arg(prompt);
-    let child = spawn(cmd)?;
+    // With the folder as its working directory, Codex's read-only sandbox lets it look at the
+    // pages with its own shell; from the neutral folder it has nothing to read.
+    let child = spawn(cmd, req.folder.as_deref())?;
     let mut sent = false;
     let mut failure: Option<String> = None;
     let (ok, stderr) = run_lines(child, cancel, |v| {
         match v["type"].as_str() {
+            Some("item.started") if v["item"]["type"] == "command_execution" => {
+                let command = v["item"]["command"].as_str().unwrap_or("").trim().replace('\n', " ");
+                let short: String = command.chars().take(60).collect();
+                let detail = if short.is_empty() { "Running a command".to_string() } else { format!("Running `{short}`") };
+                let _ = channel.send(StreamEvent::Tool { name: "command".to_string(), detail });
+            }
             Some("item.completed") if v["item"]["type"] == "agent_message" => {
                 if let Some(t) = v["item"]["text"].as_str() {
                     sent = true;
@@ -285,6 +338,7 @@ mod live {
                 let v: Value = serde_json::from_str(&json).unwrap();
                 let ev = match v["type"].as_str() {
                     Some("delta") => StreamEvent::Delta { text: v["text"].as_str().unwrap().to_string() },
+                    Some("tool") => StreamEvent::Tool { name: v["name"].as_str().unwrap_or("").to_string(), detail: v["detail"].as_str().unwrap_or("").to_string() },
                     Some("done") => StreamEvent::Done,
                     _ => StreamEvent::Error { message: v["message"].as_str().unwrap_or("").to_string() },
                 };
@@ -314,6 +368,7 @@ mod live {
             system: Some("Answer in one short sentence.".into()),
             messages: vec![ChatMessage { role: "user".into(), content: "What colour is the sky on a clear day?".into() }],
             max_tokens: Some(60),
+            folder: None,
         };
         tauri::async_runtime::block_on(crate::ai::stream(req, channel, CancelToken::default())).unwrap();
         let events = events.lock().unwrap();
@@ -342,6 +397,7 @@ mod live {
             system: Some("Answer in one short sentence.".into()),
             messages: vec![ChatMessage { role: "user".into(), content: "What colour is the sky on a clear day?".into() }],
             max_tokens: Some(60),
+            folder: None,
         };
         tauri::async_runtime::block_on(crate::ai::stream(req, channel, CancelToken::default())).unwrap();
         let events = events.lock().unwrap();

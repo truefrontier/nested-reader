@@ -125,6 +125,8 @@ export type ReaderState = {
   reviewBases: Record<string, ReviewBase>;
   /** Pages the model failed to write, by path, with the error; they keep their heading and can be retried. */
   pageErrors: Record<string, string>;
+  /** What the model is looking at right now, by stream key ("lookup", "page:<path>", "refine:<path>"), while it uses a tool. */
+  working: Record<string, string>;
   apiKeyMissing?: boolean;
   ui: UiState;
 };
@@ -165,6 +167,7 @@ export class ReaderStore {
     versionBodies: {},
     reviewBases: {},
     pageErrors: {},
+    working: {},
     ui: initialUi,
   };
 
@@ -795,8 +798,11 @@ export class ReaderStore {
   private request(system: string, messages: ChatMessage[], maxTokens?: number): AiRequest {
     const s = this.state.settings;
     const auth = authFor(s, s.provider);
-    const baseUrl = s.provider === "ollama" ? s.ollamaUrl : s.baseUrl;
-    return { provider: s.provider, auth, model: s.models[modelSlot(s.provider, auth)], baseUrl: baseUrl || undefined, system, messages, maxTokens };
+    // Only the providers with a server field carry a base URL; OpenAI and Anthropic go to their own hosts.
+    const baseUrl = s.provider === "ollama" ? s.ollamaUrl : s.provider === "custom" ? s.baseUrl : undefined;
+    // With tools on, the request names the session folder so the model can read its pages itself.
+    const folder = s.tools ? this.state.folder : undefined;
+    return { provider: s.provider, auth, model: s.models[modelSlot(s.provider, auth)], baseUrl: baseUrl || undefined, system, messages, maxTokens, folder };
   }
 
   private stream(key: string, req: AiRequest, on: { delta: (t: string) => void; done: () => void; error: (m: string) => void }) {
@@ -810,12 +816,19 @@ export class ReaderStore {
       return;
     }
     const handle = platform.aiStream(req, (e) => {
-      if (e.type === "delta") on.delta(e.text);
-      else if (e.type === "done") {
+      if (e.type === "delta") {
+        // Text after a tool call means the model has moved on from looking things up.
+        if (this.state.working[key]) this.setWorking(key, undefined);
+        on.delta(e.text);
+      } else if (e.type === "tool") {
+        this.setWorking(key, e.detail);
+      } else if (e.type === "done") {
         this.streams.delete(key);
+        this.setWorking(key, undefined);
         on.done();
       } else {
         this.streams.delete(key);
+        this.setWorking(key, undefined);
         on.error(e.message);
       }
     });
@@ -825,6 +838,14 @@ export class ReaderStore {
   private stopStream(key: string) {
     this.streams.get(key)?.cancel();
     this.streams.delete(key);
+    if (this.state.working[key]) this.setWorking(key, undefined);
+  }
+
+  private setWorking(key: string, detail: string | undefined) {
+    const working = { ...this.state.working };
+    if (detail) working[key] = detail;
+    else delete working[key];
+    this.set({ working });
   }
 
   private async askContext(selection?: Pick<Selection, "text" | "paragraph">, thread?: Lookup["thread"], pagePath?: string): Promise<AskContext | null> {

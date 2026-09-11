@@ -1,5 +1,39 @@
 # Progress
 
+## Session: 2026-09-11 — tool calling: the model can read the folder itself
+
+### Leading assumptions
+- Kevin's screenshot showed a Claude-plan answer that printed a Bash `<invoke>` block as text: the CLI ran with `--tools ""`, so the model had no tool to call and wrote the call out instead. "Support tool calling" is read as: give the model real, safe tools, and show what it is doing while it uses them.
+- The right tools for a reader are read-only and folder-bound: list the pages, read one, search across them. No shell, no writes, nothing outside the open folder. The same three tools go to every API provider; the two plans get the CLI's own read-only tools pointed at the folder, since those CLIs bring their own.
+- It is on by default (Settings › AI › Tools, "Let the model read the folder itself"), because it is what the screenshot asked for; the toggle sits with the Context toggles since it decides what leaves the machine.
+- Intermediate text a model writes before a tool call is left in the answer; the prompt tells it not to narrate, and the tool line replaces the empty answer until the text starts.
+
+### World facts
+- `src-tauri/src/tools.rs`: `list_pages`, `read_page` (40k-character clip, `.md` only, no hidden directories), `search_pages` (case-insensitive, 60 hits); `describe()` gives the UI line; `MAX_ROUNDS` is 8. Unit tests inside.
+- `ai.rs`: `AiRequest.folder` turns tools on; `StreamEvent::Tool { name, detail }`. Each provider loops: Anthropic replays every streamed content block (thinking blocks and signatures included, empty text blocks dropped) and sends `tool_result`s; OpenAI shape accumulates `delta.tool_calls` by index; Ollama takes arguments as objects and `tool_name` on results. Ollama and Custom retry once without tools when the server says it does not support them. Anthropic now honours a `base_url` on the request (a proxy, and the tests) and tolerates a missing key in that case only. Fake-server tests in `mod tool_loops` cover all three shapes plus the no-tools retry and the no-folder case.
+- `cli.rs`: Claude gets `--tools Read,Grep,Glob --allowedTools Read,Grep,Glob --add-dir <folder> --max-turns 12` (else `--tools ""` and one turn, as before); Codex runs in the folder under `--sandbox read-only`. `folder_note()` adds the folder path to the instructions. `tool_use` blocks and `command_execution` items become `Tool` events.
+- `files.rs`: the page walker no longer skips the root when the folder's own name starts with a dot (it filtered every entry, root included).
+- Frontend: `Settings.tools` (default true), `AiRequest.folder`, `ToolEvent`; the store keeps `working[key]` per stream and clears it on the next delta or the end; `request()` sends `folder` only when tools are on and now sends `baseUrl` only for Ollama and Custom (before, the Custom base URL was sent along with Anthropic and OpenAI requests too, unused). The answer card, the page skeleton (`.tool-line`) and the refine status card show the line. The mock sends two tool events before its answer when `folder` is set.
+- Docs: README "Let it look things up" paragraph; `docs/architecture.md` › AI › Tools.
+
+### Timeline
+1. Kevin sent the screenshot of a raw `<invoke name="Bash">` in an answer and asked whether tool calling could be supported.
+2. Read the AI path end to end: prompts, store, Tauri bridge, `ai.rs`, `cli.rs`.
+3. Added the types, prompt sentence, store tracking, the three UI lines, the Settings toggle and the mock's tool events; `tsc` and `pnpm build` pass.
+4. Wrote `tools.rs`, the three provider loops and the CLI flags. The full crate cannot build here (no GTK on the Linux box), so a scratch crate with a 40-line `tauri` stub compiles `ai.rs`, `cli.rs`, `files.rs`, `error.rs`, `tools.rs` and runs their tests: 9 pass, the live ones stay ignored.
+5. Drove the browser build with Playwright: ask → "Searching for “ripple”…" then "Reading sharp-wave-ripples.md…" then the answer, line gone after; Settings toggle off → no line; toggle on and New Page → the split pane's skeleton shows the line, then the page.
+6. Documented, committed on `claude/serene-wozniak-2iqqvn` and pushed.
+
+### Verification
+- `tsc`, `pnpm build`: pass. Scratch-crate `cargo test`: 9 passed, 8 ignored (live). Playwright drive as above.
+- Not checked: a real provider. The Anthropic, OpenAI and Ollama loops are tested against a fake server that speaks each protocol as documented; the CLI flags (`--tools`, `--allowedTools`, `--add-dir`) are from Claude Code's print-mode options and are unverified here because no CLI is signed in on this box. `cargo check` of the whole crate could not run.
+
+### Possible next steps
+- Try each provider for real on the Mac: an Anthropic key with Haiku, the Claude plan, Ollama with a tool-capable model (llama3.1, qwen) and one without (gemma3) to see the plain retry.
+- If a plan model still narrates ("Let me check the folder…") before its tools, buffer the turn's text until the turn ends without a tool call.
+- Token cost: each round resends the transcript; a Context toggle set to "Whole folder" plus tools is redundant, so the Tools row could grey out when Whole folder is on.
+- The refine status card shows the line but a refine rarely needs tools; the prompt sentence could be left off for selection refines.
+
 ## Session: 2026-09-11 — quick asks stay on the page after Esc
 
 ### Leading assumptions

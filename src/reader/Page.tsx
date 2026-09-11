@@ -442,6 +442,7 @@ export function Page({ path, role }: Props) {
           key="refine-status"
           scope="selection"
           text={ui.refineText}
+          working={s.working[`refine:${path}`]}
           error={ui.refineError?.message}
           caretLeft={selection.caretX}
           onRetry={() => store.retryRefine()}
@@ -454,6 +455,7 @@ export function Page({ path, role }: Props) {
         <AnswerCard
           key="lookup"
           lookup={ui.lookup}
+          working={s.working.lookup}
           onFollowUp={(q, verb, alt) => void store.ask(q, verb, alt)}
           onEsc={() => store.closeLookup()}
           onRefine={() => store.toggleRefine()}
@@ -529,6 +531,12 @@ export function Page({ path, role }: Props) {
           <div className={`skeleton${fading ? " fading" : ""}`}>
             <div />
             <div style={{ width: "78%" }} />
+          </div>
+        )}
+        {waiting && s.working[`page:${path}`] && (
+          <div className="tool-line">
+            <span className="pulse" />
+            {s.working[`page:${path}`]}…
           </div>
         )}
         {unwritten && (

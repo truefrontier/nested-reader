@@ -278,6 +278,7 @@ const SCOPE_LABEL: Record<RefineScope, string> = { selection: "selection", page:
 export function RefineStatus({
   scope,
   text,
+  working,
   error,
   caretLeft,
   pane,
@@ -286,6 +287,8 @@ export function RefineStatus({
 }: {
   scope: RefineScope;
   text?: string;
+  /** What the model is reading with its tools right now, if anything. */
+  working?: string;
   error?: string;
   caretLeft?: number;
   pane?: boolean;
@@ -323,13 +326,27 @@ export function RefineStatus({
         <span>Refining the {SCOPE_LABEL[scope]}…</span>
         {text && <em title={text}>“{text}”</em>}
       </div>
+      {working && <div className="working tool">{working}…</div>}
     </div>
   );
   if (pane) return <div className="pane-pop">{body}</div>;
   return <PopWrap caretX={caretLeft ?? 0}>{body}</PopWrap>;
 }
 
-export function AnswerCard({ lookup, onFollowUp, onEsc, onRefine }: { lookup: Lookup; onFollowUp: Submit; onEsc: () => void; onRefine?: () => void }) {
+export function AnswerCard({
+  lookup,
+  working,
+  onFollowUp,
+  onEsc,
+  onRefine,
+}: {
+  lookup: Lookup;
+  /** What the model is reading with its tools right now, shown while the answer is still on its way. */
+  working?: string;
+  onFollowUp: Submit;
+  onEsc: () => void;
+  onRefine?: () => void;
+}) {
   // A card peeked at from hover must not pull focus; it takes it once a click keeps it open.
   const ref = useAutoFocus(!lookup.peek);
   const [q, setQ] = useState("");
@@ -356,6 +373,11 @@ export function AnswerCard({ lookup, onFollowUp, onEsc, onRefine }: { lookup: Lo
       {lookup.thread.length > 0 && <div style={{ fontFamily: "var(--sans)", fontSize: 12, color: "var(--mute)", marginBottom: 4 }}>{lookup.question}</div>}
       {lookup.error ? (
         <div className="answer err">{lookup.error}</div>
+      ) : lookup.streaming && working ? (
+        <div className="answer tool">
+          <span className="pulse" />
+          {working}…
+        </div>
       ) : (
         <div className={`answer${lookup.streaming ? " streaming-cursor" : ""}`}>{lookup.answer}</div>
       )}

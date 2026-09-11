@@ -108,6 +108,8 @@ export type Settings = {
   /** Chosen model per slot; "" means "not chosen yet", and Settings picks the cheapest on first contact. */
   models: Record<ModelSlot, string>;
   context: { highlight: boolean; session: boolean; folder: boolean };
+  /** Let the model list, read and search the session folder's pages itself while it answers. */
+  tools: boolean;
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -134,6 +136,7 @@ export const DEFAULT_SETTINGS: Settings = {
     "anthropic-subscription": "",
   },
   context: { highlight: true, session: true, folder: false },
+  tools: true,
 };
 
 export const READING_WIDTH_RANGE: Record<ReadingWidthUnit, { min: number; max: number }> = {
@@ -181,10 +184,16 @@ export type AiRequest = {
   system?: string;
   messages: ChatMessage[];
   maxTokens?: number;
+  /** The session folder the model may read with its tools; without it no tools are offered. */
+  folder?: string;
 };
+
+/** A tool the model is using, reported so the UI can say what it is looking at. */
+export type ToolEvent = { type: "tool"; name: string; detail: string };
 
 export type StreamEvent =
   | { type: "delta"; text: string }
+  | ToolEvent
   | { type: "done" }
   | { type: "error"; message: string };
 

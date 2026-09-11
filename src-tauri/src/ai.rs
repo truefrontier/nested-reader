@@ -1,6 +1,7 @@
 //! Streaming completions against OpenAI-compatible, Anthropic and Ollama APIs.
 
 use crate::error::{AppError, Result};
+use crate::tools;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -23,6 +24,9 @@ pub struct AiRequest {
     pub messages: Vec<ChatMessage>,
     #[serde(default)]
     pub max_tokens: Option<u32>,
+    /// The session folder the model may read with its tools; `None` offers no tools.
+    #[serde(default)]
+    pub folder: Option<String>,
 }
 
 #[derive(Deserialize, Serialize, Clone)]
@@ -35,6 +39,8 @@ pub struct ChatMessage {
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum StreamEvent {
     Delta { text: String },
+    /// The model is using a tool; `detail` is a short line for the UI ("Reading replay.md").
+    Tool { name: String, detail: String },
     Done,
     Error { message: String },
 }
@@ -196,6 +202,33 @@ where
     Ok(())
 }
 
+/// The tool calls a model made in one round, however the provider spelled them.
+struct ToolCall {
+    id: String,
+    name: String,
+    input: Value,
+}
+
+/// A tool's arguments as the model streamed them: JSON text, or an object already.
+fn parse_input(raw: &str) -> Value {
+    if raw.trim().is_empty() {
+        return json!({});
+    }
+    serde_json::from_str(raw).unwrap_or(json!({}))
+}
+
+/// Tells the UI what the model is looking at, then runs the call against the folder.
+fn call_tool(folder: &str, call: &ToolCall, channel: &Channel<StreamEvent>) -> tools::Outcome {
+    let _ = channel.send(StreamEvent::Tool { name: call.name.clone(), detail: tools::describe(&call.name, &call.input) });
+    tools::run(folder, &call.name, &call.input)
+}
+
+/// Whether a server refused the request because of the `tools` field, so it is worth one try without.
+fn rejects_tools(error: &str) -> bool {
+    let e = error.to_lowercase();
+    e.contains("tool") && (e.contains("support") || e.contains("unknown") || e.contains("unexpected") || e.contains("invalid"))
+}
+
 async fn stream_ollama(req: &AiRequest, channel: &Channel<StreamEvent>, cancel: &CancelToken) -> Result<()> {
     let base = ollama_base(req.base_url.as_deref());
     let mut messages: Vec<Value> = Vec::new();
@@ -205,38 +238,79 @@ async fn stream_ollama(req: &AiRequest, channel: &Channel<StreamEvent>, cancel: 
     for m in &req.messages {
         messages.push(json!({ "role": m.role, "content": m.content }));
     }
-    // `think: false` keeps reasoning models from spending the token budget on hidden thinking;
-    // Ollama accepts it on models without a thinking mode too.
-    let mut body = json!({ "model": req.model, "messages": messages, "stream": true, "think": false });
-    if let Some(max) = req.max_tokens {
-        body["options"] = json!({ "num_predict": max });
-    }
-    let resp = ollama_client()?
-        .post(format!("{base}/api/chat"))
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| ollama_error(&base, e))?;
-    if !resp.status().is_success() {
-        return Err(AppError::Message(read_error_body(resp).await));
-    }
-    read_ndjson(resp, cancel, |line| {
-        let v: Value = match serde_json::from_str(line) {
-            Ok(v) => v,
-            Err(_) => return Ok(true),
-        };
-        if let Some(err) = v.get("error").and_then(|e| e.as_str()) {
-            return Err(AppError::Message(err.to_string()));
+    let mut with_tools = req.folder.is_some();
+    for _round in 0..tools::MAX_ROUNDS {
+        // `think: false` keeps reasoning models from spending the token budget on hidden thinking;
+        // Ollama accepts it on models without a thinking mode too.
+        let mut body = json!({ "model": req.model, "messages": messages, "stream": true, "think": false });
+        if let Some(max) = req.max_tokens {
+            body["options"] = json!({ "num_predict": max });
         }
-        // Thinking models also send `message.thinking`; only the answer text goes to the page.
-        if let Some(text) = v.pointer("/message/content").and_then(|t| t.as_str()) {
-            if !text.is_empty() {
-                let _ = channel.send(StreamEvent::Delta { text: text.to_string() });
+        if with_tools {
+            body["tools"] = json!(tools::openai_tools());
+        }
+        let resp = ollama_client()?
+            .post(format!("{base}/api/chat"))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| ollama_error(&base, e))?;
+        if !resp.status().is_success() {
+            let err = read_error_body(resp).await;
+            // A model without tool support answers plainly instead.
+            if with_tools && rejects_tools(&err) {
+                with_tools = false;
+                continue;
             }
+            return Err(AppError::Message(err));
         }
-        Ok(!v.get("done").and_then(|d| d.as_bool()).unwrap_or(false))
-    })
-    .await
+        let mut text = String::new();
+        let mut calls: Vec<ToolCall> = Vec::new();
+        read_ndjson(resp, cancel, |line| {
+            let v: Value = match serde_json::from_str(line) {
+                Ok(v) => v,
+                Err(_) => return Ok(true),
+            };
+            if let Some(err) = v.get("error").and_then(|e| e.as_str()) {
+                return Err(AppError::Message(err.to_string()));
+            }
+            // Thinking models also send `message.thinking`; only the answer text goes to the page.
+            if let Some(t) = v.pointer("/message/content").and_then(|t| t.as_str()) {
+                if !t.is_empty() {
+                    text.push_str(t);
+                    let _ = channel.send(StreamEvent::Delta { text: t.to_string() });
+                }
+            }
+            if let Some(list) = v.pointer("/message/tool_calls").and_then(|t| t.as_array()) {
+                for (i, c) in list.iter().enumerate() {
+                    let name = c.pointer("/function/name").and_then(|n| n.as_str()).unwrap_or("").to_string();
+                    let input = match c.pointer("/function/arguments") {
+                        Some(Value::String(s)) => parse_input(s),
+                        Some(v) => v.clone(),
+                        None => json!({}),
+                    };
+                    let id = c.get("id").and_then(|i| i.as_str()).map(String::from).unwrap_or_else(|| format!("call_{}", calls.len() + i));
+                    calls.push(ToolCall { id, name, input });
+                }
+            }
+            Ok(!v.get("done").and_then(|d| d.as_bool()).unwrap_or(false))
+        })
+        .await?;
+        let folder = match (&req.folder, calls.is_empty(), cancel.is_cancelled()) {
+            (Some(f), false, false) => f,
+            _ => return Ok(()),
+        };
+        let tool_calls: Vec<Value> = calls
+            .iter()
+            .map(|c| json!({ "id": c.id, "type": "function", "function": { "name": c.name, "arguments": c.input } }))
+            .collect();
+        messages.push(json!({ "role": "assistant", "content": text, "tool_calls": tool_calls }));
+        for c in &calls {
+            let out = call_tool(folder, c, channel);
+            messages.push(json!({ "role": "tool", "tool_name": c.name, "tool_call_id": c.id, "content": out.text }));
+        }
+    }
+    Ok(())
 }
 
 async fn stream_openai(req: &AiRequest, channel: &Channel<StreamEvent>, cancel: &CancelToken) -> Result<()> {
@@ -252,92 +326,245 @@ async fn stream_openai(req: &AiRequest, channel: &Channel<StreamEvent>, cancel: 
     for m in &req.messages {
         messages.push(json!({ "role": m.role, "content": m.content }));
     }
-    let mut body = json!({ "model": req.model, "messages": messages, "stream": true });
-    if let Some(max) = req.max_tokens {
-        body["max_completion_tokens"] = json!(max);
-        if req.provider == "custom" {
-            body["max_tokens"] = json!(max);
-        }
-    }
-    let mut builder = client()?.post(format!("{base}/chat/completions")).json(&body);
-    if let Some(k) = key {
-        builder = builder.bearer_auth(k);
-    }
-    let resp = builder.send().await?;
-    if !resp.status().is_success() {
-        return Err(AppError::Message(read_error_body(resp).await));
-    }
-    read_sse(resp, cancel, |data| {
-        if data == "[DONE]" {
-            return Ok(false);
-        }
-        let v: Value = match serde_json::from_str(data) {
-            Ok(v) => v,
-            Err(_) => return Ok(true),
-        };
-        if let Some(err) = v.pointer("/error/message").and_then(|m| m.as_str()) {
-            return Err(AppError::Message(err.to_string()));
-        }
-        if let Some(text) = v.pointer("/choices/0/delta/content").and_then(|t| t.as_str()) {
-            if !text.is_empty() {
-                let _ = channel.send(StreamEvent::Delta { text: text.to_string() });
+    let mut with_tools = req.folder.is_some();
+    for _round in 0..tools::MAX_ROUNDS {
+        let mut body = json!({ "model": req.model, "messages": messages, "stream": true });
+        if let Some(max) = req.max_tokens {
+            body["max_completion_tokens"] = json!(max);
+            if req.provider == "custom" {
+                body["max_tokens"] = json!(max);
             }
         }
-        Ok(true)
-    })
-    .await
+        if with_tools {
+            body["tools"] = json!(tools::openai_tools());
+        }
+        let mut builder = client()?.post(format!("{base}/chat/completions")).json(&body);
+        if let Some(k) = &key {
+            builder = builder.bearer_auth(k);
+        }
+        let resp = builder.send().await?;
+        if !resp.status().is_success() {
+            let err = read_error_body(resp).await;
+            // A Custom server that does not take `tools` answers plainly instead.
+            if with_tools && req.provider == "custom" && rejects_tools(&err) {
+                with_tools = false;
+                continue;
+            }
+            return Err(AppError::Message(err));
+        }
+        let mut text = String::new();
+        // Tool calls arrive as fragments keyed by index: the id and name first, then argument text.
+        let mut partial: Vec<(String, String, String)> = Vec::new();
+        let mut finish: Option<String> = None;
+        read_sse(resp, cancel, |data| {
+            if data == "[DONE]" {
+                return Ok(false);
+            }
+            let v: Value = match serde_json::from_str(data) {
+                Ok(v) => v,
+                Err(_) => return Ok(true),
+            };
+            if let Some(err) = v.pointer("/error/message").and_then(|m| m.as_str()) {
+                return Err(AppError::Message(err.to_string()));
+            }
+            if let Some(t) = v.pointer("/choices/0/delta/content").and_then(|t| t.as_str()) {
+                if !t.is_empty() {
+                    text.push_str(t);
+                    let _ = channel.send(StreamEvent::Delta { text: t.to_string() });
+                }
+            }
+            if let Some(list) = v.pointer("/choices/0/delta/tool_calls").and_then(|t| t.as_array()) {
+                for c in list {
+                    let index = c.get("index").and_then(|i| i.as_u64()).unwrap_or(partial.len() as u64) as usize;
+                    while partial.len() <= index {
+                        partial.push((String::new(), String::new(), String::new()));
+                    }
+                    let slot = &mut partial[index];
+                    if let Some(id) = c.get("id").and_then(|i| i.as_str()) {
+                        slot.0 = id.to_string();
+                    }
+                    if let Some(name) = c.pointer("/function/name").and_then(|n| n.as_str()) {
+                        slot.1.push_str(name);
+                    }
+                    if let Some(args) = c.pointer("/function/arguments").and_then(|a| a.as_str()) {
+                        slot.2.push_str(args);
+                    }
+                }
+            }
+            if let Some(f) = v.pointer("/choices/0/finish_reason").and_then(|f| f.as_str()) {
+                finish = Some(f.to_string());
+            }
+            Ok(true)
+        })
+        .await?;
+        let calls: Vec<ToolCall> = partial
+            .into_iter()
+            .enumerate()
+            .filter(|(_, (_, name, _))| !name.is_empty())
+            .map(|(i, (id, name, args))| ToolCall { id: if id.is_empty() { format!("call_{i}") } else { id }, name, input: parse_input(&args) })
+            .collect();
+        let folder = match (&req.folder, calls.is_empty(), cancel.is_cancelled()) {
+            (Some(f), false, false) => f,
+            _ => return Ok(()),
+        };
+        let _ = finish;
+        let tool_calls: Vec<Value> = calls
+            .iter()
+            .map(|c| json!({ "id": c.id, "type": "function", "function": { "name": c.name, "arguments": c.input.to_string() } }))
+            .collect();
+        messages.push(json!({ "role": "assistant", "content": if text.is_empty() { Value::Null } else { json!(text) }, "tool_calls": tool_calls }));
+        for c in &calls {
+            let out = call_tool(folder, c, channel);
+            messages.push(json!({ "role": "tool", "tool_call_id": c.id, "content": out.text }));
+        }
+    }
+    Ok(())
+}
+
+/// Anthropic's own host, or an Anthropic-compatible proxy named on the request (the tests use one).
+fn anthropic_base(req: &AiRequest) -> String {
+    match req.base_url.as_deref() {
+        Some(b) if !b.trim().is_empty() => b.trim().trim_end_matches('/').to_string(),
+        _ => "https://api.anthropic.com".to_string(),
+    }
 }
 
 async fn stream_anthropic(req: &AiRequest, channel: &Channel<StreamEvent>, cancel: &CancelToken) -> Result<()> {
-    let key = api_key("anthropic")?;
-    let messages: Vec<Value> = req
+    // A proxy at its own base URL may hold the key itself.
+    let key = match api_key("anthropic") {
+        Ok(k) => k,
+        Err(_) if req.base_url.is_some() => String::new(),
+        Err(e) => return Err(e),
+    };
+    let base = anthropic_base(req);
+    let mut messages: Vec<Value> = req
         .messages
         .iter()
         .map(|m| json!({ "role": m.role, "content": m.content }))
         .collect();
-    let mut body = json!({
-        "model": req.model,
-        "max_tokens": req.max_tokens.unwrap_or(2048),
-        "messages": messages,
-        "stream": true,
-    });
-    if let Some(sys) = &req.system {
-        body["system"] = json!(sys);
-    }
-    let resp = client()?
-        .post("https://api.anthropic.com/v1/messages")
-        .header("x-api-key", key)
-        .header("anthropic-version", "2023-06-01")
-        .json(&body)
-        .send()
-        .await?;
-    if !resp.status().is_success() {
-        return Err(AppError::Message(read_error_body(resp).await));
-    }
-    read_sse(resp, cancel, |data| {
-        let v: Value = match serde_json::from_str(data) {
-            Ok(v) => v,
-            Err(_) => return Ok(true),
-        };
-        match v.get("type").and_then(|t| t.as_str()) {
-            Some("content_block_delta") => {
-                if let Some(text) = v.pointer("/delta/text").and_then(|t| t.as_str()) {
-                    let _ = channel.send(StreamEvent::Delta { text: text.to_string() });
-                }
-            }
-            Some("error") => {
-                let msg = v
-                    .pointer("/error/message")
-                    .and_then(|m| m.as_str())
-                    .unwrap_or("stream error");
-                return Err(AppError::Message(msg.to_string()));
-            }
-            Some("message_stop") => return Ok(false),
-            _ => {}
+    for _round in 0..tools::MAX_ROUNDS {
+        let mut body = json!({
+            "model": req.model,
+            "max_tokens": req.max_tokens.unwrap_or(2048),
+            "messages": messages,
+            "stream": true,
+        });
+        if let Some(sys) = &req.system {
+            body["system"] = json!(sys);
         }
-        Ok(true)
-    })
-    .await
+        if req.folder.is_some() {
+            body["tools"] = json!(tools::anthropic_tools());
+        }
+        let resp = client()?
+            .post(format!("{base}/v1/messages"))
+            .header("x-api-key", &key)
+            .header("anthropic-version", "2023-06-01")
+            .json(&body)
+            .send()
+            .await?;
+        if !resp.status().is_success() {
+            return Err(AppError::Message(read_error_body(resp).await));
+        }
+        // Every content block is kept as it streams (text, tool_use, thinking), because the
+        // whole assistant turn has to go back with the tool results.
+        let mut blocks: Vec<Value> = Vec::new();
+        let mut tool_json: Vec<String> = Vec::new();
+        let mut stop_reason: Option<String> = None;
+        read_sse(resp, cancel, |data| {
+            let v: Value = match serde_json::from_str(data) {
+                Ok(v) => v,
+                Err(_) => return Ok(true),
+            };
+            match v.get("type").and_then(|t| t.as_str()) {
+                Some("content_block_start") => {
+                    let mut block = v.get("content_block").cloned().unwrap_or(json!({ "type": "text", "text": "" }));
+                    if block["type"] == "tool_use" {
+                        block["input"] = json!({});
+                    }
+                    blocks.push(block);
+                    tool_json.push(String::new());
+                }
+                Some("content_block_delta") => {
+                    let i = v.get("index").and_then(|i| i.as_u64()).unwrap_or(0) as usize;
+                    if i >= blocks.len() {
+                        return Ok(true);
+                    }
+                    match v.pointer("/delta/type").and_then(|t| t.as_str()) {
+                        Some("text_delta") => {
+                            if let Some(t) = v.pointer("/delta/text").and_then(|t| t.as_str()) {
+                                let _ = channel.send(StreamEvent::Delta { text: t.to_string() });
+                                if let Some(s) = blocks[i]["text"].as_str() {
+                                    blocks[i]["text"] = json!(format!("{s}{t}"));
+                                }
+                            }
+                        }
+                        Some("input_json_delta") => {
+                            if let Some(p) = v.pointer("/delta/partial_json").and_then(|p| p.as_str()) {
+                                tool_json[i].push_str(p);
+                            }
+                        }
+                        Some("thinking_delta") => {
+                            if let Some(t) = v.pointer("/delta/thinking").and_then(|t| t.as_str()) {
+                                if let Some(s) = blocks[i]["thinking"].as_str() {
+                                    blocks[i]["thinking"] = json!(format!("{s}{t}"));
+                                }
+                            }
+                        }
+                        Some("signature_delta") => {
+                            if let Some(sig) = v.pointer("/delta/signature").and_then(|s| s.as_str()) {
+                                blocks[i]["signature"] = json!(sig);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                Some("message_delta") => {
+                    if let Some(r) = v.pointer("/delta/stop_reason").and_then(|r| r.as_str()) {
+                        stop_reason = Some(r.to_string());
+                    }
+                }
+                Some("error") => {
+                    let msg = v
+                        .pointer("/error/message")
+                        .and_then(|m| m.as_str())
+                        .unwrap_or("stream error");
+                    return Err(AppError::Message(msg.to_string()));
+                }
+                Some("message_stop") => return Ok(false),
+                _ => {}
+            }
+            Ok(true)
+        })
+        .await?;
+        let mut calls: Vec<ToolCall> = Vec::new();
+        for (block, raw) in blocks.iter_mut().zip(tool_json.iter()) {
+            if block["type"] == "tool_use" {
+                let input = parse_input(raw);
+                block["input"] = input.clone();
+                calls.push(ToolCall {
+                    id: block["id"].as_str().unwrap_or("").to_string(),
+                    name: block["name"].as_str().unwrap_or("").to_string(),
+                    input,
+                });
+            }
+        }
+        let folder = match (&req.folder, stop_reason.as_deref(), calls.is_empty(), cancel.is_cancelled()) {
+            (Some(f), Some("tool_use"), false, false) => f,
+            _ => return Ok(()),
+        };
+        // The API refuses an empty text block, which a turn that goes straight to a tool can leave behind.
+        let content: Vec<Value> = blocks.into_iter().filter(|b| !(b["type"] == "text" && b["text"].as_str().unwrap_or("").is_empty())).collect();
+        messages.push(json!({ "role": "assistant", "content": content }));
+        let results: Vec<Value> = calls
+            .iter()
+            .map(|c| {
+                let out = call_tool(folder, c, channel);
+                json!({ "type": "tool_result", "tool_use_id": c.id, "content": out.text, "is_error": out.is_error })
+            })
+            .collect();
+        messages.push(json!({ "role": "user", "content": results }));
+    }
+    Ok(())
 }
 
 /// Ids from an OpenAI- or Anthropic-style `{ "data": [{ "id": … }] }` listing.
@@ -520,6 +747,7 @@ mod ollama_live {
                 let v: Value = serde_json::from_str(&json).unwrap();
                 let ev = match v["type"].as_str() {
                     Some("delta") => StreamEvent::Delta { text: v["text"].as_str().unwrap().to_string() },
+                    Some("tool") => StreamEvent::Tool { name: v["name"].as_str().unwrap_or("").to_string(), detail: v["detail"].as_str().unwrap_or("").to_string() },
                     Some("done") => StreamEvent::Done,
                     _ => StreamEvent::Error { message: v["message"].as_str().unwrap_or("").to_string() },
                 };
@@ -535,6 +763,7 @@ mod ollama_live {
             system: Some("Answer in one short sentence.".into()),
             messages: vec![ChatMessage { role: "user".into(), content: "What colour is the sky on a clear day?".into() }],
             max_tokens: Some(40),
+            folder: None,
         };
         tauri::async_runtime::block_on(stream(req, channel, CancelToken::default())).unwrap();
         let events = events.lock().unwrap();
@@ -548,5 +777,239 @@ mod ollama_live {
         assert!(text.to_lowercase().contains("blue"), "got: {text:?}");
         assert!(matches!(events.last(), Some(StreamEvent::Done)), "last event should be Done");
         assert!(!events.iter().any(|e| matches!(e, StreamEvent::Error { .. })));
+    }
+}
+
+/// The tool loops against a fake server on localhost, so they run anywhere without keys.
+#[cfg(test)]
+mod tool_loops {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    /// Answers each request in turn with the given status and body, and keeps the request bodies.
+    async fn serve(responses: Vec<(u16, &'static str)>) -> (String, Arc<Mutex<Vec<Value>>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let seen: Arc<Mutex<Vec<Value>>> = Arc::default();
+        let sink = seen.clone();
+        tokio::spawn(async move {
+            for (status, body) in responses {
+                let (mut sock, _) = listener.accept().await.unwrap();
+                let mut buf = Vec::new();
+                let mut head_end = None;
+                let mut length = 0usize;
+                loop {
+                    let mut chunk = [0u8; 4096];
+                    let n = sock.read(&mut chunk).await.unwrap();
+                    if n == 0 {
+                        break;
+                    }
+                    buf.extend_from_slice(&chunk[..n]);
+                    if head_end.is_none() {
+                        if let Some(pos) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+                            head_end = Some(pos + 4);
+                            let head = String::from_utf8_lossy(&buf[..pos]).to_lowercase();
+                            length = head
+                                .lines()
+                                .find_map(|l| l.strip_prefix("content-length:"))
+                                .and_then(|v| v.trim().parse().ok())
+                                .unwrap_or(0);
+                        }
+                    }
+                    if let Some(h) = head_end {
+                        if buf.len() >= h + length {
+                            break;
+                        }
+                    }
+                }
+                let h = head_end.unwrap();
+                let req: Value = serde_json::from_slice(&buf[h..h + length]).unwrap();
+                sink.lock().unwrap().push(req);
+                let reason = if status == 200 { "OK" } else { "Bad Request" };
+                let reply = format!("HTTP/1.1 {status} {reason}\r\nContent-Type: text/event-stream\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{body}", body.len());
+                sock.write_all(reply.as_bytes()).await.unwrap();
+                sock.shutdown().await.unwrap();
+            }
+        });
+        (base, seen)
+    }
+
+    fn collect() -> (Channel<StreamEvent>, Arc<Mutex<Vec<Value>>>) {
+        let events: Arc<Mutex<Vec<Value>>> = Arc::default();
+        let sink = events.clone();
+        let channel = Channel::new(move |body: tauri::ipc::InvokeResponseBody| {
+            if let tauri::ipc::InvokeResponseBody::Json(json) = body {
+                sink.lock().unwrap().push(serde_json::from_str(&json).unwrap());
+            }
+            Ok(())
+        });
+        (channel, events)
+    }
+
+    fn folder() -> tempfile::TempDir {
+        let dir = tempfile::Builder::new().prefix("nested-").tempdir().unwrap();
+        std::fs::write(dir.path().join("replay.md"), "# Replay\n\nRipples carry the sequence.\n").unwrap();
+        dir
+    }
+
+    fn request(provider: &str, base: &str, folder: &str) -> AiRequest {
+        AiRequest {
+            provider: provider.into(),
+            auth: None,
+            model: "test-model".into(),
+            base_url: Some(base.into()),
+            system: Some("Answer briefly.".into()),
+            messages: vec![ChatMessage { role: "user".into(), content: "What carries the sequence?".into() }],
+            max_tokens: Some(200),
+            folder: Some(folder.into()),
+        }
+    }
+
+    fn texts(events: &[Value], kind: &str, field: &str) -> Vec<String> {
+        events.iter().filter(|e| e["type"] == kind).map(|e| e[field].as_str().unwrap_or("").to_string()).collect()
+    }
+
+    const ANTHROPIC_TOOL_TURN: &str = "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\",\"role\":\"assistant\",\"content\":[]}}\n\n\
+data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n\
+data: {\"type\":\"content_block_stop\",\"index\":0}\n\n\
+data: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_1\",\"name\":\"read_page\",\"input\":{}}}\n\n\
+data: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"path\\\": \\\"re\"}}\n\n\
+data: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"play.md\\\"}\"}}\n\n\
+data: {\"type\":\"content_block_stop\",\"index\":1}\n\n\
+data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\"}}\n\n\
+data: {\"type\":\"message_stop\"}\n\n";
+
+    const ANTHROPIC_ANSWER: &str = "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n\
+data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Ripples \"}}\n\n\
+data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"carry it.\"}}\n\n\
+data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"}}\n\n\
+data: {\"type\":\"message_stop\"}\n\n";
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn anthropic_runs_the_tool_and_sends_the_result_back() {
+        let dir = folder();
+        let (base, seen) = serve(vec![(200, ANTHROPIC_TOOL_TURN), (200, ANTHROPIC_ANSWER)]).await;
+        let (channel, events) = collect();
+        stream(request("anthropic", &base, dir.path().to_str().unwrap()), channel, CancelToken::default()).await.unwrap();
+
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.len(), 2);
+        assert_eq!(seen[0]["tools"].as_array().unwrap().len(), 3);
+        assert_eq!(seen[0]["tools"][1]["name"], "read_page");
+        let second = &seen[1]["messages"];
+        assert_eq!(second.as_array().unwrap().len(), 3);
+        assert_eq!(second[1]["role"], "assistant");
+        // The empty text block is dropped; the tool_use block carries the parsed input.
+        assert_eq!(second[1]["content"].as_array().unwrap().len(), 1);
+        assert_eq!(second[1]["content"][0]["type"], "tool_use");
+        assert_eq!(second[1]["content"][0]["input"], json!({ "path": "replay.md" }));
+        assert_eq!(second[2]["role"], "user");
+        assert_eq!(second[2]["content"][0]["type"], "tool_result");
+        assert_eq!(second[2]["content"][0]["tool_use_id"], "toolu_1");
+        assert_eq!(second[2]["content"][0]["is_error"], false);
+        assert!(second[2]["content"][0]["content"].as_str().unwrap().contains("Ripples carry the sequence."));
+
+        let events = events.lock().unwrap();
+        assert_eq!(texts(&events, "tool", "detail"), vec!["Reading replay.md"]);
+        assert_eq!(texts(&events, "delta", "text").join(""), "Ripples carry it.");
+        assert_eq!(events.last().unwrap()["type"], "done");
+    }
+
+    const OPENAI_TOOL_TURN: &str = "data: {\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"search_pages\",\"arguments\":\"\"}}]}}]}\n\n\
+data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{\\\"query\\\"\"}}]}}]}\n\n\
+data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\": \\\"ripple\\\"}\"}}]}}]}\n\n\
+data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n\
+data: [DONE]\n\n";
+
+    const OPENAI_ANSWER: &str = "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Ripples.\"}}]}\n\n\
+data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n\
+data: [DONE]\n\n";
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn openai_shape_runs_the_tool_and_sends_the_result_back() {
+        let dir = folder();
+        let (base, seen) = serve(vec![(200, OPENAI_TOOL_TURN), (200, OPENAI_ANSWER)]).await;
+        let (channel, events) = collect();
+        stream(request("custom", &base, dir.path().to_str().unwrap()), channel, CancelToken::default()).await.unwrap();
+
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.len(), 2);
+        assert_eq!(seen[0]["tools"][0]["type"], "function");
+        let second = &seen[1]["messages"];
+        // system, user, assistant (tool call), tool (result)
+        assert_eq!(second.as_array().unwrap().len(), 4);
+        assert_eq!(second[2]["role"], "assistant");
+        assert_eq!(second[2]["tool_calls"][0]["id"], "call_1");
+        assert_eq!(second[2]["tool_calls"][0]["function"]["name"], "search_pages");
+        assert_eq!(second[2]["tool_calls"][0]["function"]["arguments"], "{\"query\":\"ripple\"}");
+        assert_eq!(second[3]["role"], "tool");
+        assert_eq!(second[3]["tool_call_id"], "call_1");
+        assert!(second[3]["content"].as_str().unwrap().contains("replay.md:3: Ripples carry the sequence."));
+
+        let events = events.lock().unwrap();
+        assert_eq!(texts(&events, "tool", "detail"), vec!["Searching for “ripple”"]);
+        assert_eq!(texts(&events, "delta", "text").join(""), "Ripples.");
+        assert_eq!(events.last().unwrap()["type"], "done");
+    }
+
+    const OLLAMA_TOOL_TURN: &str = "{\"model\":\"m\",\"message\":{\"role\":\"assistant\",\"content\":\"\",\"tool_calls\":[{\"function\":{\"name\":\"list_pages\",\"arguments\":{}}}]},\"done\":false}\n\
+{\"model\":\"m\",\"message\":{\"role\":\"assistant\",\"content\":\"\"},\"done\":true}\n";
+
+    const OLLAMA_ANSWER: &str = "{\"model\":\"m\",\"message\":{\"role\":\"assistant\",\"content\":\"One page.\"},\"done\":false}\n\
+{\"model\":\"m\",\"message\":{\"role\":\"assistant\",\"content\":\"\"},\"done\":true}\n";
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn ollama_runs_the_tool_and_sends_the_result_back() {
+        let dir = folder();
+        let (base, seen) = serve(vec![(200, OLLAMA_TOOL_TURN), (200, OLLAMA_ANSWER)]).await;
+        let (channel, events) = collect();
+        stream(request("ollama", &base, dir.path().to_str().unwrap()), channel, CancelToken::default()).await.unwrap();
+
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.len(), 2);
+        assert_eq!(seen[0]["tools"][0]["function"]["name"], "list_pages");
+        let second = &seen[1]["messages"];
+        assert_eq!(second.as_array().unwrap().len(), 4);
+        assert_eq!(second[2]["role"], "assistant");
+        assert_eq!(second[2]["tool_calls"][0]["function"]["name"], "list_pages");
+        assert_eq!(second[3]["role"], "tool");
+        assert_eq!(second[3]["tool_name"], "list_pages");
+        assert_eq!(second[3]["content"], "replay.md — Replay");
+
+        let events = events.lock().unwrap();
+        assert_eq!(texts(&events, "tool", "detail"), vec!["Listing the pages"]);
+        assert_eq!(texts(&events, "delta", "text").join(""), "One page.");
+        assert_eq!(events.last().unwrap()["type"], "done");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn ollama_model_without_tools_answers_plainly() {
+        let dir = folder();
+        let refusal = "{\"error\":\"registry.ollama.ai/library/gemma3:4b does not support tools\"}";
+        let (base, seen) = serve(vec![(400, refusal), (200, OLLAMA_ANSWER)]).await;
+        let (channel, events) = collect();
+        stream(request("ollama", &base, dir.path().to_str().unwrap()), channel, CancelToken::default()).await.unwrap();
+
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.len(), 2);
+        assert!(seen[0].get("tools").is_some());
+        assert!(seen[1].get("tools").is_none(), "the retry must not offer tools");
+        let events = events.lock().unwrap();
+        assert_eq!(texts(&events, "delta", "text").join(""), "One page.");
+        assert_eq!(events.last().unwrap()["type"], "done");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn no_folder_means_no_tools() {
+        let (base, seen) = serve(vec![(200, OLLAMA_ANSWER)]).await;
+        let (channel, _events) = collect();
+        let mut req = request("ollama", &base, "");
+        req.folder = None;
+        stream(req, channel, CancelToken::default()).await.unwrap();
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.len(), 1);
+        assert!(seen[0].get("tools").is_none());
     }
 }

@@ -160,6 +160,7 @@ export default function App() {
                 pane
                 scope={s.ui.refineError?.scope ?? s.ui.refining ?? "page"}
                 text={s.ui.refineText}
+                working={Object.entries(s.working).find(([k]) => k.startsWith("refine:"))?.[1]}
                 error={s.ui.refineError?.message}
                 onRetry={() => store.retryRefine()}
                 onDismiss={() => store.closePopover()}

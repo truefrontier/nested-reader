@@ -26,6 +26,9 @@ walkdir = "2"
 chrono = "0.4"
 thiserror = "2"
 
+[dev-dependencies]
+tempfile = "3"
+
 # ⌘O shows one Open panel for a folder or a single Markdown file. rfd, behind the dialog
 # plugin, cannot do both in one panel, so macOS talks to NSOpenPanel directly.
 [target.'cfg(target_os = "macos")'.dependencies]

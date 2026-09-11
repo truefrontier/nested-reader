@@ -618,6 +618,12 @@ function Ai({ settings, save }: SectionProps) {
           <Check on={settings.context.folder} label="Whole folder" onChange={(v) => save({ context: { ...settings.context, folder: v } })} />
         </div>
       </Row>
+      <Row label="Tools" top>
+        <div className="checks">
+          <Check on={settings.tools} label="Let the model read the folder itself" onChange={(v) => save({ tools: v })} />
+          <span className="note wrap">It can list, read and search the pages in the open folder while it answers, and nothing else.</span>
+        </div>
+      </Row>
     </div>
   );
 }

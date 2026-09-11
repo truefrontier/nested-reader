@@ -48,9 +48,10 @@ pub fn list_pages(folder: &str) -> Result<Vec<RawPage>> {
         return Err(AppError::Message(format!("Not a folder: {folder}")));
     }
     let mut out = Vec::new();
+    // Hidden directories and node_modules are skipped, but never the root itself, whatever it is called.
     let walker = WalkDir::new(root).follow_links(false).into_iter().filter_entry(|e| {
         let name = e.file_name().to_string_lossy();
-        !(name.starts_with('.') || name == "node_modules")
+        e.depth() == 0 || !(name.starts_with('.') || name == "node_modules")
     });
     for entry in walker.filter_map(|e| e.ok()) {
         if !entry.file_type().is_file() {

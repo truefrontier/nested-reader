@@ -9,6 +9,7 @@ import {
   type RecentSession,
   type Session,
   type Settings,
+  type StreamEvent,
   type StreamHandle,
   type VersionInfo,
 } from "./types";
@@ -227,7 +228,19 @@ export const mockPlatform: Platform = {
       onEvent({ type: "delta", text: words[i++] });
       setTimeout(tick, 22 + Math.random() * 40);
     };
-    setTimeout(tick, 350);
+    // With tools on, the model looks at the folder first: two tool events, then the answer.
+    const tools: StreamEvent[] = req.folder
+      ? [
+          { type: "tool", name: "search_pages", detail: "Searching for “ripple”" },
+          { type: "tool", name: "read_page", detail: "Reading sharp-wave-ripples.md" },
+        ]
+      : [];
+    let at = 350;
+    for (const t of tools) {
+      setTimeout(() => !cancelled && onEvent(t), at);
+      at += 700;
+    }
+    setTimeout(tick, at);
     return {
       cancel() {
         cancelled = true;

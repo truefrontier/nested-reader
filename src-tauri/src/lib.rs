@@ -5,6 +5,7 @@ mod files;
 mod migrate;
 #[cfg(target_os = "macos")]
 mod open_panel;
+mod tools;
 
 use ai::tokio_util_lite::CancelToken;
 use ai::{AiRequest, PingResult, StreamEvent};
