@@ -1,5 +1,30 @@
 # Progress
 
+## Session: 2026-09-11 — Esc, ⌘W and click-outside close Settings
+
+### Leading assumptions
+- The browser build's embedded panel already closed on Esc and on a backdrop click; the gap was the native Tauri Settings window, where Esc did nothing, ⌘W was taken by File › Close Pane and sent to the reader, and clicking away left it open.
+- For a separate native window, "clicking outside" means the window losing focus. So the window closes on blur, whether the click lands on the reader or on another app. The one exception is the folder picker opened from Change…, which also steals focus; a flag around that call keeps the window up until the picker is done.
+- Esc inside a text box (the subfolder name, the number fields) keeps its old meaning of leaving the box; a second Esc closes the settings. Esc anywhere else closes at once.
+- ⌘W in the Tauri app is a menu accelerator, so the webview never sees it; the Rust menu handler now closes the settings window when Close Pane fires with that window in front. The webview also handles ⌘W as a fallback (and for the browser build, where the browser may still close the tab).
+
+### World facts
+- `SettingsApp.tsx`: `close()` calls `onClose` when embedded, else `getCurrentWindow().close()`. A keydown listener handles Esc and ⌘/Ctrl‑W; `onFocusChanged` closes the Tauri window on blur unless `dialogOpen` is set. `General` takes `dialogOpen` and sets it around `platform.pickFolder()`.
+- `lib.rs` menu handler: `close-pane` with the settings window focused closes that window instead of forwarding the command to the reader.
+- `capabilities/default.json` gained `core:window:allow-close`, needed for the JS close call.
+- Verified in headless Chromium against `vite preview`: ⌘, opens the panel; Esc, ⌘W and a backdrop click each close it; a click inside leaves it open; Esc in the subfolder box only leaves the box, then a second Esc closes. `tsc` and `pnpm build` pass. `cargo check` could not run here (no GTK dev libraries on the Linux box), so the nine-line Rust change is unverified by a compiler; it uses only `get_webview_window`, `is_focused` and `close`, all already in use in the file.
+- `docs/architecture.md` has a paragraph on closing Settings, above "Running it".
+
+### Timeline
+1. Kevin asked that Esc, ⌘W, or a click outside close the settings "window".
+2. Read `SettingsApp`, `App.tsx`'s modal, the Rust window and menu code, and the capabilities file.
+3. Added the three close paths, the dialog guard, the Rust menu case and the capability; checked the browser build with Playwright.
+4. Updated the docs, committed and pushed to `claude/determined-carson-c9ms82`.
+
+### Possible next steps
+- Run `pnpm tauri dev` on a Mac to confirm the native window closes on blur, that Change… survives its picker, and that ⌘W reaches the Rust handler.
+- If closing on ⌘Tab to another app feels wrong, limit the blur-close to focus moving to another window of this app (check `webview_windows()` on the Rust side).
+
 ## Session: 2026-09-11 — folders in the sidebar, and a draggable sidebar width
 
 ### Leading assumptions

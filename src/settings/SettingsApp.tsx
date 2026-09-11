@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { DEFAULT_SETTINGS, READING_WIDTH_RANGE, isTauri, platform, type Auth, type OpenAtLaunch, type Placement, type Provider, type ReadingWidthUnit, type Settings } from "../platform";
 import { authFor, chatModels, modelSlot, pickDefaultModel } from "../lib/models";
 import { AiIcon, AppearanceIcon, CheckIcon, GeneralIcon, UpDownIcon } from "../reader/Icons";
@@ -52,14 +53,43 @@ export function SettingsApp({ embedded, onClose }: { embedded?: boolean; onClose
     return undefined;
   }, [embedded]);
 
+  // A native picker (Change… folder) takes focus away from the window; that is not a click outside it.
+  const dialogOpen = useRef(false);
+  const close = () => {
+    if (embedded) onClose?.();
+    else if (isTauri) getCurrentWindow().close().catch(() => undefined);
+  };
+
+  // Esc and ⌘W close the settings, both as the embedded panel and as the Tauri window. In the Tauri app ⌘W is
+  // taken by the menu first (File › Close Pane), which lib.rs turns into closing this window when it is focused.
   useEffect(() => {
-    if (!embedded) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose?.();
+      if (e.key === "Escape") {
+        // Esc inside a box only leaves the box (see the subfolder and number fields); a second Esc closes.
+        if ((e.target as HTMLElement)?.closest("input, textarea")) return;
+        e.preventDefault();
+        close();
+      } else if (e.key.toLowerCase() === "w" && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        close();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [embedded, onClose]);
+  });
+
+  // Clicking outside the Tauri window (the reader, another app) closes it, like the embedded panel's backdrop.
+  useEffect(() => {
+    if (embedded || !isTauri) return;
+    let stop = false;
+    const un = getCurrentWindow().onFocusChanged(({ payload: focused }) => {
+      if (!focused && !dialogOpen.current && !stop) close();
+    });
+    return () => {
+      stop = true;
+      un.then((f) => f()).catch(() => undefined);
+    };
+  }, [embedded]);
 
   const save = (patch: Partial<Settings>, debounce = 0) => {
     if (!settings) return;
@@ -102,7 +132,7 @@ export function SettingsApp({ embedded, onClose }: { embedded?: boolean; onClose
         </div>
       </div>
       <div className="settings-body-inner" key={tab}>
-        {tab === "general" && <General settings={settings} save={save} />}
+        {tab === "general" && <General settings={settings} save={save} dialogOpen={dialogOpen} />}
         {tab === "appearance" && <Appearance settings={settings} save={save} />}
         {tab === "ai" && <Ai settings={settings} save={save} />}
       </div>
@@ -168,11 +198,16 @@ function Dropdown<T extends string>({ value, options, onChange }: { value: T; op
   );
 }
 
-function General({ settings, save }: SectionProps) {
+function General({ settings, save, dialogOpen }: SectionProps & { dialogOpen: { current: boolean } }) {
   const [sub, setSub] = useState<string | null>(null);
   const pick = async () => {
-    const folder = await platform.pickFolder();
-    if (folder) save({ folder });
+    dialogOpen.current = true;
+    try {
+      const folder = await platform.pickFolder();
+      if (folder) save({ folder });
+    } finally {
+      dialogOpen.current = false;
+    }
   };
   const folderLabel = settings.folder ? settings.folder.replace(/^\/Users\/[^/]+/, "~") : "No folder chosen";
   return (
