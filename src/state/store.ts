@@ -4,6 +4,7 @@ import {
   emptySession,
   platform,
   readingWidthCss,
+  sidebarWidthPx,
   type AiRequest,
   type ChatMessage,
   type PageMeta,
@@ -21,7 +22,7 @@ import { serializePage, titleFromBody } from "../lib/frontmatter";
 import { slugify, titleFromQuestion, uniquePath } from "../lib/slug";
 import { nowIso } from "../lib/time";
 import { newFileMessages, newPageMessages, quickAnswerMessages, refineMessages, type AskContext, type RefineScope } from "../lib/prompts";
-import { growsFrom, sessionPages } from "../lib/tree";
+import { dirOf, folderChain, growsFrom, sessionPages } from "../lib/tree";
 
 export type Selection = {
   /** The pane the text was highlighted in: the box opens there and its verbs act on that pane's page. */
@@ -268,6 +269,7 @@ export class ReaderStore {
     root.dataset.theme = dark ? "dark" : "light";
     root.style.setProperty("--text-size", `${s.textSize}px`);
     root.style.setProperty("--reading-width", readingWidthCss(s.readingWidth));
+    root.style.setProperty("--side-width", `${sidebarWidthPx(s.sidebarWidth)}px`);
     root.dataset.font = s.readingFont;
   }
 
@@ -569,6 +571,38 @@ export class ReaderStore {
 
   toggleSidebar() {
     this.setSession({ sidebar: !this.state.session.sidebar });
+  }
+
+  /** Shows the sidebar at `px` wide while its edge is being dragged; nothing is saved until `setSidebarWidth`. */
+  previewSidebarWidth(px: number) {
+    document.documentElement.style.setProperty("--side-width", `${sidebarWidthPx(px)}px`);
+  }
+
+  /** Keeps a dragged sidebar width, clamped to its range, with the other settings. */
+  async setSidebarWidth(px: number) {
+    const settings = { ...this.state.settings, sidebarWidth: sidebarWidthPx(px) };
+    this.set({ settings });
+    this.applyTheme(settings);
+    try {
+      await platform.saveSettings(settings);
+    } catch (e) {
+      this.fail(e);
+    }
+  }
+
+  /** Closes a sidebar folder, or opens it again. */
+  toggleFolder(dir: string) {
+    const list = this.state.session.collapsed ?? [];
+    this.setSession({ collapsed: list.includes(dir) ? list.filter((d) => d !== dir) : [...list, dir] });
+  }
+
+  /** Opens every folder on the way to `path`, so the row for it can be seen. */
+  revealInTree(path: string) {
+    const list = this.state.session.collapsed ?? [];
+    if (!list.length) return;
+    const chain = folderChain(dirOf(path));
+    const next = list.filter((d) => !chain.includes(d));
+    if (next.length !== list.length) this.setSession({ collapsed: next });
   }
 
   setFilter(filter: string) {

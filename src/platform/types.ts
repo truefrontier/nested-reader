@@ -36,6 +36,8 @@ export type Session = {
   trail: string[];
   trailIndex: number;
   sidebar: boolean;
+  /** Folders (paths relative to the session folder) shown closed in the sidebar. */
+  collapsed?: string[];
   split?: string;
   splitDirection: SplitDirection;
   /** Display name chosen with Rename on the Home screen; the folder name otherwise. */
@@ -80,6 +82,8 @@ export type Settings = {
   readingFont: "serif" | "sans";
   /** Both values are kept, so switching the unit brings back the last choice made in it. */
   readingWidth: ReadingWidth;
+  /** Width of the sidebar in px, set by dragging its edge. */
+  sidebarWidth: number;
   newPageOpens: Placement;
   deepDiveOpens: Placement;
   provider: Provider;
@@ -100,6 +104,7 @@ export const DEFAULT_SETTINGS: Settings = {
   textSize: 17,
   readingFont: "serif",
   readingWidth: { unit: "em", em: 33, percent: 70 },
+  sidebarWidth: 224,
   newPageOpens: "beside",
   deepDiveOpens: "background",
   provider: "anthropic",
@@ -124,6 +129,14 @@ export const READING_WIDTH_RANGE: Record<ReadingWidthUnit, { min: number; max: n
 };
 
 /** The CSS length behind `--reading-width`; a value outside its range (a hand-edited settings file) is clamped. */
+export const SIDEBAR_WIDTH_RANGE = { min: 180, max: 480 };
+
+/** The sidebar width to apply: the setting clamped to its range, or the default when it is not a number. */
+export function sidebarWidthPx(w: unknown): number {
+  const n = typeof w === "number" && Number.isFinite(w) ? w : DEFAULT_SETTINGS.sidebarWidth;
+  return Math.round(Math.min(SIDEBAR_WIDTH_RANGE.max, Math.max(SIDEBAR_WIDTH_RANGE.min, n)));
+}
+
 export function readingWidthCss(w: ReadingWidth): string {
   const unit = w.unit === "percent" ? "percent" : "em";
   const range = READING_WIDTH_RANGE[unit];

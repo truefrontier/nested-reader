@@ -65,6 +65,8 @@ mode: new-page
 
 `source` is the parent. `mode` is `new-page` (opened in the foreground) or `deep-dive` (opened in the background, marked unread). The sidebar hangs every page under its `source`, whatever its mode, so it shows the same tree as the Web map: pages with no source (or a source that is not in the folder) newest first, and under each one its children oldest first. The Timeline map is the same list with times.
 
+The sidebar also shows the folder's directories. `buildFolders` in `src/lib/tree.ts` nests them as on disk; inside each, subfolders come first by name and then that directory's own pages as the source tree above (`buildTree` over just those pages, so a page whose source sits in another directory is a root of its own). Only directories holding pages are listed. A folder row's chevron closes or opens it; closed folders are kept in `session.collapsed` (paths relative to the session folder), so they survive a reopen. Opening a page inside a closed folder opens the folder (`revealInTree`), and while the Filter box or Unread only is in use every folder is open and one with nothing to show is left out. The filter matches a page's title or its path, so typing a folder name finds its pages.
+
 A value that needs quoting (a title with a colon or a quote in it) is written as a JSON string and parsed back the same way, so quotes inside a title survive the round trip instead of showing as `\"`.
 
 When a page is created from a highlight, the highlighted words in the source are wrapped as `[[slug|highlighted words]]`. The display text is unchanged, Obsidian understands the link, and the reader renders it underlined with a dot while the target is loading or unread.
@@ -96,6 +98,8 @@ Prompts are built in `src/lib/prompts.ts`. What gets sent is controlled by the C
 ## Appearance
 
 Theme, text size, reading font and page width are settings. `applyTheme` in the store writes them to the root element as `data-theme`, `--text-size`, `data-font` and `--reading-width`, at launch and again whenever the settings window saves. The reading column (`.article`) takes `--reading-width` as its `max-width`. The unit is `em`, measured against the article's own text, so the column follows the text size and comes out a little narrower in the split pane, whose text is 1px smaller; or `%` of the pane. The setting keeps a value per unit (`readingWidth: { unit, em, percent }`), so switching units brings back the last choice made in each. The default is 33em, the old 560px at 17px text, so an upgrade moves nothing. Values outside 20–60em or 30–100% are clamped when applied.
+
+The sidebar's width is dragged, not typed: its right edge (`.side-grip`) resizes it, double-click puts it back to 224px, and the result is saved as `sidebarWidth` with the other settings and applied as `--side-width`, clamped to 180–480px. While the pointer is down the store only previews the variable; the setting is written once when it is let go.
 
 ## Running it
 

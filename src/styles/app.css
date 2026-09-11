@@ -22,6 +22,7 @@
   --text-size: 17px;
   /* em resolves against the article's own text size, so the default matches the old 560px at 17px. */
   --reading-width: 33em;
+  --side-width: 224px;
   color-scheme: light;
 }
 :root[data-theme="dark"] {
@@ -176,8 +177,9 @@ button {
 /* ---------- sidebar ---------- */
 
 .side {
-  width: 224px;
+  width: var(--side-width);
   flex: none;
+  position: relative;
   background: var(--side);
   padding: 58px 0 16px;
   display: flex;
@@ -185,6 +187,33 @@ button {
   font-size: 12.5px;
   height: 100%;
   animation: rise 0.15s ease-out;
+}
+/* The sidebar's right edge: drag it to resize, double-click to go back to the default width. */
+.side-grip {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  bottom: 0;
+  width: 7px;
+  cursor: col-resize;
+  z-index: 5;
+  -webkit-app-region: no-drag;
+  touch-action: none;
+}
+.side-grip::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 1px;
+  background: var(--acc);
+  opacity: 0;
+  transition: opacity 0.12s ease-out;
+}
+.side-grip:hover::after,
+.side-grip:active::after {
+  opacity: 0.7;
 }
 .side-head {
   padding: 0 18px 12px 12px;
@@ -298,6 +327,52 @@ button {
 }
 .tree-inner {
   position: relative;
+}
+/* Each folder's pages sit in one .rows block with their own line; subfolders nest inside .fbody. */
+.rows {
+  position: relative;
+}
+.folder + .rows,
+.rows + .folder,
+.folder + .folder {
+  margin-top: 2px;
+}
+.frow {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  cursor: pointer;
+  color: var(--mute);
+  padding-right: 16px;
+  margin-left: -4px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.frow:hover {
+  color: var(--fg);
+}
+.frow .chev {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.12s ease-out;
+}
+.folder.open > .frow .chev {
+  transform: rotate(90deg);
+}
+.frow .label {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.fbody {
+  padding-left: 15px;
 }
 .tree-line {
   position: absolute;

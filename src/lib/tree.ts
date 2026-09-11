@@ -47,6 +47,68 @@ export function buildTree(pages: Record<string, PageMeta>): TreeItem[] {
   return out;
 }
 
+/** A directory in the session folder, as the sidebar shows it. */
+export type FolderNode = {
+  /** Directory path relative to the session folder; "" for the folder itself. */
+  path: string;
+  name: string;
+  /** Subfolders, by name. */
+  folders: FolderNode[];
+  /** The pages directly in this folder, hung under their sources (the same tree `buildTree` builds, per folder). */
+  items: TreeItem[];
+};
+
+/** The directory of a relative page path, "" at the root. */
+export function dirOf(path: string): string {
+  const i = path.lastIndexOf("/");
+  return i < 0 ? "" : path.slice(0, i);
+}
+
+/** The folder and each of its ancestors, nearest first, ending with "" for the root. */
+export function folderChain(dir: string): string[] {
+  const out: string[] = [];
+  let cur = dir;
+  while (cur) {
+    out.push(cur);
+    cur = dirOf(cur);
+  }
+  out.push("");
+  return out;
+}
+
+/**
+ * The sidebar's tree: the session folder's directories, nested as on disk, each with the pages inside it hung
+ * under their sources. A page whose source sits in another directory is a root of its own directory, so the
+ * folders stay the outer structure. Subfolders come before pages, by name; an empty folder is not listed
+ * because only directories holding pages are known.
+ */
+export function buildFolders(pages: Record<string, PageMeta>): FolderNode {
+  const nodes = new Map<string, FolderNode>();
+  const node = (dir: string): FolderNode => {
+    let n = nodes.get(dir);
+    if (n) return n;
+    n = { path: dir, name: dir.slice(dir.lastIndexOf("/") + 1), folders: [], items: [] };
+    nodes.set(dir, n);
+    if (dir) node(dirOf(dir)).folders.push(n);
+    return n;
+  };
+  const root = node("");
+  const byDir = new Map<string, Record<string, PageMeta>>();
+  for (const p of Object.values(pages)) {
+    const dir = dirOf(p.path);
+    node(dir);
+    const group = byDir.get(dir) ?? {};
+    group[p.path] = p;
+    byDir.set(dir, group);
+  }
+  const collate = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+  for (const n of nodes.values()) {
+    n.folders.sort((a, b) => collate.compare(a.name, b.name));
+    n.items = buildTree(byDir.get(n.path) ?? {});
+  }
+  return root;
+}
+
 export type DotState = "current" | "loading" | "unread" | "pending" | "read" | "plain";
 
 export function dotState(path: string, session: Session): DotState {
