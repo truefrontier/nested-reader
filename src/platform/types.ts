@@ -40,7 +40,7 @@ export type Session = {
   splitDirection: SplitDirection;
 };
 
-export type Provider = "builtin" | "openai" | "anthropic" | "custom";
+export type Provider = "builtin" | "openai" | "anthropic" | "ollama" | "custom";
 export type Placement = "beside" | "below" | "active" | "background" | "window";
 export type OpenAtLaunch = "last-session" | "ask" | "nothing";
 
@@ -55,7 +55,10 @@ export type Settings = {
   newPageOpens: Placement;
   deepDiveOpens: Placement;
   provider: Provider;
+  /** Base URL for the Custom (OpenAI-compatible) provider. */
   baseUrl: string;
+  /** Where the local Ollama server listens. */
+  ollamaUrl: string;
   models: Record<Provider, string>;
   context: { highlight: boolean; session: boolean; folder: boolean };
 };
@@ -70,10 +73,12 @@ export const DEFAULT_SETTINGS: Settings = {
   deepDiveOpens: "background",
   provider: "anthropic",
   baseUrl: "",
+  ollamaUrl: "http://localhost:11434",
   models: {
     builtin: "",
     openai: "gpt-5",
     anthropic: "claude-sonnet-5",
+    ollama: "llama3.2",
     custom: "llama-3.3-70b",
   },
   context: { highlight: true, session: true, folder: false },
@@ -108,7 +113,8 @@ export type StreamEvent =
   | { type: "done" }
   | { type: "error"; message: string };
 
-export type PingResult = { ok: true; ms: number } | { ok: false; error: string };
+/** `models` lists what the server has installed (Ollama only). */
+export type PingResult = { ok: true; ms: number; models?: string[] } | { ok: false; error: string; models?: string[] };
 
 export type StreamHandle = { cancel(): void };
 

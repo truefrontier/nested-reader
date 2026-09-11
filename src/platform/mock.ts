@@ -195,6 +195,7 @@ export const mockPlatform: Platform = {
   async aiPing(provider): Promise<PingResult> {
     await new Promise((r) => setTimeout(r, 400));
     if (provider === "builtin") return { ok: false, error: "Built-in plan is not available in this build" };
+    if (provider === "ollama") return { ok: true, ms: 9, models: ["gemma4:12b", "llama3.2:latest", "qwen3:8b"] };
     if (!keys.has(provider)) return { ok: false, error: "No API key" };
     return { ok: true, ms: 410 };
   },

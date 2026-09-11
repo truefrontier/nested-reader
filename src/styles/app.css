@@ -546,7 +546,7 @@ button {
 
 .pop-wrap {
   position: relative;
-  margin: -10px 0 20px 40px;
+  margin: -10px auto 20px;
   width: 470px;
   max-width: calc(100% - 20px);
   animation: rise 0.18s ease-out;

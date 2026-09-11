@@ -380,7 +380,8 @@ export class ReaderStore {
 
   private request(system: string, messages: ChatMessage[], maxTokens?: number): AiRequest {
     const s = this.state.settings;
-    return { provider: s.provider, model: s.models[s.provider], baseUrl: s.baseUrl || undefined, system, messages, maxTokens };
+    const baseUrl = s.provider === "ollama" ? s.ollamaUrl : s.baseUrl;
+    return { provider: s.provider, model: s.models[s.provider], baseUrl: baseUrl || undefined, system, messages, maxTokens };
   }
 
   private stream(key: string, req: AiRequest, on: { delta: (t: string) => void; done: () => void; error: (m: string) => void }) {

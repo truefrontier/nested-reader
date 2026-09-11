@@ -58,7 +58,7 @@ body.settings-body {
   color: var(--fg);
 }
 .settings-body-inner {
-  padding: 28px 40px 36px;
+  padding: 28px 32px 36px;
   display: grid;
   gap: 36px;
   animation: rise 0.15s ease-out;
@@ -66,7 +66,7 @@ body.settings-body {
 .grid {
   display: grid;
   grid-template-columns: 120px 1fr;
-  gap: 14px 20px;
+  gap: 14px 16px;
   align-items: center;
 }
 .grid .lab {
@@ -109,7 +109,8 @@ body.settings-body {
   justify-self: start;
 }
 .seg span {
-  padding: 5px 12px;
+  padding: 5px 9px;
+  white-space: nowrap;
   border-radius: 5px;
   cursor: pointer;
   color: var(--mute);

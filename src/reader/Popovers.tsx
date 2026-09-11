@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { Lookup, Verb } from "../state/store";
 import type { Change } from "../lib/diff";
 import type { RefineScope } from "../lib/prompts";
@@ -9,6 +9,35 @@ export function Kbd({ children }: { children: ReactNode }) {
 
 export function Caret({ left }: { left: number }) {
   return <div className="caret" style={{ left }} />;
+}
+
+/**
+ * An in-flow popover centred under its block. The caret points at `caretX`,
+ * measured in px from the block's left edge, and is clamped to the popover.
+ */
+export function PopWrap({ caretX, width, className, children }: { caretX: number; width?: number; className?: string; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [left, setLeft] = useState<number | undefined>(undefined);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    const parent = el?.parentElement;
+    if (!el || !parent) return;
+    const place = () => {
+      // The wrap and the block are siblings, so the parent's left edge is the block's left edge.
+      const popLeft = el.getBoundingClientRect().left - parent.getBoundingClientRect().left;
+      setLeft(Math.round(Math.min(Math.max(caretX - popLeft, 14), el.offsetWidth - 24)));
+    };
+    place();
+    const ro = new ResizeObserver(place);
+    ro.observe(parent);
+    return () => ro.disconnect();
+  }, [caretX]);
+  return (
+    <div ref={ref} className={`pop-wrap${className ? ` ${className}` : ""}`} style={width ? { width } : undefined}>
+      {left !== undefined && <Caret left={left} />}
+      {children}
+    </div>
+  );
 }
 
 type Submit = (text: string, verb: Verb, alt: boolean) => void;
@@ -64,13 +93,12 @@ export function AskPopover({ caretLeft, onSubmit, onEsc, onRefine }: { caretLeft
     }
   };
   return (
-    <div className="pop-wrap narrow" style={{ marginLeft: 40 + Math.max(0, caretLeft - 70) }}>
-      <Caret left={74} />
+    <PopWrap caretX={caretLeft} className="narrow">
       <div className="pop">
         <input ref={ref} data-ask="1" placeholder="Ask something…" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} spellCheck={false} />
         <AskVerbs onVerb={(v, alt) => onSubmit(q, v, alt)} onEsc={onEsc} />
       </div>
-    </div>
+    </PopWrap>
   );
 }
 
@@ -136,10 +164,9 @@ export function RefinePopover({
   );
   if (pane) return <div className="pane-pop">{body}</div>;
   return (
-    <div className="pop-wrap" style={{ marginLeft: 40 + Math.max(0, (caretLeft ?? 0) - 90) }}>
-      <Caret left={94} />
+    <PopWrap caretX={caretLeft ?? 0}>
       {body}
-    </div>
+    </PopWrap>
   );
 }
 
@@ -176,8 +203,7 @@ export function AnswerCard({ lookup, onFollowUp, onEsc }: { lookup: Lookup; onFo
 
 export function BeforeCard({ change, index, total, caretLeft, onUndo }: { change: Change; index: number; total: number; caretLeft: number; onUndo: () => void }) {
   return (
-    <div className="pop-wrap" style={{ width: 400, marginLeft: 40 + Math.max(0, caretLeft - 60) }}>
-      <Caret left={60} />
+    <PopWrap caretX={caretLeft} width={400}>
       <div className="pop small-card">
         <div className="lab">Before</div>
         <div className="old">{change.before || <em>nothing</em>}</div>
@@ -190,7 +216,7 @@ export function BeforeCard({ change, index, total, caretLeft, onUndo }: { change
           </span>
         </div>
       </div>
-    </div>
+    </PopWrap>
   );
 }
 
@@ -206,8 +232,7 @@ export function NowCard({ change, versionN, caretLeft }: { change: Change; versi
     );
   };
   return (
-    <div className="pop-wrap" style={{ width: 400, marginLeft: 40 + Math.max(0, caretLeft - 60) }}>
-      <Caret left={60} />
+    <PopWrap caretX={caretLeft} width={400}>
       <div className="pop small-card">
         <div className="lab">Now · Version {versionN}</div>
         <div className="old">{change.after || <em>removed</em>}</div>
@@ -218,6 +243,6 @@ export function NowCard({ change, versionN, caretLeft }: { change: Change; versi
           <span className="r">changed in Version {versionN}</span>
         </div>
       </div>
-    </div>
+    </PopWrap>
   );
 }

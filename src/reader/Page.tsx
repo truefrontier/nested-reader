@@ -129,12 +129,21 @@ export function Page({ path, role }: Props) {
     setActiveChange(undefined);
   }, [reviewDiff, viewDiff]);
 
+  /** Horizontal midpoint of a change's highlight, in px from its block's left edge. */
   const caretXFor = (id: string): number => {
-    const el = articleRef.current?.querySelector<HTMLElement>(`[data-change="${id}"]`);
-    if (!el) return 60;
-    const blockEl = el.closest<HTMLElement>(".block");
-    if (!blockEl) return 60;
-    return el.getBoundingClientRect().left - blockEl.getBoundingClientRect().left + Math.min(el.getBoundingClientRect().width / 2, 80);
+    const els = Array.from(articleRef.current?.querySelectorAll<HTMLElement>(`[data-change="${id}"]`) ?? []);
+    const blockEl = els[0]?.closest<HTMLElement>(".block");
+    if (!els.length || !blockEl) return 0;
+    let left = Infinity;
+    let right = -Infinity;
+    for (const el of els) {
+      for (const r of Array.from(el.getClientRects())) {
+        left = Math.min(left, r.left);
+        right = Math.max(right, r.right);
+      }
+    }
+    if (!Number.isFinite(left)) return 0;
+    return (left + right) / 2 - blockEl.getBoundingClientRect().left;
   };
 
   // ----- selection handling (main pane only) -----
@@ -164,15 +173,14 @@ export function Page({ path, role }: Props) {
     if (end <= start) return;
     const text = full.slice(start, end);
     const blockRect = block.getBoundingClientRect();
-    const rects = range.getClientRects();
-    const last = rects.length ? rects[rects.length - 1] : range.getBoundingClientRect();
+    const bounds = range.getBoundingClientRect();
     const selectionState: Selection = {
       block: index,
       start,
       end,
       text: text.replace(/\s+/g, " ").trim(),
       paragraph: full,
-      caretX: last.right - blockRect.left,
+      caretX: (bounds.left + bounds.right) / 2 - blockRect.left,
     };
     sel.removeAllRanges();
     store.setSelection(selectionState);

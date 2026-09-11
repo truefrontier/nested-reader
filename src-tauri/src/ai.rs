@@ -1,4 +1,4 @@
-//! Streaming completions against OpenAI-compatible and Anthropic APIs.
+//! Streaming completions against OpenAI-compatible, Anthropic and Ollama APIs.
 
 use crate::error::{AppError, Result};
 use futures_util::StreamExt;
@@ -37,10 +37,15 @@ pub enum StreamEvent {
 }
 
 #[derive(Serialize)]
-#[serde(untagged)]
-pub enum PingResult {
-    Ok { ok: bool, ms: u128 },
-    Err { ok: bool, error: String },
+pub struct PingResult {
+    pub ok: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ms: Option<u128>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    /// Models the server has installed (Ollama only), so Settings can offer them.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub models: Option<Vec<String>>,
 }
 
 pub const KEYCHAIN_SERVICE: &str = "com.truefrontier.markdown-learner";
@@ -72,11 +77,34 @@ fn client() -> Result<reqwest::Client> {
         .build()?)
 }
 
+fn ollama_base(req_base: Option<&str>) -> String {
+    match req_base {
+        Some(b) if !b.trim().is_empty() => b.trim().trim_end_matches('/').to_string(),
+        _ => "http://localhost:11434".to_string(),
+    }
+}
+
+/// No overall timeout: a local model can take minutes to finish a long refine.
+fn ollama_client() -> Result<reqwest::Client> {
+    Ok(reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(5))
+        .build()?)
+}
+
+fn ollama_error(base: &str, e: reqwest::Error) -> AppError {
+    if e.is_connect() {
+        AppError::Message(format!("Ollama isn't running at {base}. Start it with `ollama serve`."))
+    } else {
+        e.into()
+    }
+}
+
 /// Emits deltas on the channel until the stream ends, the token cancels or an error occurs.
 pub async fn stream(req: AiRequest, channel: Channel<StreamEvent>, cancel: CancelToken) -> Result<()> {
     let result = match req.provider.as_str() {
         "anthropic" => stream_anthropic(&req, &channel, &cancel).await,
         "openai" | "custom" => stream_openai(&req, &channel, &cancel).await,
+        "ollama" => stream_ollama(&req, &channel, &cancel).await,
         "builtin" => Err(AppError::Message(
             "The built-in plan is not available in this build. Choose a provider in Settings › AI.".into(),
         )),
@@ -103,6 +131,7 @@ async fn read_error_body(resp: reqwest::Response) -> String {
         .and_then(|v| {
             v.pointer("/error/message")
                 .or_else(|| v.pointer("/message"))
+                .or_else(|| v.get("error"))
                 .and_then(|m| m.as_str().map(|s| s.to_string()))
         })
         .unwrap_or_else(|| text.chars().take(200).collect());
@@ -133,6 +162,73 @@ where
         }
     }
     Ok(())
+}
+
+/// Splits a newline-delimited JSON stream into lines and hands each to `on_line`.
+async fn read_ndjson<F>(resp: reqwest::Response, cancel: &CancelToken, mut on_line: F) -> Result<()>
+where
+    F: FnMut(&str) -> Result<bool>,
+{
+    let mut body = resp.bytes_stream();
+    let mut buf = String::new();
+    while let Some(chunk) = body.next().await {
+        if cancel.is_cancelled() {
+            return Ok(());
+        }
+        let chunk = chunk?;
+        buf.push_str(&String::from_utf8_lossy(&chunk));
+        while let Some(pos) = buf.find('\n') {
+            let line = buf[..pos].trim().to_string();
+            buf.drain(..=pos);
+            if !line.is_empty() && !on_line(&line)? {
+                return Ok(());
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn stream_ollama(req: &AiRequest, channel: &Channel<StreamEvent>, cancel: &CancelToken) -> Result<()> {
+    let base = ollama_base(req.base_url.as_deref());
+    let mut messages: Vec<Value> = Vec::new();
+    if let Some(sys) = &req.system {
+        messages.push(json!({ "role": "system", "content": sys }));
+    }
+    for m in &req.messages {
+        messages.push(json!({ "role": m.role, "content": m.content }));
+    }
+    // `think: false` keeps reasoning models from spending the token budget on hidden thinking;
+    // Ollama accepts it on models without a thinking mode too.
+    let mut body = json!({ "model": req.model, "messages": messages, "stream": true, "think": false });
+    if let Some(max) = req.max_tokens {
+        body["options"] = json!({ "num_predict": max });
+    }
+    let resp = ollama_client()?
+        .post(format!("{base}/api/chat"))
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| ollama_error(&base, e))?;
+    if !resp.status().is_success() {
+        return Err(AppError::Message(read_error_body(resp).await));
+    }
+    read_ndjson(resp, cancel, |line| {
+        let v: Value = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(_) => return Ok(true),
+        };
+        if let Some(err) = v.get("error").and_then(|e| e.as_str()) {
+            return Err(AppError::Message(err.to_string()));
+        }
+        // Thinking models also send `message.thinking`; only the answer text goes to the page.
+        if let Some(text) = v.pointer("/message/content").and_then(|t| t.as_str()) {
+            if !text.is_empty() {
+                let _ = channel.send(StreamEvent::Delta { text: text.to_string() });
+            }
+        }
+        Ok(!v.get("done").and_then(|d| d.as_bool()).unwrap_or(false))
+    })
+    .await
 }
 
 async fn stream_openai(req: &AiRequest, channel: &Channel<StreamEvent>, cancel: &CancelToken) -> Result<()> {
@@ -239,9 +335,38 @@ async fn stream_anthropic(req: &AiRequest, channel: &Channel<StreamEvent>, cance
 /// A cheap authenticated request that proves the key, base URL and network work.
 pub async fn ping(provider: &str, base_url: &str, model: &str) -> PingResult {
     let started = Instant::now();
+    let mut models: Option<Vec<String>> = None;
     let result: Result<()> = async {
         let c = client()?;
         match provider {
+            "ollama" => {
+                let base = ollama_base(if base_url.is_empty() { None } else { Some(base_url) });
+                let resp = ollama_client()?
+                    .get(format!("{base}/api/tags"))
+                    .send()
+                    .await
+                    .map_err(|e| ollama_error(&base, e))?;
+                if !resp.status().is_success() {
+                    return Err(AppError::Message(read_error_body(resp).await));
+                }
+                let v: Value = resp.json().await?;
+                let names: Vec<String> = v
+                    .get("models")
+                    .and_then(|m| m.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|m| m.get("name").and_then(|n| n.as_str()).map(String::from))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                // Ollama names always carry a tag, so "llama3.2" matches "llama3.2:latest".
+                let installed = model.is_empty() || names.iter().any(|n| n == model || *n == format!("{model}:latest"));
+                models = Some(names);
+                if !installed {
+                    return Err(AppError::Message(format!("\"{model}\" isn't pulled. Run: ollama pull {model}")));
+                }
+                Ok(())
+            }
             "anthropic" => {
                 let key = api_key("anthropic")?;
                 let resp = c
@@ -293,8 +418,8 @@ pub async fn ping(provider: &str, base_url: &str, model: &str) -> PingResult {
     }
     .await;
     match result {
-        Ok(()) => PingResult::Ok { ok: true, ms: started.elapsed().as_millis() },
-        Err(e) => PingResult::Err { ok: false, error: e.to_string() },
+        Ok(()) => PingResult { ok: true, ms: Some(started.elapsed().as_millis()), error: None, models },
+        Err(e) => PingResult { ok: false, ms: None, error: Some(e.to_string()), models },
     }
 }
 
@@ -313,5 +438,79 @@ pub mod tokio_util_lite {
         pub fn is_cancelled(&self) -> bool {
             self.0.load(Ordering::SeqCst)
         }
+    }
+}
+
+/// Live checks against a local Ollama. Run with `cargo test -- --ignored` when `ollama serve` is up.
+#[cfg(test)]
+mod ollama_live {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+
+    const MODEL: &str = "gemma4:12b";
+
+    #[test]
+    #[ignore]
+    fn ping_lists_installed_models() {
+        let r = tauri::async_runtime::block_on(ping("ollama", "", MODEL));
+        assert!(r.ok, "{:?}", r.error);
+        let models = r.models.expect("models");
+        assert!(models.iter().any(|m| m == MODEL), "{models:?}");
+    }
+
+    #[test]
+    #[ignore]
+    fn ping_reports_missing_model_and_still_lists() {
+        let r = tauri::async_runtime::block_on(ping("ollama", "", "not-a-model"));
+        assert!(!r.ok);
+        assert!(r.error.unwrap().contains("ollama pull not-a-model"));
+        assert!(!r.models.unwrap().is_empty());
+    }
+
+    #[test]
+    #[ignore]
+    fn ping_names_a_down_server() {
+        let r = tauri::async_runtime::block_on(ping("ollama", "http://127.0.0.1:1", ""));
+        assert!(!r.ok);
+        assert!(r.error.unwrap().contains("isn't running"), "expected a plain connection message");
+    }
+
+    #[test]
+    #[ignore]
+    fn stream_delivers_text_then_done() {
+        let events: Arc<Mutex<Vec<StreamEvent>>> = Arc::default();
+        let sink = events.clone();
+        let channel = Channel::new(move |body: tauri::ipc::InvokeResponseBody| {
+            if let tauri::ipc::InvokeResponseBody::Json(json) = body {
+                let v: Value = serde_json::from_str(&json).unwrap();
+                let ev = match v["type"].as_str() {
+                    Some("delta") => StreamEvent::Delta { text: v["text"].as_str().unwrap().to_string() },
+                    Some("done") => StreamEvent::Done,
+                    _ => StreamEvent::Error { message: v["message"].as_str().unwrap_or("").to_string() },
+                };
+                sink.lock().unwrap().push(ev);
+            }
+            Ok(())
+        });
+        let req = AiRequest {
+            provider: "ollama".into(),
+            model: MODEL.into(),
+            base_url: None,
+            system: Some("Answer in one short sentence.".into()),
+            messages: vec![ChatMessage { role: "user".into(), content: "What colour is the sky on a clear day?".into() }],
+            max_tokens: Some(40),
+        };
+        tauri::async_runtime::block_on(stream(req, channel, CancelToken::default())).unwrap();
+        let events = events.lock().unwrap();
+        let text: String = events
+            .iter()
+            .filter_map(|e| match e {
+                StreamEvent::Delta { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert!(text.to_lowercase().contains("blue"), "got: {text:?}");
+        assert!(matches!(events.last(), Some(StreamEvent::Done)), "last event should be Done");
+        assert!(!events.iter().any(|e| matches!(e, StreamEvent::Error { .. })));
     }
 }

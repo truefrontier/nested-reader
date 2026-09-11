@@ -22,6 +22,7 @@ const PROVIDERS: { value: Provider; label: string }[] = [
   { value: "builtin", label: "Built in" },
   { value: "openai", label: "OpenAI" },
   { value: "anthropic", label: "Anthropic" },
+  { value: "ollama", label: "Ollama" },
   { value: "custom", label: "Custom" },
 ];
 
@@ -276,7 +277,9 @@ type Ping = { status: "idle" | "checking" | "ok" | "err"; ms?: number; error?: s
 function Ai({ settings, save }: SectionProps) {
   const p = settings.provider;
   const external = p !== "builtin";
+  const needsKey = external && p !== "ollama";
   const [hasKey, setHasKey] = useState<boolean | null>(null);
+  const [installed, setInstalled] = useState<string[]>([]);
   const [keyDraft, setKeyDraft] = useState("");
   const [keyEditing, setKeyEditing] = useState(false);
   const [ping, setPing] = useState<Ping>({ status: "idle" });
@@ -292,6 +295,11 @@ function Ai({ settings, save }: SectionProps) {
       setHasKey(null);
       return;
     }
+    if (p === "ollama") {
+      // A local server needs no key; "has key" just means "ready to ping".
+      setHasKey(true);
+      return;
+    }
     platform.hasApiKey(p).then(setHasKey, () => setHasKey(false));
   }, [p, settings.models]);
 
@@ -301,9 +309,10 @@ function Ai({ settings, save }: SectionProps) {
     const seq = ++pingSeq.current;
     pingTimer.current = window.setTimeout(() => {
       setPing({ status: "checking" });
-      platform.aiPing(p, settings.baseUrl, model).then(
+      platform.aiPing(p, p === "ollama" ? settings.ollamaUrl : settings.baseUrl, model).then(
         (r) => {
           if (seq !== pingSeq.current) return;
+          setInstalled(r.models ?? []);
           setPing(r.ok ? { status: "ok", ms: r.ms } : { status: "err", error: r.error });
         },
         (e) => seq === pingSeq.current && setPing({ status: "err", error: String(e) }),
@@ -315,10 +324,10 @@ function Ai({ settings, save }: SectionProps) {
     if (external && hasKey !== null) check(100);
     return () => window.clearTimeout(pingTimer.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [p, hasKey, settings.baseUrl]);
+  }, [p, hasKey, settings.baseUrl, settings.ollamaUrl]);
 
   const commitKey = async () => {
-    if (!external) return;
+    if (!needsKey) return;
     const k = keyDraft.trim();
     setKeyEditing(false);
     if (!k) return;
@@ -346,7 +355,7 @@ function Ai({ settings, save }: SectionProps) {
       {!external && (
         <Row label="Plan">
           <span className="spread">
-            <span className="mute">Not available in this build. Choose OpenAI, Anthropic or Custom.</span>
+            <span className="mute">Not available in this build. Choose OpenAI, Anthropic, Ollama or Custom.</span>
           </span>
         </Row>
       )}
@@ -362,8 +371,19 @@ function Ai({ settings, save }: SectionProps) {
           />
         </Row>
       )}
-      {external && (
-        <>
+      {p === "ollama" && (
+        <Row label="Server">
+          <input
+            className="field"
+            placeholder={DEFAULT_SETTINGS.ollamaUrl}
+            value={settings.ollamaUrl}
+            onChange={(e) => save({ ollamaUrl: e.target.value }, 400)}
+            onBlur={() => check(0)}
+            spellCheck={false}
+          />
+        </Row>
+      )}
+      {needsKey && (
           <Row label="API key">
             <span className="with-note">
               <input
@@ -380,9 +400,26 @@ function Ai({ settings, save }: SectionProps) {
               <span className="note">{keyEditing && keyDraft ? "Press ↵ to store" : hasKey ? (isTauri ? "Stored in Keychain" : "Stored for this session") : "Not set"}</span>
             </span>
           </Row>
+      )}
+      {external && (
           <Row label="Model">
             <span className="with-note">
-              <input className="field" value={model} onChange={(e) => setModel(e.target.value)} onBlur={commitModel} onKeyDown={(e) => e.key === "Enter" && commitModel()} spellCheck={false} />
+              <input
+                className="field"
+                list={p === "ollama" ? "ollama-models" : undefined}
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                onBlur={commitModel}
+                onKeyDown={(e) => e.key === "Enter" && commitModel()}
+                spellCheck={false}
+              />
+              {p === "ollama" && (
+                <datalist id="ollama-models">
+                  {installed.map((m) => (
+                    <option key={m} value={m} />
+                  ))}
+                </datalist>
+              )}
               <span className="note status">
                 {ping.status === "ok" && (
                   <>
@@ -397,11 +434,10 @@ function Ai({ settings, save }: SectionProps) {
                     {shortError(ping.error)}
                   </span>
                 )}
-                {ping.status === "idle" && (hasKey ? "" : "Add a key to connect")}
+                {ping.status === "idle" && (needsKey && !hasKey ? "Add a key to connect" : "")}
               </span>
             </span>
           </Row>
-        </>
       )}
       <Row label="Context sent" top>
         <div className="checks">

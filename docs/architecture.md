@@ -22,7 +22,7 @@ src/                     React app (both windows)
 src-tauri/src/
   lib.rs                 commands, menu bar, window creation
   files.rs               pages, session.json, versions (atomic writes)
-  ai.rs                  streaming for OpenAI, Anthropic and OpenAI-compatible APIs
+  ai.rs                  streaming for OpenAI, Anthropic, Ollama and OpenAI-compatible APIs
 examples/sleep-memory/   sample corpus used by the mock backend
 design/                  Claude Design source files this app implements
 ```
@@ -72,6 +72,7 @@ Diffing happens in TypeScript on the rendered text of each block (`src/lib/diff.
 
 - **OpenAI**: `POST {base}/chat/completions` with `stream: true`.
 - **Anthropic**: `POST /v1/messages` with `stream: true`.
+- **Ollama**: `POST {server}/api/chat` with `stream: true`, read as newline-delimited JSON; `GET {server}/api/tags` for the ping and the installed-model list. No key; the server URL is `ollamaUrl` in settings. The client has no overall timeout because local models can be slow.
 - **Custom**: any OpenAI-compatible server; set the base URL in Settings.
 - **Built in** is present in the UI but not wired to a service in this build.
 
