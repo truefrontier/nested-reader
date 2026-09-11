@@ -63,6 +63,18 @@ export type UiState = {
   error?: string;
   /** Something is being dragged over the window. */
   dragging: boolean;
+  /** The find bar is open in the reading pane. */
+  find: boolean;
+  /** What is being searched for; kept across closing so ⌘G can pick it back up. */
+  findQuery: string;
+  /** Which match is current, wrapped by the page against how many there are. */
+  findIndex: number;
+  /** Bumped each time the find box should take focus. */
+  findFocus: number;
+  /** Bumped each time the current match should become the selection, with the ask or refine box open on it. */
+  findSelect: number;
+  /** Bumped each time the tree's Filter box should take focus. */
+  filterFocus: number;
 };
 
 export type ReviewBase = { path: string; n: number; body: string };
@@ -90,7 +102,21 @@ export type ReaderState = {
   ui: UiState;
 };
 
-const initialUi: UiState = { panePopover: false, history: false, confirmRestore: false, fullscreen: false, filter: "", unreadOnly: false, dragging: false };
+const initialUi: UiState = {
+  panePopover: false,
+  history: false,
+  confirmRestore: false,
+  fullscreen: false,
+  filter: "",
+  unreadOnly: false,
+  dragging: false,
+  find: false,
+  findQuery: "",
+  findIndex: 0,
+  findFocus: 0,
+  findSelect: 0,
+  filterFocus: 0,
+};
 
 function prettyFolderName(folder: string): string {
   const base = folder.replace(/[/\\]+$/, "").split(/[/\\]/).pop() ?? folder;
@@ -502,6 +528,55 @@ export class ReaderStore {
     this.setUi({ unreadOnly: !this.state.ui.unreadOnly });
   }
 
+  /** Shows the tree if it is hidden and puts the cursor in its Filter box (/ or ⌘/). */
+  focusFilter() {
+    if (!this.state.session.sidebar) this.setSession({ sidebar: true });
+    this.setUi({ filterFocus: this.state.ui.filterFocus + 1 });
+  }
+
+  // ---------- find in page ----------
+
+  /** Opens the find bar, or refocuses it. A fresh selection becomes the query, as "use selection for find" would. */
+  openFind() {
+    const ui = this.state.ui;
+    const fromSelection = !ui.find && ui.popover === "ask" && !ui.lookup ? ui.selection?.text : undefined;
+    if (fromSelection && fromSelection.length <= 200) {
+      this.closePopover();
+      this.setUi({ find: true, findQuery: fromSelection, findIndex: 0, findFocus: ui.findFocus + 1, history: false });
+      return;
+    }
+    this.setUi({ find: true, findFocus: ui.findFocus + 1, history: false });
+  }
+
+  closeFind() {
+    this.setUi({ find: false });
+  }
+
+  setFindQuery(findQuery: string) {
+    this.setUi({ findQuery, findIndex: 0 });
+  }
+
+  /** Moves to the next (1) or previous (-1) match and selects it; the page wraps the index around the match count. */
+  findStep(dir: 1 | -1) {
+    const ui = this.state.ui;
+    if (!ui.find) return this.openFind();
+    if (!ui.findQuery.trim()) return this.setUi({ findFocus: ui.findFocus + 1 });
+    this.setUi({ findIndex: ui.findIndex + dir, findSelect: ui.findSelect + 1 });
+  }
+
+  /** ↵ in the find box: the current match becomes the selection, so a question or refinement can follow. */
+  findSelectCurrent() {
+    const ui = this.state.ui;
+    if (!ui.find || !ui.findQuery.trim()) return;
+    this.setUi({ findSelect: ui.findSelect + 1 });
+  }
+
+  /** The page calls this with the current match once it is on screen. The refine box stays if that is what was open. */
+  selectMatch(selection: Selection) {
+    const popover = this.state.ui.popover === "refine" ? "refine" : "ask";
+    this.setUi({ selection, popover, panePopover: false, history: false, refineError: undefined, refineText: undefined });
+  }
+
   openMap(kind: "web" | "timeline") {
     this.setUi({ map: kind, popover: undefined, selection: undefined, panePopover: false, history: false });
   }
@@ -554,6 +629,7 @@ export class ReaderStore {
     if (ui.viewing !== undefined) return this.backToCurrent();
     if (ui.popover || ui.panePopover || ui.refineError) return this.closePopover();
     if (ui.lookup) return this.closeLookup();
+    if (ui.find) return this.closeFind();
     if (ui.map) return this.closeMap();
     if (ui.fullscreen) return this.setUi({ fullscreen: false });
   }
@@ -1048,6 +1124,18 @@ export class ReaderStore {
         break;
       case "refine":
         this.toggleRefine();
+        break;
+      case "find":
+        this.openFind();
+        break;
+      case "find-next":
+        this.findStep(1);
+        break;
+      case "find-prev":
+        this.findStep(-1);
+        break;
+      case "filter":
+        this.focusFilter();
         break;
       case "back":
         this.back();

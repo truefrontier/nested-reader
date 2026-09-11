@@ -268,7 +268,11 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
         .item(&close_pane)
         .build()?;
 
+    // Find and refine keep their shortcuts in the webview (see App.tsx) so they work while typing in a box.
     let refine = MenuItemBuilder::with_id("refine", "Refine (⌘R)").build(app)?;
+    let find = MenuItemBuilder::with_id("find", "Find… (⌘F)").build(app)?;
+    let find_next = MenuItemBuilder::with_id("find-next", "Find Next (⌘G)").build(app)?;
+    let find_prev = MenuItemBuilder::with_id("find-prev", "Find Previous (⌘⇧G)").build(app)?;
     let edit_menu = SubmenuBuilder::new(app, "Edit")
         .undo()
         .redo()
@@ -278,14 +282,20 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
         .paste()
         .select_all()
         .separator()
+        .item(&find)
+        .item(&find_next)
+        .item(&find_prev)
+        .separator()
         .item(&refine)
         .build()?;
 
     let sidebar = MenuItemBuilder::with_id("toggle-sidebar", "Toggle Tree").accelerator("CmdOrCtrl+B").build(app)?;
+    let filter = MenuItemBuilder::with_id("filter", "Filter Files (⌘/)").build(app)?;
     let map = MenuItemBuilder::with_id("map", "Session Map").accelerator("CmdOrCtrl+K").build(app)?;
     let fullscreen = MenuItemBuilder::with_id("fullscreen-pane", "Fullscreen Pane").accelerator("CmdOrCtrl+Shift+F").build(app)?;
     let view_menu = SubmenuBuilder::new(app, "View")
         .item(&sidebar)
+        .item(&filter)
         .item(&map)
         .item(&fullscreen)
         .separator()

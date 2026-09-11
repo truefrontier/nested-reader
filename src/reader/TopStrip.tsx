@@ -1,11 +1,11 @@
-import type { ReactElement } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { store, useReader } from "../state/store";
 import type { PageDiff } from "../lib/diff";
 import { relTime } from "../lib/time";
 import { ChevronDown } from "./Icons";
 
-/** Review strip for any pane; version history and viewing belong to the main pane only. */
-export function TopStrip({ path, role, diff }: { path: string; role: "main" | "split"; diff: PageDiff | null }) {
+/** Review strip for any pane; version history and viewing belong to the main pane only. Children (the find bar) stack under it. */
+export function TopStrip({ path, role, diff, children }: { path: string; role: "main" | "split"; diff: PageDiff | null; children?: ReactNode }) {
   const s = useReader();
   const ui = s.ui;
   const isMain = role === "main";
@@ -14,10 +14,10 @@ export function TopStrip({ path, role, diff }: { path: string; role: "main" | "s
   const review = !!diff && diff.changes.length > 0 && (!isMain || ui.viewing === undefined);
   const viewing = isMain && ui.viewing !== undefined ? versions.find((v) => v.n === ui.viewing) : undefined;
   const hasHistory = versions.length > 0;
-  if (!review && !viewing && !hasHistory) return null;
+  if (!review && !viewing && !hasHistory && !children) return null;
   const modified = s.pages[path]?.modified;
 
-  let content: ReactElement;
+  let content: ReactElement | null = null;
   if (review && diff) {
     const n = diff.changes.length;
     content = (
@@ -63,7 +63,7 @@ export function TopStrip({ path, role, diff }: { path: string; role: "main" | "s
         )}
       </>
     );
-  } else {
+  } else if (hasHistory) {
     content = (
       <>
         <div className={`pill${ui.history ? " open" : ""}`} onClick={() => store.toggleHistory()}>
@@ -92,7 +92,10 @@ export function TopStrip({ path, role, diff }: { path: string; role: "main" | "s
   }
   return (
     <div className="top">
-      <div className="top-inner">{content}</div>
+      <div className="top-inner">
+        {content}
+        {children}
+      </div>
     </div>
   );
 }

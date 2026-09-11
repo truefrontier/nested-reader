@@ -1,4 +1,4 @@
-import { useMemo, type MouseEvent } from "react";
+import { useEffect, useMemo, useRef, type KeyboardEvent, type MouseEvent } from "react";
 import { store, useReader } from "../state/store";
 import { buildTree, dotState } from "../lib/tree";
 import { ChevronLeft } from "./Icons";
@@ -6,6 +6,20 @@ import { ChevronLeft } from "./Icons";
 export function Sidebar() {
   const s = useReader();
   const items = useMemo(() => buildTree(s.pages), [s.pages]);
+  const filterRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!s.ui.filterFocus) return;
+    filterRef.current?.focus();
+    filterRef.current?.select();
+  }, [s.ui.filterFocus]);
+  // Esc clears the filter, then leaves the box.
+  const onFilterKey = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== "Escape") return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (s.ui.filter) store.setFilter("");
+    else e.currentTarget.blur();
+  };
   const filter = s.ui.filter.trim().toLowerCase();
   const visible = items.filter((it) => {
     const p = s.pages[it.path];
@@ -35,7 +49,15 @@ export function Sidebar() {
         </span>
       </div>
       <div className="side-filter">
-        <input placeholder="Filter" value={s.ui.filter} onChange={(e) => store.setFilter(e.target.value)} spellCheck={false} />
+        <input
+          ref={filterRef}
+          placeholder="Filter"
+          title="Filter files /"
+          value={s.ui.filter}
+          onChange={(e) => store.setFilter(e.target.value)}
+          onKeyDown={onFilterKey}
+          spellCheck={false}
+        />
         <span className={`unread-btn${s.ui.unreadOnly ? " on" : ""}`} title="Unread only" onClick={() => store.toggleUnreadOnly()}>
           <span className="udot" />
         </span>
