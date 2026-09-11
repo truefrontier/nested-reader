@@ -19,6 +19,10 @@ pnpm tauri dev
 
 `pnpm tauri build` produces the `.app` and `.dmg` under `src-tauri/target/release/bundle/`.
 
+## Opening pages
+
+Click a link or a tree row to open the page here. ⌘‑click opens it beside (the default for "⌘‑click opens", which New Page ⌘↵ shares), and ⌘⇧‑click marks it unread to read later, or read again if it already was (the default for "⌘⇧‑click opens", shared with Deep Dive ⌘⇧↵). Hold ⌥ for the other placement. Both are under Settings › General. In the tree, a blue dot means unread, a green ring means changes to review, and an amber dot means the page failed to generate; open it and press ↵ to try again.
+
 ## Set up a provider
 
 Open Settings (⌘,) › AI. Pick OpenAI, Anthropic, Ollama, or Custom (any OpenAI-compatible server; set its base URL). With an API key, paste it and press ↵; it is stored in the macOS Keychain. The Model menu lists what the provider offers and starts on its fastest, cheapest option (Luna for OpenAI, Haiku for Anthropic). The status next to it is a live connection check. The Context toggles decide what leaves the machine with each request.

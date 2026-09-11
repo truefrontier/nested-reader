@@ -6,6 +6,7 @@
   --mute: #8e887e;
   --hair: rgba(30, 28, 25, 0.09);
   --acc: oklch(0.55 0.1 150);
+  --unread: oklch(0.58 0.15 255);
   --hl: oklch(0.93 0.06 95);
   --card: rgba(30, 28, 25, 0.035);
   --side: #f2f0ec;
@@ -26,6 +27,7 @@
   --mute: #7f7a71;
   --hair: rgba(232, 228, 221, 0.1);
   --acc: oklch(0.76 0.1 150);
+  --unread: oklch(0.74 0.12 255);
   --hl: oklch(0.42 0.07 95);
   --card: rgba(232, 228, 221, 0.05);
   --side: #1e1d1a;
@@ -256,6 +258,30 @@ button {
   background: var(--acc);
   flex: none;
 }
+/* Three marks a page can carry: unread is a solid blue dot, changes to review a green ring, a failed write an amber dot. */
+.udot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--unread);
+  flex: none;
+}
+.cdot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  box-sizing: border-box;
+  border: 1.5px solid var(--acc);
+  background: transparent;
+  flex: none;
+}
+.fdot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warn);
+  flex: none;
+}
 .tree {
   padding-left: 18px;
   flex: 1;
@@ -338,6 +364,16 @@ button {
 }
 .row .gdot {
   margin-left: auto;
+}
+.row .marks {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+}
+.row .marks:empty {
+  display: none;
 }
 
 /* ---------- panes ---------- */
@@ -668,6 +704,10 @@ button {
     opacity: 1;
   }
 }
+.page-failed {
+  margin: 8px 0 24px;
+  max-width: 470px;
+}
 .status-card.failed .msg {
   font-size: 12.5px;
   line-height: 1.45;
@@ -806,12 +846,15 @@ button {
   align-items: center;
 }
 .strip .sdot {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background: var(--acc);
+  box-sizing: border-box;
+  border: 1.5px solid var(--acc);
+  background: transparent;
 }
 .strip .sdot.warn {
+  border-color: var(--warn);
   background: var(--warn);
 }
 .strip .quiet {
@@ -1233,7 +1276,8 @@ button {
   user-select: text;
   -webkit-user-select: text;
 }
-.home-row .gdot {
+.home-row .gdot,
+.home-row .udot {
   margin-right: 3px;
 }
 .home-row .more {

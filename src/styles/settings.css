@@ -270,6 +270,11 @@ body.settings-body {
   color: var(--mute);
   font-size: 12px;
 }
+.hint.lines {
+  display: grid;
+  gap: 5px;
+  line-height: 1.4;
+}
 .dd-wrap {
   position: relative;
   justify-self: start;

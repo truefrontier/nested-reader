@@ -14,7 +14,7 @@ import {
   type VersionInfo,
 } from "../platform";
 import { diffBodies, revertChange, type Change, type PageDiff } from "../lib/diff";
-import { joinBlocks, lexBlocks, linkTextInRaw, replaceFlexible, resolveWikiTarget } from "../lib/markdown";
+import { findWikiLink, joinBlocks, lexBlocks, linkTextInRaw, replaceFlexible, resolveWikiTarget } from "../lib/markdown";
 import { authFor, modelSlot } from "../lib/models";
 import { serializePage, titleFromBody } from "../lib/frontmatter";
 import { slugify, titleFromQuestion, uniquePath } from "../lib/slug";
@@ -84,6 +84,8 @@ export type ReaderState = {
   versionBodies: Record<number, string>;
   /** The snapshot each pending page is being reviewed against, by path. */
   reviewBases: Record<string, ReviewBase>;
+  /** Pages the model failed to write, by path, with the error; they keep their heading and can be retried. */
+  pageErrors: Record<string, string>;
   apiKeyMissing?: boolean;
   ui: UiState;
 };
@@ -108,6 +110,7 @@ export class ReaderStore {
     versions: [],
     versionBodies: {},
     reviewBases: {},
+    pageErrors: {},
     ui: initialUi,
   };
 
@@ -285,7 +288,7 @@ export class ReaderStore {
       session.trailIndex = before.length - 1;
       const recent = this.findRecent(folder, file);
       const folderName = session.name || recent?.name || (file ? pages[file].title : prettyFolderName(folder));
-      this.set({ folder, rootFile: file, folderName, pages, bodies: {}, session, versions: [], versionBodies: {}, reviewBases: {}, home: false, ui: { ...initialUi } });
+      this.set({ folder, rootFile: file, folderName, pages, bodies: {}, session, versions: [], versionBodies: {}, reviewBases: {}, pageErrors: {}, home: false, ui: { ...initialUi } });
       let current = initialPage && pages[initialPage] ? initialPage : session.current;
       if (!current || !pages[current]) {
         const sorted = Object.values(pages).sort((a, b) => Date.parse(b.created ?? b.modified ?? "") - Date.parse(a.created ?? a.modified ?? ""));
@@ -434,20 +437,24 @@ export class ReaderStore {
       return;
     }
     if (placement === "background") {
+      // For a page that already exists this is a read-later mark, and doing it again clears it.
       const s = this.state.session;
-      if (s.current !== path && !s.unread.includes(path)) this.setSession({ unread: [...s.unread, path] });
+      if (s.current === path || s.split === path) return;
+      this.setSession({ unread: s.unread.includes(path) ? s.unread.filter((p) => p !== path) : [...s.unread, path] });
       return;
     }
     await this.loadBody(path);
     this.setSession({ split: path, splitDirection: placement, sidebar: false });
   }
 
-  /** Placement for a click on a link or tree row, following browser conventions. */
+  /**
+   * What a click on a link or tree row does. The modifiers mean the same as on the ask verbs:
+   * ⌘ is the New Page placement, ⌘⇧ the Deep Dive placement, ⌥ flips either; a plain click opens here.
+   */
   placementFor(e: { metaKey: boolean; shiftKey: boolean; altKey: boolean }): Placement {
-    if (e.altKey) return "beside";
-    if (e.metaKey && e.shiftKey) return "active";
-    if (e.metaKey) return "background";
-    return "active";
+    const s = this.state.settings;
+    const base: Placement = e.metaKey && e.shiftKey ? s.deepDiveOpens : e.metaKey ? s.newPageOpens : "active";
+    return e.altKey ? flipPlacement(base) : base;
   }
 
   async followWikiLink(target: string, e: { metaKey: boolean; shiftKey: boolean; altKey: boolean }) {
@@ -588,8 +595,8 @@ export class ReaderStore {
     this.streams.delete(key);
   }
 
-  private async askContext(selection?: Selection, thread?: Lookup["thread"]): Promise<AskContext | null> {
-    const current = this.state.session.current;
+  private async askContext(selection?: Selection, thread?: Lookup["thread"], pagePath?: string): Promise<AskContext | null> {
+    const current = pagePath ?? this.state.session.current;
     if (!current) return null;
     const body = await this.loadBody(current);
     const settings = this.state.settings;
@@ -684,49 +691,100 @@ export class ReaderStore {
       } else if (opts.placement === "window") {
         await platform.openPageWindow(folder, path);
       }
-      const ctx = await this.askContext(sourceText ? { block: opts.block ?? 0, start: 0, end: 0, text: sourceText, paragraph: this.paragraphOf(current, opts.block), caretX: 0 } : undefined);
-      if (!ctx) return;
-      const { system, messages } = newPageMessages(ctx, question, opts.mode === "deep-dive");
-      let text = "";
-      const flush = (final: boolean) => {
-        const body = text.trim().startsWith("#") ? text : heading + text;
-        this.set({ bodies: { ...this.state.bodies, [path]: body } });
-        const write = () => {
-          const t = titleFromBody(body, title);
-          const m: PageMeta = { ...this.state.pages[path], title: t };
-          this.set({ pages: { ...this.state.pages, [path]: m } });
-          platform.writePage(folder, path, serializePage(m, body)).catch((e) => this.fail(e));
-        };
-        if (final) {
-          window.clearTimeout(this.writeTimers.get(path));
-          write();
-        } else if (!this.writeTimers.has(path)) {
-          this.writeTimers.set(
-            path,
-            window.setTimeout(() => {
-              this.writeTimers.delete(path);
-              write();
-            }, 500),
-          );
-        }
+      await this.generatePage(path, { sourcePath: current, question, mode: opts.mode, sourceText, block: opts.block });
+    } catch (e) {
+      this.fail(e);
+    }
+  }
+
+  /**
+   * Streams a page's text from the model. On failure the page keeps its heading and the
+   * error is remembered, so the page shows a retry instead of silently staying empty.
+   */
+  private async generatePage(path: string, opts: { sourcePath: string; question: string; mode: "new-page" | "deep-dive"; sourceText?: string; block?: number }) {
+    const folder = this.state.folder;
+    if (!folder) return;
+    const title = this.state.pages[path]?.title ?? opts.question;
+    const heading = `# ${title}\n\n`;
+    const selection = opts.sourceText
+      ? { block: opts.block ?? 0, start: 0, end: 0, text: opts.sourceText, paragraph: this.paragraphOf(opts.sourcePath, opts.block), caretX: 0 }
+      : undefined;
+    const ctx = await this.askContext(selection, undefined, opts.sourcePath);
+    if (!ctx) return;
+    const { system, messages } = newPageMessages(ctx, opts.question, opts.mode === "deep-dive");
+    let text = "";
+    const flush = (final: boolean) => {
+      const body = text.trim().startsWith("#") ? text : heading + text;
+      this.set({ bodies: { ...this.state.bodies, [path]: body } });
+      const write = () => {
+        const t = titleFromBody(body, title);
+        const m: PageMeta = { ...this.state.pages[path], title: t };
+        this.set({ pages: { ...this.state.pages, [path]: m } });
+        platform.writePage(folder, path, serializePage(m, body)).catch((e) => this.fail(e));
       };
-      this.stream(`page:${path}`, this.request(system, messages, opts.mode === "deep-dive" ? 2400 : 1200), {
-        delta: (t) => {
-          text += t;
-          flush(false);
-        },
-        done: () => {
-          flush(true);
-          const s = this.state.session;
-          const visible = s.current === path || s.split === path;
-          this.setSession({ loading: s.loading.filter((p) => p !== path), unread: visible || s.unread.includes(path) ? s.unread : [...s.unread, path] });
-        },
-        error: (m) => {
-          flush(true);
-          const s = this.state.session;
-          this.setSession({ loading: s.loading.filter((p) => p !== path) });
-          this.fail(m);
-        },
+      if (final) {
+        window.clearTimeout(this.writeTimers.get(path));
+        write();
+      } else if (!this.writeTimers.has(path)) {
+        this.writeTimers.set(
+          path,
+          window.setTimeout(() => {
+            this.writeTimers.delete(path);
+            write();
+          }, 500),
+        );
+      }
+    };
+    const stopLoading = () => {
+      const s = this.state.session;
+      this.setSession({ loading: s.loading.filter((p) => p !== path) });
+    };
+    this.stream(`page:${path}`, this.request(system, messages, opts.mode === "deep-dive" ? 2400 : 1200), {
+      delta: (t) => {
+        text += t;
+        flush(false);
+      },
+      done: () => {
+        flush(true);
+        const s = this.state.session;
+        const visible = s.current === path || s.split === path;
+        this.setSession({ loading: s.loading.filter((p) => p !== path), unread: visible || s.unread.includes(path) ? s.unread : [...s.unread, path] });
+        if (this.state.pageErrors[path]) this.set({ pageErrors: this.withoutPageError(path) });
+      },
+      error: (m) => {
+        flush(true);
+        stopLoading();
+        this.set({ pageErrors: { ...this.state.pageErrors, [path]: m } });
+        const s = this.state.session;
+        if (s.current !== path && s.split !== path) this.fail(`Couldn't write "${title}": ${m}`);
+      },
+    });
+  }
+
+  private withoutPageError(path: string): Record<string, string> {
+    const errors = { ...this.state.pageErrors };
+    delete errors[path];
+    return errors;
+  }
+
+  /** Writes a page the model failed to write, using the question and highlight its source page still holds. */
+  async retryPage(path: string) {
+    const meta = this.state.pages[path];
+    const source = meta?.source;
+    if (!meta || !source || !this.state.pages[source] || !this.state.folder) return;
+    if (this.state.session.loading.includes(path)) return;
+    try {
+      const sourceBody = await this.loadBody(source);
+      const slug = path.replace(/\.md$/, "").split("/").pop() ?? path;
+      const link = findWikiLink(sourceBody, slug);
+      this.set({ pageErrors: this.withoutPageError(path) });
+      this.setSession({ loading: [...this.state.session.loading, path] });
+      await this.generatePage(path, {
+        sourcePath: source,
+        question: meta.question ?? meta.title,
+        mode: meta.mode === "deep-dive" ? "deep-dive" : "new-page",
+        sourceText: link?.text,
+        block: link?.block,
       });
     } catch (e) {
       this.fail(e);

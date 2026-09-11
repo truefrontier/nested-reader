@@ -26,6 +26,7 @@ const sessions = new Map<string, Session>();
 let recents: RecentSession[] = [];
 let settings: Settings = { ...DEFAULT_SETTINGS, folder: SAMPLE_FOLDER };
 const keys = new Map<Provider, string>();
+const failedOnce = new Set<string>();
 const settingsListeners = new Set<(s: Settings) => void>();
 
 const t0 = Date.now();
@@ -204,8 +205,11 @@ export const mockPlatform: Platform = {
   },
 
   aiStream(req, onEvent): StreamHandle {
-    // Dev hook: an instruction containing "__fail__" simulates a provider error.
-    if (req.messages.some((m) => m.content.includes("__fail__"))) {
+    // Dev hooks: "__fail__" in the request fails the first attempt (so retries can succeed); "__fail_always__" always fails.
+    const last = [...req.messages].reverse().find((m) => m.role === "user")?.content ?? "";
+    const always = last.includes("__fail_always__");
+    if (always || (last.includes("__fail__") && !failedOnce.has(last))) {
+      failedOnce.add(last);
       const t = setTimeout(() => onEvent({ type: "error", message: "Simulated provider error: 429 rate limited" }), 400);
       return { cancel: () => clearTimeout(t) };
     }

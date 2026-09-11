@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactElement } from "react";
 import { store, useReader, type Selection } from "../state/store";
-import { lexBlocks, resolveWikiTarget, type Block } from "../lib/markdown";
+import { isStubBody, lexBlocks, resolveWikiTarget, type Block } from "../lib/markdown";
 import { diffBodies, type Change, type PageDiff } from "../lib/diff";
 import { applyWraps, rangeOffsets, type Wrap } from "../lib/wraps";
-import { AnswerCard, AskPopover, BeforeCard, NowCard, RefinePopover, RefineStatus } from "./Popovers";
+import { AnswerCard, AskPopover, BeforeCard, FailedCard, NowCard, RefinePopover, RefineStatus } from "./Popovers";
 import { TopStrip } from "./TopStrip";
 
 type LinkState = "loading" | "unread" | "read" | "missing";
@@ -46,6 +46,9 @@ export function Page({ path, role }: Props) {
   const isMain = role === "main";
   const ui = s.ui;
   const loading = s.session.loading.includes(path);
+  // A page that failed to generate, or one left with only its heading, gets a retry card.
+  const pageError = s.pageErrors[path];
+  const unwritten = !loading && !!meta?.source && !!s.pages[meta.source] && (!!pageError || (body !== undefined && isStubBody(body)));
   const viewingN = isMain ? ui.viewing : undefined;
   const [activeChange, setActiveChange] = useState<string | undefined>();
   const articleRef = useRef<HTMLDivElement>(null);
@@ -339,6 +342,14 @@ export function Page({ path, role }: Props) {
             <div />
             <div style={{ width: "78%" }} />
           </div>
+        )}
+        {unwritten && (
+          <FailedCard
+            title={pageError ? "This page couldn't be written" : "This page hasn't been written yet"}
+            error={pageError}
+            hotkey={isMain && !ui.popover && !ui.lookup}
+            onRetry={() => void store.retryPage(path)}
+          />
         )}
       </div>
     </>

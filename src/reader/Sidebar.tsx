@@ -13,7 +13,7 @@ export function Sidebar() {
     if (filter && !p.title.toLowerCase().includes(filter)) return false;
     if (s.ui.unreadOnly) {
       const d = dotState(it.path, s.session);
-      return d === "unread" || d === "loading" || d === "pending";
+      return d === "unread" || d === "loading" || d === "pending" || !!s.pageErrors[it.path];
     }
     return true;
   });
@@ -37,7 +37,7 @@ export function Sidebar() {
       <div className="side-filter">
         <input placeholder="Filter" value={s.ui.filter} onChange={(e) => store.setFilter(e.target.value)} spellCheck={false} />
         <span className={`unread-btn${s.ui.unreadOnly ? " on" : ""}`} title="Unread only" onClick={() => store.toggleUnreadOnly()}>
-          <span className="gdot" />
+          <span className="udot" />
         </span>
       </div>
       <div className="tree">
@@ -54,7 +54,11 @@ export function Sidebar() {
                 {showTick && <span className="tick" />}
                 <span className={`dot ${d === "current" ? "current" : d === "loading" ? "loading" : ""}`} />
                 <span className={`label${d === "loading" ? " shimmer" : ""}`}>{p.title}</span>
-                {(d === "unread" || d === "pending" || !!s.session.pending[it.path]) && <span className="gdot" />}
+                <span className="marks">
+                  {!!s.pageErrors[it.path] && <span className="fdot" title="Couldn't be written. Open it to try again." />}
+                  {s.session.unread.includes(it.path) && <span className="udot" title="Unread" />}
+                  {!!s.session.pending[it.path] && <span className="cdot" title="Changes to review" />}
+                </span>
               </div>
             );
           })}

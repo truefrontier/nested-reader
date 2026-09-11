@@ -8,9 +8,9 @@ type Tab = "general" | "appearance" | "ai";
 const PLACEMENTS: { value: Placement; label: string }[] = [
   { value: "beside", label: "Beside" },
   { value: "below", label: "Below" },
-  { value: "active", label: "Active pane" },
-  { value: "background", label: "In background" },
-  { value: "window", label: "New window" },
+  { value: "active", label: "Here" },
+  { value: "background", label: "In the background, unread" },
+  { value: "window", label: "In a new window" },
 ];
 
 const LAUNCH: { value: OpenAtLaunch; label: string }[] = [
@@ -219,6 +219,23 @@ function General({ settings, save }: SectionProps) {
       <Row label="Open at launch">
         <Dropdown value={settings.openAtLaunch} options={LAUNCH} onChange={(v) => save({ openAtLaunch: v })} />
       </Row>
+      <div className="divider" />
+      <Row label="⌘‑click opens">
+        <span className="with-note">
+          <Dropdown value={settings.newPageOpens} options={PLACEMENTS} onChange={(v) => save({ newPageOpens: v })} />
+          <span className="note">Also New Page (⌘↵)</span>
+        </span>
+      </Row>
+      <Row label="⌘⇧‑click opens">
+        <span className="with-note">
+          <Dropdown value={settings.deepDiveOpens} options={PLACEMENTS} onChange={(v) => save({ deepDiveOpens: v })} />
+          <span className="note">Also Deep Dive (⌘⇧↵)</span>
+        </span>
+      </Row>
+      <div className="hint lines">
+        <div>Links and tree rows. A plain click opens here; hold ⌥ for the other placement.</div>
+        <div>In the background marks a page unread. ⌘⇧‑click it again to mark it read.</div>
+      </div>
     </div>
   );
 }
@@ -261,14 +278,6 @@ function Appearance({ settings, save }: SectionProps) {
           onChange={(v) => save({ readingFont: v })}
         />
       </Row>
-      <div className="divider" />
-      <Row label="New Page opens">
-        <Dropdown value={settings.newPageOpens} options={PLACEMENTS} onChange={(v) => save({ newPageOpens: v })} />
-      </Row>
-      <Row label="Deep Dive opens">
-        <Dropdown value={settings.deepDiveOpens} options={PLACEMENTS} onChange={(v) => save({ deepDiveOpens: v })} />
-      </Row>
-      <div className="hint">Hold ⌥ while pressing a shortcut to use the other placement.</div>
     </div>
   );
 }

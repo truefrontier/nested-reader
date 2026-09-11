@@ -121,3 +121,20 @@ export function replaceFlexible(raw: string, text: string, replacement: string |
 export function linkTextInRaw(raw: string, text: string, target: string): string | null {
   return replaceFlexible(raw, text, (m) => `[[${target}|${m}]]`);
 }
+
+/** Where a page's body links to `slug`: the block index and the link's visible text. */
+export function findWikiLink(body: string, slug: string): { block: number; text: string } | null {
+  const re = new RegExp(`\\[\\[${slug.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")}(?:\\|([^\\]]+))?\\]\\]`);
+  const blocks = lexBlocks(body);
+  for (let i = 0; i < blocks.length; i++) {
+    const m = re.exec(blocks[i].raw);
+    if (m) return { block: i, text: (m[1] ?? slug).trim() };
+  }
+  return null;
+}
+
+/** True for a page that holds nothing but its heading, which is what a failed generation leaves behind. */
+export function isStubBody(body: string): boolean {
+  const lines = body.trim().split("\n").filter((l) => l.trim());
+  return lines.length <= 1 && (lines[0]?.startsWith("#") ?? true);
+}

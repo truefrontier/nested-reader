@@ -105,3 +105,11 @@ pnpm tauri build      # .app and .dmg in src-tauri/target/release/bundle
 A refinement snapshots the page (`.reader/versions/<page>/vN.md`), writes the new body and records `session.pending[path] = n`. `reviewBases` in the store holds, per path, the snapshot each pending page is reviewed against, so any pane showing that page (main or split) renders the tints and its own strip with Undo all and Done. `done(path)`, `undoAll(path)` and `undoChange(change, path)` act on one page. A corpus refine therefore leaves every touched page pending until each is reviewed; the sidebar dot follows `session.pending`.
 
 While a refinement runs, `ui.refining` and `ui.refineText` drive a status card in the place of the refine box (in the page for a selection, at the pane's bottom for page and corpus scope). A failure sets `ui.refineError` and keeps the selection and text, so the card offers Try again. The ask and refine boxes share the typed draft, held by the page, across the ⌘R switch.
+
+## Clicks, marks and pages that failed to generate
+
+A plain click on a link or tree row opens the page here. ⌘‑click uses the "⌘‑click opens" setting (`newPageOpens`, also where New Page ⌘↵ goes) and ⌘⇧‑click the "⌘⇧‑click opens" setting (`deepDiveOpens`, also where Deep Dive ⌘⇧↵ goes); ⌥ flips either (`placementFor` in the store). For a page that already exists, the "background" placement is a read‑later mark: it adds the page to `session.unread`, and doing it again removes it. Both settings sit under General.
+
+The sidebar and map carry three marks: a solid blue dot for unread (`.udot`), a green ring for changes to review (`.cdot`, matching the strip's ring), and an amber dot for a page the model failed to write (`.fdot`).
+
+Page generation is `generatePage` in the store, separate from creating the file. A failed stream leaves the page with its heading, records the message in `pageErrors`, and toasts if the page is not on screen. The page then shows a card with Try again (↵), and so does any page that holds only its heading. `retryPage` rebuilds the context from the source page by finding the `[[slug|text]]` link to the page, then streams again.

@@ -80,7 +80,7 @@ export function Home() {
                 ) : (
                   <span className="label">{r.name}</span>
                 )}
-                {unread > 0 && <span className="gdot" />}
+                {unread > 0 && <span className="udot" />}
                 <span
                   className="more"
                   title="More"

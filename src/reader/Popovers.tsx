@@ -353,3 +353,29 @@ export function NowCard({ change, versionN, caretLeft }: { change: Change; versi
     </PopWrap>
   );
 }
+
+/** Sits at the end of a page the model never wrote, offering to try again (↵ when `hotkey`). */
+export function FailedCard({ title, error, hotkey, onRetry }: { title: string; error?: string; hotkey?: boolean; onRetry: () => void }) {
+  useEffect(() => {
+    if (!hotkey) return;
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Enter" && !e.metaKey && !(e.target as HTMLElement)?.closest("input, textarea")) {
+        e.preventDefault();
+        onRetry();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [hotkey, onRetry]);
+  return (
+    <div className="pop small-card status-card failed page-failed">
+      <div className="lab">{title}</div>
+      {error && <div className="msg">{error}</div>}
+      <div className="acts">
+        <span className="do" onClick={onRetry}>
+          <Kbd>↵</Kbd> Try again
+        </span>
+      </div>
+    </div>
+  );
+}
