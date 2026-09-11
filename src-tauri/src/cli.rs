@@ -328,6 +328,42 @@ mod live {
         assert!(matches!(events.last(), Some(StreamEvent::Done)), "events: {}", events.len());
     }
 
+    /// Uses the model configured in ~/.codex/config.toml (no `-m`), so it runs on whatever
+    /// the local Codex setup routes to; the point is the event parsing, not the model.
+    #[test]
+    #[ignore]
+    fn codex_streams_with_its_configured_default_model() {
+        let (channel, events) = collect();
+        let req = AiRequest {
+            provider: "openai".into(),
+            auth: Some("subscription".into()),
+            model: String::new(),
+            base_url: None,
+            system: Some("Answer in one short sentence.".into()),
+            messages: vec![ChatMessage { role: "user".into(), content: "What colour is the sky on a clear day?".into() }],
+            max_tokens: Some(60),
+        };
+        tauri::async_runtime::block_on(crate::ai::stream(req, channel, CancelToken::default())).unwrap();
+        let events = events.lock().unwrap();
+        let text: String = events
+            .iter()
+            .filter_map(|e| match e {
+                StreamEvent::Delta { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        let errors: Vec<String> = events
+            .iter()
+            .filter_map(|e| match e {
+                StreamEvent::Error { message } => Some(message.clone()),
+                _ => None,
+            })
+            .collect();
+        assert!(errors.is_empty(), "errors: {errors:?}");
+        assert!(text.to_lowercase().contains("blue"), "got: {text:?}");
+        assert!(matches!(events.last(), Some(StreamEvent::Done)));
+    }
+
     #[test]
     #[ignore]
     fn codex_ping_gives_a_clear_answer_either_way() {
