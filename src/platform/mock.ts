@@ -6,6 +6,7 @@ import {
   type PingResult,
   type Platform,
   type Provider,
+  type RecentSession,
   type Session,
   type Settings,
   type StreamHandle,
@@ -20,7 +21,9 @@ import { SAMPLE_FILES, SAMPLE_FOLDER } from "./sample";
  */
 const files = new Map<string, { raw: string; modified: string; created: string }>();
 const versions = new Map<string, { n: number; at: string; content: string }[]>();
-let session: Session | null = null;
+/** One saved session per folder path, like `.reader/session.json` on disk. */
+const sessions = new Map<string, Session>();
+let recents: RecentSession[] = [];
 let settings: Settings = { ...DEFAULT_SETTINGS, folder: SAMPLE_FOLDER };
 const keys = new Map<Provider, string>();
 const settingsListeners = new Set<(s: Settings) => void>();
@@ -42,9 +45,13 @@ for (const [path, raw] of Object.entries(SAMPLE_FILES)) {
 try {
   const stored = localStorage.getItem("ml:settings");
   if (stored) settings = { ...settings, ...JSON.parse(stored) };
+  const storedRecents = localStorage.getItem("ml:recents");
+  if (storedRecents) recents = JSON.parse(storedRecents);
 } catch {
   /* private mode or no storage: keep defaults */
 }
+
+const MARKDOWN = /\.(md|markdown)$/i;
 
 function key(path: string) {
   return path;
@@ -87,6 +94,31 @@ export const mockPlatform: Platform = {
 
   async pickFolder() {
     return SAMPLE_FOLDER;
+  },
+
+  async pickFile() {
+    return `${SAMPLE_FOLDER}/sharp-wave-ripples.md`;
+  },
+
+  async pathKind(path) {
+    return MARKDOWN.test(path) ? "file" : "folder";
+  },
+
+  async revealInFinder() {
+    throw new Error("Reveal in Finder works in the desktop app.");
+  },
+
+  async getRecents() {
+    return recents;
+  },
+
+  async saveRecents(list) {
+    recents = list;
+    try {
+      localStorage.setItem("ml:recents", JSON.stringify(list));
+    } catch {
+      /* ignore */
+    }
   },
 
   async listPages(): Promise<PageMeta[]> {

@@ -87,10 +87,12 @@ fn ollama_base(req_base: Option<&str>) -> String {
     }
 }
 
-/// No overall timeout: a local model can take minutes to finish a long refine.
+/// No overall timeout, because a local model can take minutes to finish a long refine;
+/// the read timeout only trips when the server goes quiet for two minutes.
 fn ollama_client() -> Result<reqwest::Client> {
     Ok(reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(5))
+        .read_timeout(Duration::from_secs(120))
         .build()?)
 }
 

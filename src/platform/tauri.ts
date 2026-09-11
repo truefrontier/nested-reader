@@ -1,14 +1,17 @@
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import {
   DEFAULT_SETTINGS,
   type AiRequest,
   type Auth,
   type Page,
   type PageMeta,
+  type PathKind,
   type PingResult,
   type Platform,
   type Provider,
+  type RecentSession,
   type Session,
   type Settings,
   type StreamEvent,
@@ -29,6 +32,14 @@ export const tauriPlatform: Platform = {
   isTauri: true,
 
   pickFolder: () => invoke<string | null>("pick_folder"),
+  pickFile: () => invoke<string | null>("pick_file"),
+  pathKind: (path) => invoke<PathKind>("path_kind", { path }),
+  revealInFinder: (path) => invoke("reveal_in_finder", { path }),
+
+  async getRecents() {
+    return (await invoke<RecentSession[] | null>("get_recents")) ?? [];
+  },
+  saveRecents: (recents) => invoke("save_recents", { recents }),
 
   async listPages(folder) {
     const pages = await invoke<RawPage[]>("list_pages", { folder });
@@ -105,6 +116,16 @@ export const tauriPlatform: Platform = {
 
   onSettingsChanged(handler) {
     const un = listen<Settings>("settings-changed", (e) => handler(e.payload));
+    return () => {
+      un.then((f) => f());
+    };
+  },
+
+  onDragDrop(handler) {
+    const un = getCurrentWebview().onDragDropEvent((e) => {
+      const p = e.payload;
+      handler({ type: p.type, paths: p.type === "enter" || p.type === "drop" ? p.paths : [] });
+    });
     return () => {
       un.then((f) => f());
     };

@@ -38,7 +38,26 @@ export type Session = {
   sidebar: boolean;
   split?: string;
   splitDirection: SplitDirection;
+  /** Display name chosen with Rename on the Home screen; the folder name otherwise. */
+  name?: string;
 };
+
+/** A session the Home screen can reopen. */
+export type RecentSession = {
+  folder: string;
+  /** Page path relative to the folder when the session is a single .md and the pages grown from it. */
+  file?: string;
+  name: string;
+  /** ISO time it was last opened. */
+  openedAt: string;
+  /** Background pages not yet read, as of the last save. */
+  unread: number;
+};
+
+export type PathKind = "folder" | "file" | "other";
+
+/** Something dragged over or dropped on the window. `paths` is set for "enter" and "drop". */
+export type DragDropEvent = { type: "enter" | "over" | "drop" | "leave"; paths: string[] };
 
 export type Provider = "builtin" | "openai" | "anthropic" | "ollama" | "custom";
 /** How OpenAI and Anthropic are reached: an API key, or the plan signed in to their official CLI. */
@@ -131,6 +150,14 @@ export type StreamHandle = { cancel(): void };
 export interface Platform {
   isTauri: boolean;
   pickFolder(): Promise<string | null>;
+  /** Picks one Markdown file; resolves to its absolute path. */
+  pickFile(): Promise<string | null>;
+  /** Whether a dropped path is a folder, a Markdown file, or something else. */
+  pathKind(path: string): Promise<PathKind>;
+  /** Selects the path in the system file manager. */
+  revealInFinder(path: string): Promise<void>;
+  getRecents(): Promise<RecentSession[]>;
+  saveRecents(recents: RecentSession[]): Promise<void>;
   listPages(folder: string): Promise<PageMeta[]>;
   readPage(folder: string, path: string): Promise<Page>;
   /** Writes the full file content (front matter included). */
@@ -155,4 +182,6 @@ export interface Platform {
   /** Menu / shortcut commands coming from the native menu bar. */
   onCommand(handler: (id: string) => void): () => void;
   onSettingsChanged(handler: (s: Settings) => void): () => void;
+  /** Files or folders dragged over or dropped on the window. */
+  onDragDrop(handler: (e: DragDropEvent) => void): () => void;
 }
