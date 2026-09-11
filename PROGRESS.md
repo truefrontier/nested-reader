@@ -1,5 +1,31 @@
 # Progress
 
+## Session: 2026-09-11 — page width in Appearance
+
+### Leading assumptions
+- "Reading page width % or ems" means the width of the reading column (`.article`), which was fixed at 560px (520px in the split pane). One setting with a unit switch covers both: `em` measures in ems of the reading text, `%` as a share of the pane.
+- em is the default, at 33em: that is the old 560px at the default 17px text, and the split pane's 1px-smaller text lands it at 528px, next to the old 520px. Nothing moves on upgrade, and the column follows the Text size slider.
+- The setting keeps a value per unit, so flipping between em and % brings back the last choice made in each rather than converting (the settings window cannot know the pane's width).
+- Ranges are 20–60em and 30–100%. A hand-edited settings file outside those is clamped when applied.
+
+### World facts
+- `Settings.readingWidth: { unit: "em" | "percent"; em: number; percent: number }` in `src/platform/types.ts`, with `READING_WIDTH_RANGE` and `readingWidthCss`. The Tauri bridge merges the nested object like `auth`, `models` and `context`. No Rust change: `save_settings` stores an untyped `Value`.
+- `applyTheme` in the store writes `--reading-width` beside `--text-size`; `.article` reads it as `max-width`, and the split pane's own `max-width` is gone so it inherits. em resolves against the article's font, so the split column comes out a little narrower than the main one, as before.
+- Settings › Appearance gained a "Page width" row: slider, number box, em / % switch and a hint line. The number box applies in-range values as you type and clamps on ↵ or blur.
+- Popovers place themselves relative to their block, so a wider or narrower column does not move the caret math.
+- Verified in the browser build (mock backend): default 561px main; 50em → 850px; % → 70% of the pane (683 of 976) and 100% fills it; typing 999 waits for blur then clamps to 100; typing 45 applies live; back to em restores 50em; the split pane is 528px at 33em and 45% of its pane in % mode; the choice survives a reload. `tsc` and `pnpm build` pass.
+
+### Timeline
+1. Pulled `main`; it was already up to date after pull request #3.
+2. Added the setting, the CSS variable, the store hook-up and the Appearance row.
+3. Verified in the browser preview and added an Appearance section to `docs/architecture.md`.
+4. Committed on `feature/appearance-page-width` and opened [pull request #4](https://github.com/truefrontier/nested-reader/pull/4), then merged it into `main` at Kevin's request.
+
+### Possible next steps
+- Add the row to `design/Reader Settings.dc.html`, which still shows only Theme, Text size and Reading font.
+- Try it in `pnpm tauri dev`, where Settings is its own window and the change reaches the reader over `settings-changed`.
+- Offer a couple of presets (narrow, wide) if the slider gets nudged often while reading.
+
 ## Session: 2026-09-11 — ⌘Click on a version follows the placement settings
 
 ### Leading assumptions

@@ -71,6 +71,7 @@ export const tauriPlatform: Platform = {
       auth: { ...DEFAULT_SETTINGS.auth, ...(stored?.auth ?? {}) },
       models: { ...DEFAULT_SETTINGS.models, ...(stored?.models ?? {}) },
       context: { ...DEFAULT_SETTINGS.context, ...(stored?.context ?? {}) },
+      readingWidth: { ...DEFAULT_SETTINGS.readingWidth, ...(stored?.readingWidth ?? {}) },
     };
   },
   saveSettings: (settings) => invoke("save_settings", { settings }),

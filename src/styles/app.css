@@ -20,6 +20,8 @@
   --serif: "Literata", Georgia, "Times New Roman", serif;
   --reading: var(--serif);
   --text-size: 17px;
+  /* em resolves against the article's own text size, so the default matches the old 560px at 17px. */
+  --reading-width: 33em;
   color-scheme: light;
 }
 :root[data-theme="dark"] {
@@ -424,7 +426,7 @@ button {
   z-index: 2;
 }
 .article {
-  max-width: 560px;
+  max-width: var(--reading-width);
   margin: 0 auto;
   padding: 84px 32px 120px;
   font-family: var(--reading);
@@ -432,7 +434,6 @@ button {
   line-height: 1.7;
 }
 .pane.split .article {
-  max-width: 520px;
   padding: 84px 36px 120px;
   font-size: calc(var(--text-size) - 1px);
 }
