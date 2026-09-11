@@ -3,7 +3,7 @@ title: Same order
 source: sharp-wave-ripples.md
 question: Why does replay keep the same order as the original run?
 created: 2026-09-10T09:44:00
-mode: deep-dive
+mode: new-page
 ---
 
 # Same order
