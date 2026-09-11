@@ -16,6 +16,7 @@
 1. Kevin sent a screenshot of text running under the tree toggle and asked for whichever is best: move the icon or add a region text does not enter.
 2. Read the shell CSS (`.tl`, `.side-toggle`, `.titlebar`), the pane CSS and the overlay z-indexes.
 3. Added the fade strip, built, screenshotted the browser build in Playwright, nudged the solid part from 36px to 40px, committed and pushed to `claude/kind-mccarthy-3i38qd`.
+4. Kevin asked to merge into main. Main had not moved, so `main` was fast-forwarded to the branch commit (6774e0f) and pushed.
 
 ### Possible next steps
 - Check the fade on a Mac in the Tauri build, in dark mode too: `--bg` is the app background, so it should match, but a tinted page background would show a seam.
