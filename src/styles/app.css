@@ -470,6 +470,20 @@ button {
 .main.below {
   flex-direction: column;
 }
+/* The window chrome sits over the panes: traffic lights, the tree toggle, the pane tools and the review strip.
+   Scrolled text fades out under it instead of running through it. Pointer events pass through, so the
+   scrollbar and the drag region underneath keep working. */
+.main::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 64px;
+  background: linear-gradient(var(--bg) 0, var(--bg) 40px, transparent);
+  pointer-events: none;
+  z-index: 1;
+}
 .pane {
   flex: 1;
   min-width: 0;

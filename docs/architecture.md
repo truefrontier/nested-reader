@@ -101,6 +101,8 @@ Theme, text size, reading font and page width are settings. `applyTheme` in the 
 
 The sidebar's width is dragged, not typed: its right edge (`.side-grip`) resizes it, double-click puts it back to 224px, and the result is saved as `sidebarWidth` with the other settings and applied as `--side-width`, clamped to 180–480px. While the pointer is down the store only previews the variable; the setting is written once when it is let go.
 
+The window chrome (traffic lights, the tree toggle, the pane tools and the review strip) floats over the reading panes rather than taking a row of its own. A 64px strip at the top of `.main` (`.main::before`) paints the background solid for 40px and then fades out, so scrolled text dims and disappears under the chrome instead of running through it. It ignores pointer events, so the scrollbar and the drag region underneath still work.
+
 Settings is its own window in the app (⌘, or the app menu) and a panel over the reader in the browser build. Either closes on Esc, ⌘W, or a click outside it: the panel from its backdrop, the window when it loses focus (`onFocusChanged` in `SettingsApp`), except while the folder picker it opened is up. ⌘W is a menu accelerator (File › Close Pane), so `lib.rs` closes the settings window when that item fires with the window in front. Esc inside a text box only leaves the box; a second Esc closes.
 
 ## Running it
