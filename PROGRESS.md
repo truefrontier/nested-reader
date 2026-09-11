@@ -27,6 +27,7 @@
 5. Ran the browser check, fixed nothing (it passed), took screenshots, updated `docs/architecture.md`.
 6. Committed and pushed.
 7. Kevin opened [pull request #1](https://github.com/truefrontier/markdown-learner/pull/1) from the Claude Code UI. The session is subscribed to its activity. At open it was mergeable with no CI checks and no comments.
+8. Kevin merged the pull request into `main` about two minutes later, with no review comments. The session unsubscribed from it and cancelled its check-in. The branch was restarted from `main` for this note, so any later work on it is a fresh change.
 
 ### Possible next steps
 - Consider aligning by block index instead of by fraction when both panes show the same version, for a tighter match on very long pages.
