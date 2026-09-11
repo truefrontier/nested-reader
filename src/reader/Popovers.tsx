@@ -237,7 +237,11 @@ export function NewFilePopover({ onSubmit, onEsc }: { onSubmit: (brief: string, 
   const [text, setText] = useState("");
   const submit = (verb: NewFileVerb, alt: boolean) => text.trim() && onSubmit(text, verb, alt);
   const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Escape") return onEsc();
+    if (e.key === "Escape") {
+      // Only this box closes; the window's Esc would otherwise also close whatever sits behind it.
+      e.stopPropagation();
+      return onEsc();
+    }
     if (e.key !== "Enter") return;
     e.preventDefault();
     submit(e.metaKey && e.shiftKey ? "deep" : e.metaKey ? "page" : "here", e.altKey);

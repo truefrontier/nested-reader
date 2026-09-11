@@ -45,7 +45,7 @@ The "Built in" provider is in the design but not connected to a service in this 
 | ↵ in the find box | Select the match: the ask box opens on it, ready to type |
 | ⌘G / ⌘⇧G | Next / previous match, selected the same way (⌘R switches to refine) |
 | / or ⌘/ | Filter the tree (shows it if hidden); Esc clears, then leaves the box |
-| ⌘\ | Toggle the tree |
+| ⌘B | Toggle the tree |
 | ⌘K | Session map |
 | ⌘⇧F | Fullscreen the split pane |
 | ⌘[ / ⌘] | Back / forward along the trail |
