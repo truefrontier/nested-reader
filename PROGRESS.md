@@ -20,6 +20,7 @@
 2. Read `SettingsApp`, `App.tsx`'s modal, the Rust window and menu code, and the capabilities file.
 3. Added the three close paths, the dialog guard, the Rust menu case and the capability; checked the browser build with Playwright.
 4. Updated the docs, committed and pushed to `claude/determined-carson-c9ms82`.
+5. Kevin asked to merge into main. Main had moved (⌘O rework, app renamed Nested, bundle identifier migration); merged it in, resolved the PROGRESS.md conflict by keeping both entries, re-ran tsc, build and the browser checks, then fast-forwarded main.
 
 ### Possible next steps
 - Run `pnpm tauri dev` on a Mac to confirm the native window closes on blur, that Change… survives its picker, and that ⌘W reaches the Rust handler.
