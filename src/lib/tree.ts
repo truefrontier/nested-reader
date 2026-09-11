@@ -3,7 +3,7 @@ import type { PageMeta, Session } from "../platform/types";
 export type TreeItem = {
   path: string;
   depth: number;
-  /** True when this row hangs off the row above it (a background branch). */
+  /** True when this row hangs under its source page (the row above it, or an ancestor of it). */
   branch: boolean;
   /** Whether the row after this one at the same or deeper depth is a child. */
   hasChildren: boolean;
@@ -15,29 +15,35 @@ function stamp(p: PageMeta): number {
 }
 
 /**
- * The sidebar list: trail pages newest-first, each followed by its
- * background branches (deep dives), indented and oldest-first.
+ * The sidebar and Timeline list, the same tree the Web map draws: every page hangs under its
+ * `source`, whether it was a New Page, a Deep Dive or a ⌘N page. Pages with no source (or one
+ * that is not in the folder) are the roots, newest first; under each, its children oldest first.
  */
 export function buildTree(pages: Record<string, PageMeta>): TreeItem[] {
   const all = Object.values(pages);
+  const nested = (p: PageMeta) => !!p.source && p.source !== p.path && !!pages[p.source];
   const byParent = new Map<string, PageMeta[]>();
   for (const p of all) {
-    if (p.mode === "deep-dive" && p.source && pages[p.source]) {
-      const list = byParent.get(p.source) ?? [];
-      list.push(p);
-      byParent.set(p.source, list);
-    }
+    if (!nested(p)) continue;
+    const list = byParent.get(p.source as string) ?? [];
+    list.push(p);
+    byParent.set(p.source as string, list);
   }
   for (const list of byParent.values()) list.sort((a, b) => stamp(a) - stamp(b));
-  const trail = all.filter((p) => !(p.mode === "deep-dive" && p.source && pages[p.source]));
-  trail.sort((a, b) => stamp(b) - stamp(a));
+  const roots = all.filter((p) => !nested(p));
+  roots.sort((a, b) => stamp(b) - stamp(a));
   const out: TreeItem[] = [];
+  const seen = new Set<string>();
   const walk = (p: PageMeta, depth: number, branch: boolean) => {
+    if (seen.has(p.path)) return;
+    seen.add(p.path);
     const kids = byParent.get(p.path) ?? [];
     out.push({ path: p.path, depth, branch, hasChildren: kids.length > 0 });
     for (const k of kids) walk(k, depth + 1, true);
   };
-  for (const p of trail) walk(p, 0, false);
+  for (const p of roots) walk(p, 0, false);
+  // Pages whose sources form a cycle have no root to hang from; they are listed flat so they stay reachable.
+  for (const p of all) walk(p, 0, false);
   return out;
 }
 

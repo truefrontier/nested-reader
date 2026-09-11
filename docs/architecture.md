@@ -63,7 +63,9 @@ mode: new-page
 ---
 ```
 
-`source` is the parent. `mode` is `new-page` (opened in the foreground, part of the trail) or `deep-dive` (opened in the background, a branch under its parent). The sidebar lists trail pages newest first and hangs branches under their parent; the Timeline map is the same list with times.
+`source` is the parent. `mode` is `new-page` (opened in the foreground) or `deep-dive` (opened in the background, marked unread). The sidebar hangs every page under its `source`, whatever its mode, so it shows the same tree as the Web map: pages with no source (or a source that is not in the folder) newest first, and under each one its children oldest first. The Timeline map is the same list with times.
+
+A value that needs quoting (a title with a colon or a quote in it) is written as a JSON string and parsed back the same way, so quotes inside a title survive the round trip instead of showing as `\"`.
 
 When a page is created from a highlight, the highlighted words in the source are wrapped as `[[slug|highlighted words]]`. The display text is unchanged, Obsidian understands the link, and the reader renders it underlined with a dot while the target is loading or unread.
 
@@ -106,6 +108,10 @@ A refinement snapshots the page (`.reader/versions/<page>/vN.md`), writes the ne
 
 While a refinement runs, `ui.refining` and `ui.refineText` drive a status card in the place of the refine box (in the page for a selection, at the pane's bottom for page and corpus scope). A failure sets `ui.refineError` and keeps the selection and text, so the card offers Try again. The ask and refine boxes share the typed draft, held by the page, across the ⌘R switch.
 
+## Highlights in either pane
+
+A highlight belongs to the pane it was dragged in: `ui.selection.pane` (and `ui.lookup.pane` for the answer card) holds the pane role, and each `Page` draws the `.sel` wrap, the ask or refine box, the status card and the answer card only for its own role. The verbs act on that pane's page, read through `panePath`: a New Page or Deep Dive asked from the split pane hangs off the split page and the `[[slug|text]]` link lands there, and a selection or page refine from the split rewrites the split page. The pane-level box (⌘R with nothing highlighted, ⌘N) still works on the main page. When the split pane's page changes (`openPage` beside or below) or the pane closes, `dropPaneUi` drops a highlight or answer card that sat there; navigating the main pane resets the whole `ui` as before.
+
 ## Versions in either pane
 
 `versions` and `versionBodies` in the store are keyed by page path, and `ui.versionView` holds one `{ history, viewing, confirmRestore }` per pane role (`main`, `split`). So each pane shows the version pill for its own page and can view, and restore from, an old version on its own; the same page can sit in both panes at two different versions. `toggleHistory`, `viewVersion`, `backToCurrent`, `askRestore`, `cancelRestore` and `restore` take the pane role and read the page from `session.current` or `session.split`. Esc closes the reading pane's history menu or version view first (the split when it is fullscreen, else the main pane), then the other's. A restore drops every newer snapshot, so a pane showing one of them on the same page returns to current too.
@@ -116,7 +122,7 @@ When both panes show the same page they scroll together: `useSyncScroll` (used b
 
 ## Find and filter
 
-`ui.find`, `ui.findQuery` and `ui.findIndex` describe the find bar; the page being read (the main pane, or the split when it is fullscreen) matches the query case-insensitively against each block's text, wraps the hits with `.fnd` (the current one `.fnd.cur`) through the same `applyWraps` path as selections and change tints, and scrolls the current hit into view. `findIndex` only counts steps; the page wraps it around the match count, so ⌘G keeps working across pages with different counts. ↵ in the box and every step also bump `ui.findSelect`; the main page answers by measuring the current hit and calling `selectMatch`, which makes it the selection and opens the ask box (or the refine box, if that was open), so a question can follow a search without the mouse. ⌘F, ⌘G, ⌘⇧G and ⌘/ are handled in the webview (like ⌘R) so they work while a box has focus; the menu items carry the keys in their labels. `/` outside any box, or ⌘/, shows the tree and focuses its Filter box via `ui.filterFocus`.
+`ui.find`, `ui.findQuery` and `ui.findIndex` describe the find bar; the page being read (the main pane, or the split when it is fullscreen) matches the query case-insensitively against each block's text, wraps the hits with `.fnd` (the current one `.fnd.cur`) through the same `applyWraps` path as selections and change tints, and scrolls the current hit into view. `findIndex` only counts steps; the page wraps it around the match count, so ⌘G keeps working across pages with different counts. ↵ in the box and every step also bump `ui.findSelect`; the page being read answers by measuring the current hit and calling `selectMatch`, which makes it the selection and opens the ask box (or the refine box, if that was open), so a question can follow a search without the mouse. ⌘F, ⌘G, ⌘⇧G and ⌘/ are handled in the webview (like ⌘R) so they work while a box has focus; the menu items carry the keys in their labels. `/` outside any box, or ⌘/, shows the tree and focuses its Filter box via `ui.filterFocus`.
 
 ## Clicks, marks and pages that failed to generate
 
