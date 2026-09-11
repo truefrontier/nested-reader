@@ -1,7 +1,7 @@
 import { useMemo, type MouseEvent } from "react";
 import { store, useReader } from "../state/store";
 import { buildTree, dotState } from "../lib/tree";
-import { ChevronLeft } from "./Icons";
+import { ChevronLeft, PlusIcon } from "./Icons";
 
 export function Sidebar() {
   const s = useReader();
@@ -64,6 +64,11 @@ export function Sidebar() {
           })}
         </div>
       </div>
+      <button className="home-new" onClick={() => void store.pickFolder()}>
+        <PlusIcon />
+        <span>New session</span>
+        <span className="k">⌘O</span>
+      </button>
     </aside>
   );
 }
