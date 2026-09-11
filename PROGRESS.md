@@ -1,5 +1,38 @@
 # Progress
 
+## Session: 2026-09-11 — versions in the split pane, and synced scrolling
+
+### Leading assumptions
+- "The same file open in two panes" means `session.current === session.split`. The app already allowed this; nothing stopped a page from being opened beside itself.
+- Synced scrolling is proportional, not pixel for pixel. The split pane renders the same text a little narrower and smaller, so equal scroll fractions keep the same passage in view on both sides. When one pane shows an old version, proportional is still the sensible match.
+- The sync button appears only when both panes show the same page. It starts lit (sync on); clicking it turns sync off and dims it; clicking again turns it back on. Opening a page beside or below resets sync to on.
+- Each pane owns its own version view, so one pane can show Version 1 while the other shows current. The pill and menu also now show in the split pane.
+- Esc closes the reading pane's history menu or version view first (split when fullscreen, else main), then the other pane's.
+
+### World facts
+- Repo: truefrontier/markdown-learner, branch `claude/festive-mayer-evnlm3`, [pull request #1](https://github.com/truefrontier/markdown-learner/pull/1) into `main`. The repo has no CI workflow, so the PR shows no checks.
+- Before this change, `versions` and `versionBodies` were single slots refreshed only for the main pane's page, and `TopStrip` hid version history unless `role === "main"`. That is why the dropdown never showed in the split pane.
+- Now `versions: Record<path, VersionInfo[]>`, `versionBodies: Record<path, Record<n, string>>`, and `ui.versionView: Record<"main" | "split", { history, viewing?, confirmRestore }>`. The old `ui.history`, `ui.viewing`, `ui.confirmRestore` are gone.
+- `refreshVersions(path)` now runs for the split page too: on open beside/below, on session load, after a refine writes a page shown in either pane, after Undo all, and after Restore.
+- Restore from one pane drops newer snapshots, so the other pane goes back to current if it was viewing a dropped version of the same page.
+- The panes' scroll containers are the `.pane` divs directly under `.main`. `useSyncScroll` in `src/reader/useSyncScroll.ts` links them; `App.tsx` calls it with a ref to `.main`. An `echo` guard drops the scroll event the code itself causes, so the panes do not feed each other.
+- New `SyncScrollIcon` in `Icons.tsx`; `.tbtn.on` in `app.css` colors the lit button with `--acc`.
+- Verified in headless Chromium with Playwright against the Vite dev server: split pane shows the pill and menu; picking a version shows "Viewing Version 1" only in the split with amber tints only there; both panes can view versions at once; Esc closes main's then split's; Restore confirm shows only in the pane that asked; scroll fractions match within 0.001 in both directions; with sync off, main scrolls and split stays put; turning sync back on re-aligns the split. `tsc --noEmit` passes.
+
+### Timeline
+1. Read SplitPane, Page, TopStrip, the store's version code, and the pane CSS.
+2. Re-keyed versions by path and added a per-pane version view to the store; updated every caller.
+3. TopStrip and Page read the pane's own view and the page's own versions.
+4. Added the sync scroll hook, the icon, the button in the split pane's tools, and the `.tbtn.on` style.
+5. Ran the browser check, fixed nothing (it passed), took screenshots, updated `docs/architecture.md`.
+6. Committed and pushed.
+7. Kevin opened [pull request #1](https://github.com/truefrontier/markdown-learner/pull/1) from the Claude Code UI. The session is subscribed to its activity. At open it was mergeable with no CI checks and no comments.
+
+### Possible next steps
+- Consider aligning by block index instead of by fraction when both panes show the same version, for a tighter match on very long pages.
+- Decide whether the sync button should also appear when the two panes show a page and one of its versions in fullscreen (hidden main pane means no scrolling to sync, so it is left as is).
+- Persist `syncScroll` in the session file if the choice should survive a restart.
+
 ## Session: 2026-09-11 — ⌘B toggles the sidebar
 
 ### Leading assumptions

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactElement } from "react";
-import { store, useReader, type Selection } from "../state/store";
+import { store, useReader, type PaneRole, type Selection } from "../state/store";
 import { isStubBody, lexBlocks, resolveWikiTarget, type Block } from "../lib/markdown";
 import { diffBodies, type Change, type PageDiff } from "../lib/diff";
 import { applyWraps, rangeOffsets, type Wrap } from "../lib/wraps";
@@ -41,7 +41,7 @@ function BlockView({ html, wraps, className, index, linkState }: { html: string;
   return <div ref={ref} className={className} data-index={index} />;
 }
 
-type Props = { path: string; role: "main" | "split" };
+type Props = { path: string; role: PaneRole };
 
 export function Page({ path, role }: Props) {
   const s = useReader();
@@ -75,7 +75,7 @@ export function Page({ path, role }: Props) {
   }, [fading]);
   const waiting = loading && stub;
   const shownBody = fading ? (prev.heading ?? body) : body;
-  const viewingN = isMain ? ui.viewing : undefined;
+  const viewingN = ui.versionView[role].viewing;
   const [activeChange, setActiveChange] = useState<string | undefined>();
   const articleRef = useRef<HTMLDivElement>(null);
 
@@ -92,10 +92,10 @@ export function Page({ path, role }: Props) {
 
   const viewDiff: PageDiff | null = useMemo(() => {
     if (viewingN === undefined || body === undefined) return null;
-    const old = s.versionBodies[viewingN];
+    const old = s.versionBodies[path]?.[viewingN];
     if (old === undefined) return null;
     return diffBodies(old, body);
-  }, [viewingN, body, s.versionBodies]);
+  }, [viewingN, body, path, s.versionBodies]);
 
   const blocks: Block[] = useMemo(() => {
     if (viewDiff) return viewDiff.oldBlocks;
@@ -296,7 +296,8 @@ export function Page({ path, role }: Props) {
 
   const source = meta?.source ? s.pages[meta.source] : undefined;
   const reviewChanges = reviewDiff?.changes ?? [];
-  const versionsCurrentN = s.versions.length ? s.versions[s.versions.length - 1].n + 1 : 1;
+  const versions = s.versions[path] ?? [];
+  const versionsCurrentN = versions.length ? versions[versions.length - 1].n + 1 : 1;
 
   const renderAfter = (i: number) => {
     const out: ReactElement[] = [];
