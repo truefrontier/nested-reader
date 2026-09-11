@@ -19,7 +19,7 @@
 1. Pulled `main`; it was already up to date after pull request #3.
 2. Added the setting, the CSS variable, the store hook-up and the Appearance row.
 3. Verified in the browser preview and added an Appearance section to `docs/architecture.md`.
-4. Left the change uncommitted for review.
+4. Committed on `feature/appearance-page-width` and opened [pull request #4](https://github.com/truefrontier/nested-reader/pull/4), then merged it into `main` at Kevin's request.
 
 ### Possible next steps
 - Add the row to `design/Reader Settings.dc.html`, which still shows only Theme, Text size and Reading font.
