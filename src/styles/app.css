@@ -102,6 +102,17 @@ button {
     transform: none;
   }
 }
+/* For boxes centered with translateX(-50%): fades in while lifting into place, centered the whole way. */
+@keyframes rise-centered {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 10px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
 
 .shimmer {
   background: linear-gradient(90deg, var(--mute) 0%, var(--fg) 50%, var(--mute) 100%);
@@ -964,7 +975,9 @@ button {
   transform: translateX(-50%);
   width: 470px;
   max-width: calc(100% - 40px);
-  animation: rise 0.18s ease-out;
+  /* Its own keyframes, not `rise`: that one animates `transform` too, and would drop the translateX(-50%)
+     centering for its first frames, so the box flashed at the bottom right before snapping to the middle. */
+  animation: rise-centered 0.22s ease-out;
   z-index: 3;
   font-family: var(--sans);
   user-select: none;

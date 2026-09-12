@@ -1,5 +1,25 @@
 # Progress
 
+## Session: 2026-09-12 — pane popup fades in from center
+
+### Leading assumptions
+- "The popup" is the in-webview box at the bottom of the pane (`.pane-pop`) that ⌘N (New Page) and ⌘R with no selection (Refine) open. Nothing native is involved.
+- "Fade-in up from center" means: fade from transparent while lifting a few pixels into its resting place, centered horizontally the whole time.
+
+### World facts
+- Cause: `.pane-pop` centers itself with `transform: translateX(-50%)`, and the shared `rise` keyframes animate `transform` too. For the animation's frames the keyframe's transform replaced the centering one, so the box sat with its left edge at the pane's midpoint (a first-frame center of 683px in an 896px pane) and snapped to the middle when the animation ended.
+- Fix in `src/styles/app.css`: new `rise-centered` keyframes (`translate(-50%, 10px)` at opacity 0 → `translate(-50%, 0)` at opacity 1), 0.22s ease-out, used by `.pane-pop` only. The in-flow `.pop-wrap` keeps `rise`, since it has no transform of its own.
+
+### Timeline
+1. Kevin reported the ⌘R/⌘N popup flashing bottom-right before centering and asked for a fade-in up from center.
+2. Found the transform clash, added the keyframes.
+3. Verified with Playwright against the browser build: paused the animation at its first frame, measured the box. Old CSS: center 683px, new CSS: center 448px (the middle) at opacity 0 and 10px low; end frame centered at opacity 1. Both ⌘N and ⌘R.
+4. Committed on `claude/modest-cori-0amvs8` and pushed.
+
+### Possible next steps
+- A matching fade-out on Esc would need the element to stay mounted for the duration; today it unmounts at once.
+- `prefers-reduced-motion` only quiets the skeleton bars; the rise animations could be dropped there too.
+
 ## Session: 2026-09-11 — app icon and brand files committed
 
 ### Leading assumptions
