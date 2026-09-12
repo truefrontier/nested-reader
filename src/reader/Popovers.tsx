@@ -42,6 +42,41 @@ export function PopWrap({ caretX, width, className, children }: { caretX: number
 
 type Submit = (text: string, verb: Verb, alt: boolean) => void;
 
+/** How long the skeleton takes to fade before the first streamed text shows. Matches `.skeleton` in app.css. */
+export const SKELETON_FADE_MS = 260;
+
+/** Two pulsing bars that stand in for text still on its way. `fading` runs the exit transition. */
+export function Skeleton({ fading }: { fading?: boolean }) {
+  return (
+    <div className={`skeleton${fading ? " fading" : ""}`}>
+      <div />
+      <div style={{ width: "78%" }} />
+    </div>
+  );
+}
+
+/**
+ * Whether to show a skeleton for an answer that is still empty, and whether it is fading out.
+ * As on a page, the first text starts the fade and only shows once the skeleton is gone; the
+ * decision is made during render so the skeleton stays mounted and its class change can transition.
+ */
+function useAnswerSkeleton(lookup: Lookup) {
+  const waiting = lookup.streaming && !lookup.answer && !lookup.error;
+  const [prevWaiting, setPrevWaiting] = useState(waiting);
+  const [fading, setFading] = useState(false);
+  if (prevWaiting !== waiting) {
+    setPrevWaiting(waiting);
+    // Text arriving starts the fade; an error or a stream that ended empty shows its result at once.
+    setFading(prevWaiting && !waiting && !!lookup.answer && !lookup.error);
+  }
+  useEffect(() => {
+    if (!fading) return;
+    const t = window.setTimeout(() => setFading(false), SKELETON_FADE_MS);
+    return () => window.clearTimeout(t);
+  }, [fading]);
+  return { show: waiting || fading, fading };
+}
+
 function verbFor(e: KeyboardEvent): Verb | null {
   if (e.key !== "Enter") return null;
   if (e.metaKey && e.shiftKey) return "deep";
@@ -350,6 +385,13 @@ export function AnswerCard({
   // A card peeked at from hover must not pull focus; it takes it once a click keeps it open.
   const ref = useAutoFocus(!lookup.peek);
   const [q, setQ] = useState("");
+  const skeleton = useAnswerSkeleton(lookup);
+  // The card stays mounted across a quick follow-up, so the box is emptied here once the question is sent.
+  const submit = (v: Verb, alt: boolean) => {
+    if (!q.trim()) return;
+    onFollowUp(q, v, alt);
+    setQ("");
+  };
   const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Escape") {
       // Only this box closes; the window's Esc would otherwise also close whatever sits behind it.
@@ -359,7 +401,7 @@ export function AnswerCard({
     const v = verbFor(e);
     if (v) {
       e.preventDefault();
-      if (q.trim()) onFollowUp(q, v, e.altKey);
+      submit(v, e.altKey);
     }
   };
   return (
@@ -373,16 +415,21 @@ export function AnswerCard({
       {lookup.thread.length > 0 && <div style={{ fontFamily: "var(--sans)", fontSize: 12, color: "var(--mute)", marginBottom: 4 }}>{lookup.question}</div>}
       {lookup.error ? (
         <div className="answer err">{lookup.error}</div>
-      ) : lookup.streaming && working ? (
-        <div className="answer tool">
-          <span className="pulse" />
-          {working}…
-        </div>
+      ) : skeleton.show ? (
+        <>
+          <Skeleton fading={skeleton.fading} />
+          {lookup.streaming && working && (
+            <div className="answer tool">
+              <span className="pulse" />
+              {working}…
+            </div>
+          )}
+        </>
       ) : (
         <div className={`answer${lookup.streaming ? " streaming-cursor" : ""}`}>{lookup.answer}</div>
       )}
       <input ref={ref} data-ask="1" placeholder="Follow up…" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} spellCheck={false} />
-      <AskVerbs onVerb={(v, alt) => q.trim() && onFollowUp(q, v, alt)} onEsc={onEsc} onToggle={onRefine} />
+      <AskVerbs onVerb={submit} onEsc={onEsc} onToggle={onRefine} />
     </div>
   );
 }

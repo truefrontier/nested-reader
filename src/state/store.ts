@@ -80,7 +80,9 @@ export type UiState = {
   /** When both panes show the same page they scroll together, until this is turned off from the pane tools. */
   syncScroll: boolean;
   filter: string;
+  /** Tree filters: only unread pages (with those being written or that failed), only pages with changes to review. Both on shows either. */
   unreadOnly: boolean;
+  changesOnly: boolean;
   refining?: RefineScope;
   /** The instruction being (or last) refined, shown while it runs and kept for a retry. */
   refineText?: string;
@@ -139,6 +141,7 @@ const initialUi: UiState = {
   syncScroll: true,
   filter: "",
   unreadOnly: false,
+  changesOnly: false,
   dragging: false,
   find: false,
   findQuery: "",
@@ -486,7 +489,7 @@ export class ReaderStore {
       });
       const ui = this.state.ui;
       // The split pane keeps its version view; only the main pane changed.
-      this.setUi({ ...initialUi, filter: ui.filter, unreadOnly: ui.unreadOnly, map: undefined, versionView: { ...initialUi.versionView, split: ui.versionView.split } });
+      this.setUi({ ...initialUi, filter: ui.filter, unreadOnly: ui.unreadOnly, changesOnly: ui.changesOnly, map: undefined, versionView: { ...initialUi.versionView, split: ui.versionView.split } });
       await this.refreshVersions(path);
       await this.refreshReview(path);
     } catch (e) {
@@ -616,6 +619,16 @@ export class ReaderStore {
 
   toggleUnreadOnly() {
     this.setUi({ unreadOnly: !this.state.ui.unreadOnly });
+  }
+
+  toggleChangesOnly() {
+    this.setUi({ changesOnly: !this.state.ui.changesOnly });
+  }
+
+  /** Switches a tree filter off. The sidebar calls this when the filter has nothing left to show, so the tree comes back instead of sitting empty. */
+  clearTreeFilter(kind: "unread" | "changes") {
+    const ui = this.state.ui;
+    if (kind === "unread" ? ui.unreadOnly : ui.changesOnly) this.setUi(kind === "unread" ? { unreadOnly: false } : { changesOnly: false });
   }
 
   /** Shows the tree if it is hidden and puts the cursor in its Filter box (/ or ⌘/). */
