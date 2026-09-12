@@ -8,6 +8,7 @@ import {
   type AiRequest,
   type Ask,
   type ChatMessage,
+  type DefaultApp,
   type PageMeta,
   type Placement,
   type RecentSession,
@@ -130,6 +131,8 @@ export type ReaderState = {
   /** What the model is looking at right now, by stream key ("lookup", "page:<path>", "refine:<path>"), while it uses a tool. */
   working: Record<string, string>;
   apiKeyMissing?: boolean;
+  /** Which app opens .md files on this Mac; the Home offer and the Settings row follow it. */
+  defaultApp?: DefaultApp;
   ui: UiState;
 };
 
@@ -150,6 +153,9 @@ const initialUi: UiState = {
   findSelect: 0,
   filterFocus: 0,
 };
+
+/** What the OS can hand the app that it cannot open. */
+const OPENED_OTHERWISE = "Nested opens folders and .md files.";
 
 function prettyFolderName(folder: string): string {
   const base = folder.replace(/[/\\]+$/, "").split(/[/\\]/).pop() ?? folder;
@@ -257,7 +263,17 @@ export class ReaderStore {
       const versionParam = Number(url.searchParams.get("version"));
       const initialVersion = Number.isInteger(versionParam) && versionParam > 0 ? versionParam : undefined;
       const last = recents[0];
-      if (page && settings.folder) {
+      // Only the main window takes files from Finder; a page window shows the one page it was opened for.
+      if (!page) {
+        platform.onOpened((paths) => void this.openOpened(paths));
+        window.addEventListener("focus", () => void this.loadDefaultApp());
+        void this.loadDefaultApp();
+      }
+      // The file that launched the app (a double-click in Finder) wins over "Open at launch".
+      const opened = page ? [] : await platform.openedPaths();
+      if (opened[0]) {
+        await this.openPath(opened[0], OPENED_OTHERWISE);
+      } else if (page && settings.folder) {
         await this.openFolder(settings.folder, { initialPage: page, initialVersion, file: last?.folder === settings.folder ? last.file : undefined });
       } else if (settings.openAtLaunch === "ask") {
         const path = await platform.pickPath();
@@ -307,6 +323,17 @@ export class ReaderStore {
     const i = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
     if (i <= 0) return this.fail(`Could not find the folder of ${path}`);
     await this.openFolder(path.slice(0, i), { file: path.slice(i + 1) });
+  }
+
+  /** Paths the OS asked the app to open (Finder, the Dock icon): a folder or a .md file starts a session. */
+  async openOpened(paths: string[]) {
+    const path = paths[0];
+    if (!path) return;
+    try {
+      await this.openPath(path, OPENED_OTHERWISE);
+    } catch (e) {
+      this.fail(e);
+    }
   }
 
   /** Paths dropped on the window: a folder or a .md file starts a session. */
@@ -603,6 +630,47 @@ export class ReaderStore {
     } catch (e) {
       this.fail(e);
     }
+  }
+
+  private async saveSettings(patch: Partial<Settings>) {
+    const settings = { ...this.state.settings, ...patch };
+    this.set({ settings });
+    try {
+      await platform.saveSettings(settings);
+    } catch (e) {
+      this.fail(e);
+    }
+  }
+
+  // ---------- the Mac's app for Markdown ----------
+
+  /** Reads which app opens .md files. Quiet on failure: the offer and the row simply stay hidden. */
+  async loadDefaultApp() {
+    try {
+      this.set({ defaultApp: await platform.defaultMarkdownApp() });
+    } catch {
+      /* no backend answer: nothing to offer */
+    }
+  }
+
+  /**
+   * Asks the OS to make Nested the app for .md files. macOS 26.4 and later confirm with the user
+   * first, so this settles on whatever the system reports afterwards, and stops offering once it is Nested.
+   */
+  async makeDefaultApp() {
+    try {
+      const defaultApp = await platform.setDefaultMarkdownApp();
+      this.set({ defaultApp });
+      if (defaultApp.isNested) await this.saveSettings({ offerDefaultApp: false });
+    } catch (e) {
+      this.fail(e);
+      void this.loadDefaultApp();
+    }
+  }
+
+  /** Not now: the Home screen stops offering. The row in Settings › General stays. */
+  dismissDefaultAppOffer() {
+    void this.saveSettings({ offerDefaultApp: false });
   }
 
   /** Closes a sidebar folder, or opens it again. */

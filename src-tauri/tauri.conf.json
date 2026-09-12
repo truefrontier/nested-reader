@@ -30,6 +30,9 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "fileAssociations": [
+      { "ext": ["md", "markdown"], "name": "Markdown", "role": "Editor", "mimeType": "text/markdown", "contentTypes": ["net.daringfireball.markdown"] }
+    ],
     "macOS": {
       "minimumSystemVersion": "12.0"
     },

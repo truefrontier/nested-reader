@@ -49,6 +49,12 @@ A session is either a **folder** (every `.md` under it) or a **file**. Both come
 
 At launch, `openAtLaunch: "last-session"` reopens the first entry of `recents.json` (so a file session comes back as one), `"ask"` shows the folder picker, and `"nothing"` or a cancelled picker leaves you on Home.
 
+### Files from Finder
+
+`bundle.fileAssociations` in `tauri.conf.json` registers the built app for `.md` / `.markdown` under the content type `net.daringfireball.markdown`; Tauri's own extension table does not know `md`, so the type is named explicitly and declared in `src-tauri/Info.plist` (`UTImportedTypeDeclarations`, which Tauri merges in; that file must hold nothing Tauri also generates, since top-level keys replace). A double-click, Open With, or a drop on the Dock icon then reaches `lib.rs` as `RunEvent::Opened`. On a cold launch that fires before any window exists, so the paths wait in the `Opened` state until the main window's store calls `opened_paths`; from then on they go straight to it as an `"opened"` event (`emit_to("main")`, matched by a window-targeted listener, so page windows never see it). The store feeds either into the same `openPath` as ⌘O and drops, and a launch-time file wins over `openAtLaunch`. None of this applies to `tauri dev`: a bare executable has no bundle for macOS to register.
+
+`src-tauri/src/default_app.rs` reads which app opens Markdown (`NSWorkspace`, `URLForApplicationToOpenContentType`) and, on request, asks macOS to make it Nested (`setDefaultApplicationAtURL:toOpenContentType:`). macOS 26.4 and later confirm every such change with the user, so the command waits for the completion block and then reads the default back rather than assuming; the Settings window marks a dialog open meanwhile, since the system prompt takes focus and would otherwise count as a click outside. Settings › General › Markdown files shows the current app with a "Use Nested" action, and Home shows a one-line offer until Not now or until Nested is the app (`offerDefaultApp` in settings). Both are hidden under `tauri dev`, and the whole thing fails under App Sandbox, which the direct build does not use.
+
 ## Front matter and links
 
 A page grown from another page looks like this:

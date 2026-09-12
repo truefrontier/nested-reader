@@ -43,6 +43,17 @@ export function Home() {
   const s = useReader();
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
+  const [settingDefault, setSettingDefault] = useState(false);
+  // A quiet offer, shown until Not now or until Nested is the app. macOS may add its own confirmation.
+  const offerDefault = s.settings.offerDefaultApp && s.defaultApp?.available === true && !s.defaultApp.isNested;
+  const useNested = async () => {
+    setSettingDefault(true);
+    try {
+      await store.makeDefaultApp();
+    } finally {
+      setSettingDefault(false);
+    }
+  };
 
   useEffect(() => {
     if (!menuFor) return;
@@ -157,6 +168,22 @@ export function Home() {
             </button>
           </div>
           <div className={`home-drop${s.ui.dragging ? " active" : ""}`}>or drop a folder or file anywhere in this window</div>
+          {offerDefault && (
+            <div className="home-offer">
+              <span>
+                Make Nested your app for .md files? A double‑click in Finder would open it here
+                {s.defaultApp?.app ? `; today that opens ${s.defaultApp.app}.` : "."}
+              </span>
+              <span className="acts">
+                <button disabled={settingDefault} onClick={() => void useNested()}>
+                  {settingDefault ? "Waiting for macOS…" : "Use Nested"}
+                </button>
+                <button className="quiet" disabled={settingDefault} onClick={() => store.dismissDefaultAppOffer()}>
+                  Not now
+                </button>
+              </span>
+            </div>
+          )}
         </div>
       </div>
     </div>

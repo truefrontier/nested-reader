@@ -26,6 +26,8 @@ const versions = new Map<string, { n: number; at: string; content: string }[]>()
 const sessions = new Map<string, Session>();
 let recents: RecentSession[] = [];
 let settings: Settings = { ...DEFAULT_SETTINGS, folder: SAMPLE_FOLDER };
+/** The browser has no Finder; a pretend default app lets the Settings row and the Home offer be tried. */
+let markdownApp = "TextEdit";
 const keys = new Map<Provider, string>();
 const failedOnce = new Set<string>();
 const settingsListeners = new Set<(s: Settings) => void>();
@@ -282,6 +284,23 @@ export const mockPlatform: Platform = {
   onSettingsChanged(handler) {
     settingsListeners.add(handler);
     return () => settingsListeners.delete(handler);
+  },
+
+  async openedPaths() {
+    return [];
+  },
+
+  onOpened() {
+    return () => undefined;
+  },
+
+  async defaultMarkdownApp() {
+    return { app: markdownApp, isNested: markdownApp === "Nested", available: true };
+  },
+
+  async setDefaultMarkdownApp() {
+    markdownApp = "Nested";
+    return { app: markdownApp, isNested: true, available: true };
   },
 
   /** A dropped .md file is read into the in-memory folder; browsers give no path for folders. */

@@ -98,6 +98,15 @@ body.settings-body {
 .act:hover {
   color: var(--fg);
 }
+.act.busy {
+  color: var(--mute);
+  cursor: default;
+}
+/* A value with its note underneath, for rows whose note is a sentence rather than a tag. */
+.stack {
+  display: grid;
+  gap: 4px;
+}
 .mute {
   color: var(--mute);
 }

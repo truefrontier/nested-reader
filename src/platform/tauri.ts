@@ -1,10 +1,12 @@
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   DEFAULT_SETTINGS,
   type AiRequest,
   type Auth,
+  type DefaultApp,
   type Page,
   type PageMeta,
   type PathKind,
@@ -131,4 +133,17 @@ export const tauriPlatform: Platform = {
       un.then((f) => f());
     };
   },
+
+  openedPaths: () => invoke<string[]>("opened_paths"),
+
+  /** lib.rs sends "opened" to the main window only, so the listener is tied to this window rather than to any target. */
+  onOpened(handler) {
+    const un = getCurrentWebviewWindow().listen<string[]>("opened", (e) => handler(e.payload));
+    return () => {
+      un.then((f) => f());
+    };
+  },
+
+  defaultMarkdownApp: () => invoke<DefaultApp>("default_markdown_app"),
+  setDefaultMarkdownApp: () => invoke<DefaultApp>("set_default_markdown_app"),
 };
