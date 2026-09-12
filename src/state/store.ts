@@ -508,7 +508,7 @@ export class ReaderStore {
       // For a page that already exists this is a read-later mark, and doing it again clears it.
       const s = this.state.session;
       if (s.current === path || s.split === path) return;
-      this.setSession({ unread: s.unread.includes(path) ? s.unread.filter((p) => p !== path) : [...s.unread, path] });
+      this.toggleUnread(path);
       return;
     }
     await this.loadBody(path);
@@ -516,6 +516,13 @@ export class ReaderStore {
     this.setSession({ split: path, splitDirection: placement, sidebar: false });
     this.setUi({ versionView: { ...this.state.ui.versionView, split: closedVersionView }, syncScroll: true });
     await this.refreshVersions(path);
+  }
+
+  /** Marks a page to read later, or clears the mark if it already carries one. Opening the page clears it too. */
+  toggleUnread(path: string) {
+    const s = this.state.session;
+    if (!this.state.pages[path]) return;
+    this.setSession({ unread: s.unread.includes(path) ? s.unread.filter((p) => p !== path) : [...s.unread, path] });
   }
 
   /**

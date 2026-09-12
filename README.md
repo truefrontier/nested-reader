@@ -21,7 +21,7 @@ pnpm tauri dev
 
 ## Opening pages
 
-Click a link or a tree row to open the page here. ⌘‑click opens it beside (the default for "⌘‑click opens", which New Page ⌘↵ shares), and ⌘⇧‑click marks it unread to read later, or read again if it already was (the default for "⌘⇧‑click opens", shared with Deep Dive ⌘⇧↵). Hold ⌥ for the other placement. Both are under Settings › General. In the tree, a blue dot means unread, a green ring means changes to review, and an amber dot means the page failed to generate; open it and press ↵ to try again.
+Click a link or a tree row to open the page here. ⌘‑click opens it beside (the default for "⌘‑click opens", which New Page ⌘↵ shares), and ⌘⇧‑click marks it unread to read later, or read again if it already was (the default for "⌘⇧‑click opens", shared with Deep Dive ⌘⇧↵). Hold ⌥ for the other placement. Both are under Settings › General. In the tree, a blue dot means unread, a green ring means changes to review, and an amber dot means the page failed to generate; open it and press ↵ to try again. Hover a row for its ⋯ menu (or right‑click it) to mark the page unread, or read again.
 
 ## Set up a provider
 

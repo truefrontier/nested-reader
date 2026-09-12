@@ -20,6 +20,36 @@
 - A matching fade-out on Esc would need the element to stay mounted for the duration; today it unmounts at once.
 - `prefers-reduced-motion` only quiets the skeleton bars; the rise animations could be dropped there too.
 
+## Session: 2026-09-12 — a ⋯ menu on sidebar rows with Mark unread / Mark read
+
+### Leading assumptions
+- Kevin remembered an ellipsis menu on the sidebar rows being lost in the folders change. Git history shows the tree rows never had one; the ⋯ menu he had in mind is the Home screen's recent-sessions menu. The ask is taken as: give the tree rows that same menu, with a "Mark unread" / "Mark read" item.
+- The item does exactly what ⌘⇧‑click already does for an existing page: it flips the page in `session.unread`. It works on the current page too (the mark stays until the page is opened again), where the click shortcut stays a no-op.
+- Right‑click on a row opens the same menu, since he called it a context menu.
+
+### World facts
+- `store.toggleUnread(path)` is the one place that flips the mark; the "background" placement branch in `openPage` now calls it.
+- `Sidebar.tsx` keeps `menuFor` (a path or null). The menu closes on a mousedown anywhere else, Esc, a scroll of the tree, or when its page is gone. `.row.open` keeps the ⋯ button and row text shown while the menu is up.
+- CSS: `.row .more` (22px, hidden until hover or open, pulled 8px into the row's right padding) and `.row-menu` (absolute under the button, right‑aligned, the Home menu's look at 148px wide).
+- Docs: `docs/architecture.md` marks paragraph and README "Reading" paragraph mention the menu.
+
+### Timeline
+1. Kevin said the ellipsis context menu was lost in the folders sidebar update and he wanted a Mark unread/read item in it.
+2. Searched the sidebar's history and the design files: no row menu ever existed on the tree; the Home list has one (`MoreIcon`, `.home-menu`).
+3. Added `toggleUnread` to the store, the button, right‑click and dropdown to the Sidebar, the CSS, and the doc lines. `tsc` and `pnpm build` pass.
+4. Drove the browser mock with Playwright: ⋯ shows on hover; click shows "Mark unread"; choosing it adds the blue dot to the row and the unread filter dot, the current page stays current; right‑click shows "Mark read"; Esc and an outside click close it; "Mark read" clears both dots; a plain row click still opens the page.
+5. Committed on `claude/clever-curie-e6fab2` and pushed.
+6. Kevin asked for a merge into `main`. Main had gained the app icon and brand files; merged it into the branch (only `PROGRESS.md` conflicted, both entries kept), `tsc` and `pnpm build` pass, and `main` was fast-forwarded and pushed.
+
+### Verification
+- `tsc`, `pnpm build`: pass. Playwright drive as above, screenshots of the open menu and the marked row.
+- Not checked: the desktop app; a right‑click there may also raise the WebView's own context menu unless the app already suppresses it.
+
+### Possible next steps
+- More items in the same menu: Open beside, Open in new window, Reveal in Finder, all of which the store already knows how to do.
+- The Web map rows could carry the same menu.
+- If a tree is long, a menu on the last row extends the tree's scroll area rather than flipping upward.
+
 ## Session: 2026-09-11 — app icon and brand files committed
 
 ### Leading assumptions

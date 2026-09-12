@@ -154,7 +154,7 @@ When both panes show the same page they scroll together: `useSyncScroll` (used b
 
 A plain click on a link or tree row opens the page here. ⌘‑click uses the "⌘‑click opens" setting (`newPageOpens`, also where New Page ⌘↵ goes) and ⌘⇧‑click the "⌘⇧‑click opens" setting (`deepDiveOpens`, also where Deep Dive ⌘⇧↵ goes); ⌥ flips either (`placementFor` in the store). For a page that already exists, the "background" placement is a read‑later mark: it adds the page to `session.unread`, and doing it again removes it. Both settings sit under General.
 
-The sidebar and map carry three marks: a solid blue dot for unread (`.udot`), a green ring for changes to review (`.cdot`, matching the strip's ring), and an amber dot for a page the model failed to write (`.fdot`).
+The sidebar and map carry three marks: a solid blue dot for unread (`.udot`), a green ring for changes to review (`.cdot`, matching the strip's ring), and an amber dot for a page the model failed to write (`.fdot`). Each sidebar row also has a ⋯ button (shown on hover, or open the same menu with a right-click) whose one item is "Mark unread" or "Mark read", which calls `toggleUnread` in the store, the same flip the background placement makes. The menu closes on a click elsewhere, Esc, or when the tree scrolls.
 
 ## New page from the session (⌘N)
 

@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode } from "react";
 import { store, useReader } from "../state/store";
 import { buildFolders, dotState, type FolderNode, type TreeItem } from "../lib/tree";
-import { ChevronLeft, ChevronRight, PlusIcon } from "./Icons";
+import { ChevronLeft, ChevronRight, MoreIcon, PlusIcon } from "./Icons";
 import { DEFAULT_SETTINGS } from "../platform";
 
 export function Sidebar() {
@@ -73,6 +73,30 @@ export function Sidebar() {
     e.preventDefault();
     void store.openPage(path, store.placementFor(e));
   };
+  // Each row has a ⋯ menu (also on right-click). It closes on a click anywhere else, Esc, or when the tree scrolls.
+  const [menuFor, setMenuFor] = useState<string | null>(null);
+  useEffect(() => {
+    if (!menuFor) return;
+    const close = () => setMenuFor(null);
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    window.addEventListener("mousedown", close);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", close);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [menuFor]);
+  useEffect(() => {
+    if (menuFor && !s.pages[menuFor]) setMenuFor(null);
+  }, [menuFor, s.pages]);
+  const stop = (e: MouseEvent) => e.stopPropagation();
+  const openMenu = (path: string) => (e: MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setMenuFor(menuFor === path ? null : path);
+  };
   const rows = (items: TreeItem[]) => {
     const visible = items.filter(shows);
     if (!visible.length) return null;
@@ -84,17 +108,36 @@ export function Sidebar() {
           const d = dotState(it.path, s.session);
           const cls = ["row", `d${Math.min(it.depth, 3)}`];
           if (d === "current") cls.push("current");
+          const unread = s.session.unread.includes(it.path);
+          const open = menuFor === it.path;
+          if (open) cls.push("open");
           const showTick = it.branch && !filtering;
           return (
-            <div key={it.path} className={cls.join(" ")} onClick={onRow(it.path)} title={p.title}>
+            <div key={it.path} className={cls.join(" ")} onClick={onRow(it.path)} onContextMenu={openMenu(it.path)} title={p.title}>
               {showTick && <span className="tick" />}
               <span className={`dot ${d === "current" ? "current" : d === "loading" ? "loading" : ""}`} />
               <span className={`label${d === "loading" ? " shimmer" : ""}`}>{p.title}</span>
               <span className="marks">
                 {!!s.pageErrors[it.path] && <span className="fdot" title="Couldn't be written. Open it to try again." />}
-                {s.session.unread.includes(it.path) && <span className="udot" title="Unread" />}
+                {unread && <span className="udot" title="Unread" />}
                 {!!s.session.pending[it.path] && <span className="cdot" title="Changes to review" />}
               </span>
+              <span className="more" title="More" onMouseDown={stop} onClick={openMenu(it.path)}>
+                <MoreIcon />
+              </span>
+              {open && (
+                <div className="row-menu" onMouseDown={stop} onClick={stop} onContextMenu={(e) => e.preventDefault()}>
+                  <div
+                    className="item"
+                    onClick={() => {
+                      setMenuFor(null);
+                      store.toggleUnread(it.path);
+                    }}
+                  >
+                    {unread ? "Mark read" : "Mark unread"}
+                  </div>
+                </div>
+              )}
             </div>
           );
         })}
@@ -165,7 +208,7 @@ export function Sidebar() {
           </span>
         )}
       </div>
-      <div className="tree">
+      <div className="tree" onScroll={() => menuFor && setMenuFor(null)}>
         <div className="tree-inner">{folder(root)}</div>
       </div>
       <button className="home-new" onClick={() => store.toggleNewFile()} title="A new page written from this session">
