@@ -15,6 +15,7 @@
 2. Found the transform clash, added the keyframes.
 3. Verified with Playwright against the browser build: paused the animation at its first frame, measured the box. Old CSS: center 683px, new CSS: center 448px (the middle) at opacity 0 and 10px low; end frame centered at opacity 1. Both ⌘N and ⌘R.
 4. Committed on `claude/modest-cori-0amvs8` and pushed.
+5. Kevin asked for a merge into `main`. Main had gained the sidebar ⋯ menu; merged it into the branch (only `PROGRESS.md` conflicted, both entries kept), `tsc`, `pnpm build` and the Playwright first-frame check pass on the merged code; `main` fast-forwarded and pushed.
 
 ### Possible next steps
 - A matching fade-out on Esc would need the element to stay mounted for the duration; today it unmounts at once.
