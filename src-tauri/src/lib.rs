@@ -1,5 +1,7 @@
 mod ai;
 mod cli;
+#[cfg(target_os = "macos")]
+mod default_app;
 mod error;
 mod files;
 mod migrate;
@@ -13,6 +15,7 @@ use error::{AppError, Result};
 use files::{RawPage, VersionInfo};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use tauri::ipc::Channel;
 use tauri::menu::{AboutMetadata, MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
@@ -22,6 +25,15 @@ use tauri_plugin_opener::OpenerExt;
 
 #[derive(Default)]
 struct Streams(Mutex<HashMap<String, CancelToken>>);
+
+/// Files macOS asked the app to open (a double-click in Finder, Open With, a drop on the Dock
+/// icon). On a cold launch that arrives before any window exists, so the paths wait here until
+/// the reader asks for them; after that they go straight to the main window.
+#[derive(Default)]
+struct Opened {
+    paths: Mutex<Vec<String>>,
+    ready: AtomicBool,
+}
 
 // ---------- files ----------
 
@@ -68,6 +80,70 @@ fn path_kind(path: String) -> &'static str {
 #[tauri::command]
 fn reveal_in_finder(app: AppHandle, path: String) -> Result<()> {
     app.opener().reveal_item_in_dir(&path).map_err(|e| AppError::Message(e.to_string()))
+}
+
+/// The reader calls this once it listens for "opened"; it drains what arrived before then.
+#[tauri::command]
+fn opened_paths(opened: State<'_, Opened>) -> Vec<String> {
+    opened.ready.store(true, Ordering::SeqCst);
+    std::mem::take(&mut *opened.paths.lock().unwrap())
+}
+
+#[cfg(target_os = "macos")]
+fn open_paths(app: &AppHandle, paths: Vec<String>) {
+    if paths.is_empty() {
+        return;
+    }
+    let opened = app.state::<Opened>();
+    let main = app.get_webview_window("main");
+    if !opened.ready.load(Ordering::SeqCst) || main.is_none() {
+        opened.paths.lock().unwrap().extend(paths);
+        return;
+    }
+    if let Some(w) = main {
+        let _ = w.unminimize();
+        let _ = w.show();
+        let _ = w.set_focus();
+    }
+    let _ = app.emit_to("main", "opened", paths);
+}
+
+// ---------- default app for Markdown ----------
+
+/// Which app opens .md files today, and whether it is this one.
+#[tauri::command]
+async fn default_markdown_app(app: AppHandle) -> Result<Value> {
+    #[cfg(target_os = "macos")]
+    {
+        let identifier = app.config().identifier.clone();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        app.run_on_main_thread(move || {
+            let _ = tx.send(default_app::current(&identifier));
+        })
+        .map_err(|e| AppError::Message(e.to_string()))?;
+        let state = rx.await.map_err(|_| AppError::Message("no answer from macOS".into()))?;
+        Ok(serde_json::to_value(state)?)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+        Ok(serde_json::json!({ "isNested": false, "available": false }))
+    }
+}
+
+/// Asks macOS to make this app the default for Markdown, then reports what it is now. On
+/// macOS 26.4 and later the system asks the user first, so this waits for their answer.
+#[tauri::command]
+async fn set_default_markdown_app(app: AppHandle) -> Result<Value> {
+    #[cfg(target_os = "macos")]
+    {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        app.run_on_main_thread(move || default_app::request(tx)).map_err(|e| AppError::Message(e.to_string()))?;
+        if let Some(message) = rx.await.map_err(|_| AppError::Message("no answer from macOS".into()))? {
+            return Err(AppError::Message(message));
+        }
+    }
+    default_markdown_app(app).await
 }
 
 #[tauri::command]
@@ -350,6 +426,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(Streams::default())
+        .manage(Opened::default())
         .setup(|app| {
             migrate::run(app.handle());
             build_menu(app.handle())?;
@@ -386,6 +463,9 @@ pub fn run() {
             pick_path,
             path_kind,
             reveal_in_finder,
+            opened_paths,
+            default_markdown_app,
+            set_default_markdown_app,
             get_recents,
             save_recents,
             list_pages,
@@ -408,6 +488,15 @@ pub fn run() {
             open_settings,
             open_page_window,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Opened { urls } = event {
+                let paths = urls.iter().filter_map(|u| u.to_file_path().ok()).map(|p| p.to_string_lossy().into_owned()).collect();
+                open_paths(app, paths);
+            }
+            #[cfg(not(target_os = "macos"))]
+            let _ = (app, event);
+        });
 }

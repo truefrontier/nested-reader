@@ -32,6 +32,32 @@
 - Drag-and-drop onto an open session could add a root instead of replacing the session; today a drop still opens a new session.
 - The Home recents card could list a session's roots so it is clear what it contains.
 - New pages grown from an added root's page are still written to the session folder (or its New pages subfolder), not beside their source in the added folder.
+## Session: 2026-09-12 — Nested as the Mac's app for Markdown files
+
+### Leading assumptions
+- "Default app for markdown" means two things: macOS must know the app can open `.md` at all (it did not; Nested was absent from the list of candidate apps), and then a way inside the app to become the default. Both surfaces Kevin named are worth having: a row in Settings › General and a quiet, dismissable offer on Home, not a first-run modal.
+- On macOS 26.4+ the system confirms every default-app change with a Use / Keep prompt, so the app must read the result back rather than assume the switch happened.
+
+### World facts
+- Tauri's extension→UTI table has no entry for `md`, so `bundle.fileAssociations` names `net.daringfireball.markdown` in `contentTypes`, and `src-tauri/Info.plist` imports that type (`UTImportedTypeDeclarations`). Tauri merges the plist top-level, replacing keys, so it holds nothing Tauri generates itself.
+- On a cold launch `RunEvent::Opened` fires before any window exists. `lib.rs` buffers the paths in an `Opened` state until the main window's store calls `opened_paths`; afterwards it sends an `"opened"` event to the main window only (`emit_to("main")`, matched by a window-targeted `listen`, since a plain `listen` registers for the Any target and would not match).
+- `src-tauri/src/default_app.rs` uses `NSWorkspace` with `UTType` (`objc2-uniform-type-identifiers`) and a `block2` completion block; the block parks a oneshot sender in a `Mutex<Option<…>>`. Both commands run their ObjC on the main thread and only await the channel. Under `tauri dev` the executable is not a bundle, so the feature reports `available: false` and both surfaces hide.
+- `setDefaultApplication` is blocked under App Sandbox; the direct build is not sandboxed.
+- Screen capture from this session returns a black image (no screen-recording grant), and System Events cannot see the built app's window; the recents file is the reliable proof of an open.
+
+### Timeline
+1. Kevin asked whether the app could be made the default Mac app for Markdown, on first run and/or in Settings. Found neither layer existed and answered with the design; he said "Do it".
+2. Rust: file-open buffering + drain command, default-app read/set commands, new Cargo features. `cargo check` clean first try.
+3. Bundle: `fileAssociations` + `Info.plist`. Frontend: four platform methods (mock has a pretend "TextEdit" default that flips), store opens launch files ahead of "Open at launch", Home offer, Settings › General › Markdown files row, `offerDefaultApp` setting.
+4. Browser check with the mock: offer renders on Home; the Settings row first put its note beside the action and wrapped the status, fixed with a `.stack` layout (status + action on one line, note beneath).
+5. Release build; `Info.plist` shows `LSItemContentTypes` and the imported type. After `lsregister`, Nested appears in macOS's list of apps for Markdown. Cold `open -a Nested.app file.md` put that file at the top of `recents.json`; a warm open of a second file replaced it. Kevin's `recents.json` / `settings.json` were backed up and restored, and the test session files removed.
+6. `cargo test` passes. The "Use Nested" click was left to Kevin, since it changes his system default and macOS 26.6 shows a consent prompt only he can answer.
+7. Kevin clicked Use Nested (and Use in the macOS prompt) from the built app. Read back: macOS names the build-folder `Nested.app` as the app for `net.daringfireball.markdown` and for a concrete `.md`, and the app saved `offerDefaultApp: false`, so the request → completion block → read-back → settings path ran end to end.
+
+### Possible next steps
+- If the main window has been closed (page windows still open), an open from Finder is buffered until a main window exists again; it could re-create the main window instead.
+- The dev binary could register a `Nested.app` shim so the feature is testable under `tauri dev`.
+- Nested could also be offered for `public.plain-text`, if reading `.txt` ever matters.
 
 ## Session: 2026-09-12 — pane popup fades in from center
 

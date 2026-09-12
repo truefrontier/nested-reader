@@ -23,6 +23,8 @@ pnpm tauri dev
 
 Click a link or a tree row to open the page here. ⌘‑click opens it beside (the default for "⌘‑click opens", which New Page ⌘↵ shares), and ⌘⇧‑click marks it unread to read later, or read again if it already was (the default for "⌘⇧‑click opens", shared with Deep Dive ⌘⇧↵). Hold ⌥ for the other placement. Both are under Settings › General. In the tree, a blue dot means unread, a green ring means changes to review, and an amber dot means the page failed to generate; open it and press ↵ to try again. Hover a row for its ⋯ menu (or right‑click it) to mark the page unread, or read again.
 
+**From Finder.** The built app registers as an app for `.md` files, so a double‑click, Open With, or a drop on the Dock icon opens the file as a session here; if the app is not running, that file wins over "Open at launch". To make Nested the default for Markdown, use Settings › General › Markdown files (the Home screen offers it once, too). macOS may ask you to confirm, and the switch needs the built `Nested.app` (a copy in Applications is best), not `pnpm tauri dev`.
+
 ## Set up a provider
 
 Open Settings (⌘,) › AI. Pick OpenAI, Anthropic, Ollama, or Custom (any OpenAI-compatible server; set its base URL). With an API key, paste it and press ↵; it is stored in the macOS Keychain. The Model menu lists what the provider offers and starts on its fastest, cheapest option (Luna for OpenAI, Haiku for Anthropic). The status next to it is a live connection check. The Context toggles decide what leaves the machine with each request.

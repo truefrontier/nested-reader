@@ -121,6 +121,17 @@ export type Settings = {
   context: { highlight: boolean; session: boolean; folder: boolean };
   /** Let the model list, read and search the session folder's pages itself while it answers. */
   tools: boolean;
+  /** The Home screen still offers to make Nested the Mac's app for .md files; off after Not now or once it is. */
+  offerDefaultApp: boolean;
+};
+
+/** Which Mac app opens .md files today, from the desktop backend. */
+export type DefaultApp = {
+  /** Display name, e.g. "Typora"; missing when no app is set. */
+  app?: string;
+  isNested: boolean;
+  /** False under `tauri dev`, which runs a bare executable rather than an app bundle. */
+  available: boolean;
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -148,6 +159,7 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   context: { highlight: true, session: true, folder: false },
   tools: true,
+  offerDefaultApp: true,
 };
 
 export const READING_WIDTH_RANGE: Record<ReadingWidthUnit, { min: number; max: number }> = {
@@ -255,4 +267,12 @@ export interface Platform {
   onSettingsChanged(handler: (s: Settings) => void): () => void;
   /** Files or folders dragged over or dropped on the window. */
   onDragDrop(handler: (e: DragDropEvent) => void): () => void;
+  /** Files the OS asked the app to open before the reader was listening (the double-click that launched it). Drains them. */
+  openedPaths(): Promise<string[]>;
+  /** Files the OS asks the running app to open: a double-click in Finder, Open With, a drop on the Dock icon. */
+  onOpened(handler: (paths: string[]) => void): () => void;
+  /** Which app opens .md files on this Mac. */
+  defaultMarkdownApp(): Promise<DefaultApp>;
+  /** Asks the OS to make this app the default for .md files; resolves once it has answered, with the new state. */
+  setDefaultMarkdownApp(): Promise<DefaultApp>;
 }

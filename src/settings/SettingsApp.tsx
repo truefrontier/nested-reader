@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { DEFAULT_SETTINGS, READING_WIDTH_RANGE, isTauri, platform, type Auth, type OpenAtLaunch, type Placement, type Provider, type ReadingWidthUnit, type Settings } from "../platform";
+import { DEFAULT_SETTINGS, READING_WIDTH_RANGE, isTauri, platform, type Auth, type DefaultApp, type OpenAtLaunch, type Placement, type Provider, type ReadingWidthUnit, type Settings } from "../platform";
 import { authFor, chatModels, modelSlot, pickDefaultModel } from "../lib/models";
 import { AiIcon, AppearanceIcon, CheckIcon, GeneralIcon, UpDownIcon } from "../reader/Icons";
 
@@ -254,6 +254,9 @@ function General({ settings, save, dialogOpen }: SectionProps & { dialogOpen: { 
       <Row label="Open at launch">
         <Dropdown value={settings.openAtLaunch} options={LAUNCH} onChange={(v) => save({ openAtLaunch: v })} />
       </Row>
+      <Row label="Markdown files" top>
+        <DefaultAppRow save={save} dialogOpen={dialogOpen} />
+      </Row>
       <div className="divider" />
       <Row label="⌘‑click opens">
         <span className="with-note">
@@ -272,6 +275,60 @@ function General({ settings, save, dialogOpen }: SectionProps & { dialogOpen: { 
         <div>In the background marks a page unread. ⌘⇧‑click it again to mark it read.</div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Which Mac app opens .md files, with the switch to Nested. Re-read whenever the window comes
+ * back, since Finder's Get Info can change it too. While macOS asks the user to confirm, its
+ * prompt takes the focus; `dialogOpen` keeps that from counting as a click outside the window.
+ */
+function DefaultAppRow({ save, dialogOpen }: { save: (patch: Partial<Settings>) => void; dialogOpen: { current: boolean } }) {
+  const [app, setApp] = useState<DefaultApp | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    const load = () => {
+      platform
+        .defaultMarkdownApp()
+        .then(setApp)
+        .catch(() => setApp({ isNested: false, available: false }));
+    };
+    load();
+    window.addEventListener("focus", load);
+    return () => window.removeEventListener("focus", load);
+  }, []);
+  const use = async () => {
+    setBusy(true);
+    setError(null);
+    dialogOpen.current = true;
+    try {
+      const next = await platform.setDefaultMarkdownApp();
+      setApp(next);
+      if (next.isNested) save({ offerDefaultApp: false });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      platform.defaultMarkdownApp().then(setApp).catch(() => undefined);
+    } finally {
+      dialogOpen.current = false;
+      setBusy(false);
+    }
+  };
+  if (!app) return <span className="mute">…</span>;
+  if (!app.available) return <span className="mute">Available in the built app</span>;
+  const status = app.isNested ? "Open in Nested" : app.app ? `Open in ${app.app}` : "No app opens them";
+  return (
+    <span className="stack">
+      <span className="spread">
+        <span>{status}</span>
+        {!app.isNested && (
+          <span className={`act${busy ? " busy" : ""}`} onClick={() => !busy && void use()}>
+            {busy ? "Waiting for macOS…" : "Use Nested"}
+          </span>
+        )}
+      </span>
+      <span className="note wrap">{error ?? (app.isNested ? "A double‑click in Finder opens the file here." : "Also Open With in Finder. macOS may ask you to confirm.")}</span>
+    </span>
   );
 }
 

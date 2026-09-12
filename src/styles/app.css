@@ -1717,3 +1717,48 @@ button {
   background: var(--card);
   color: var(--fg);
 }
+/* The offer to become the Mac's app for .md files: one line, two quiet buttons, gone after Not now. */
+.home-offer {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--hair);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--mute);
+}
+.home-offer .acts {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.home-offer button {
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--hair);
+  background: var(--card);
+  color: var(--fg);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.home-offer button:hover {
+  border-color: var(--fg);
+}
+.home-offer button.quiet {
+  border-color: transparent;
+  background: transparent;
+  color: var(--mute);
+}
+.home-offer button.quiet:hover {
+  color: var(--fg);
+}
+.home-offer button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
