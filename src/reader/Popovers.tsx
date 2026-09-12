@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type 
 import type { Lookup, NewFileVerb, Verb } from "../state/store";
 import type { Change } from "../lib/diff";
 import type { RefineScope } from "../lib/prompts";
+import { FEEDBACK_MAX } from "../platform";
 
 export function Kbd({ children }: { children: ReactNode }) {
   return <span className="kbd">{children}</span>;
@@ -501,6 +502,102 @@ export function FailedCard({ title, error, hotkey, onRetry }: { title: string; e
         <span className="do" onClick={onRetry}>
           <Kbd>↵</Kbd> Try again
         </span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The Send feedback box, opened from the link at the bottom of the sidebar. The note goes to the
+ * relay as a GitHub issue; the email is optional and only for a reply. ↵ makes a new line, ⌘↵ sends.
+ */
+export function FeedbackPopover({ onSend, onEsc }: { onSend: (message: string, email: string) => Promise<void>; onEsc: () => void }) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const [text, setText] = useState("");
+  const [email, setEmail] = useState("");
+  const [state, setState] = useState<{ kind: "idle" } | { kind: "sending" } | { kind: "sent" } | { kind: "error"; message: string }>({ kind: "idle" });
+  const busy = state.kind === "sending";
+  useEffect(() => {
+    const t = window.setTimeout(() => ref.current?.focus({ preventScroll: true }), 60);
+    return () => window.clearTimeout(t);
+  }, []);
+  // A sent note closes the box on its own after a moment, once the thanks has been seen. The
+  // callback is read through a ref so a parent re-render does not restart the wait.
+  const close = useRef(onEsc);
+  close.current = onEsc;
+  useEffect(() => {
+    if (state.kind !== "sent") return;
+    const t = window.setTimeout(() => close.current(), 1600);
+    return () => window.clearTimeout(t);
+  }, [state.kind]);
+  const canSend = !!text.trim() && text.length <= FEEDBACK_MAX && !busy && state.kind !== "sent";
+  const send = async () => {
+    if (!canSend) return;
+    setState({ kind: "sending" });
+    try {
+      await onSend(text, email);
+      setState({ kind: "sent" });
+    } catch (err) {
+      setState({ kind: "error", message: err instanceof Error ? err.message : String(err) });
+    }
+  };
+  const onKey = (e: KeyboardEvent<HTMLElement>) => {
+    if (e.key === "Escape") {
+      // Only this box closes; the window's Esc would otherwise also close whatever sits behind it.
+      e.stopPropagation();
+      return onEsc();
+    }
+    if (e.key === "Enter" && e.metaKey) {
+      e.preventDefault();
+      void send();
+    }
+  };
+  const over = text.length > FEEDBACK_MAX;
+  return (
+    <div className="pane-pop feedback-pop" onKeyDown={onKey}>
+      <div className="pop">
+        <textarea
+          ref={ref}
+          data-ask="1"
+          placeholder="What's working, what isn't, what you wish it did…"
+          rows={3}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          disabled={busy || state.kind === "sent"}
+          spellCheck
+        />
+        <input
+          className="email"
+          type="email"
+          placeholder="Email, if you'd like a reply (optional)"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          disabled={busy || state.kind === "sent"}
+          autoComplete="email"
+          spellCheck={false}
+        />
+        <div className="verbs">
+          {state.kind === "sent" ? (
+            <span className="note ok">Thanks. It's on its way.</span>
+          ) : state.kind === "error" ? (
+            <span className="note err" title={state.message}>
+              {state.message}
+            </span>
+          ) : over ? (
+            <span className="note err">Keep it under {FEEDBACK_MAX.toLocaleString()} characters.</span>
+          ) : (
+            <span className="note">Goes to the people who make Nested, as an issue on GitHub.</span>
+          )}
+          <span className="tail">
+            <span className={`verb${canSend ? "" : " off"}`} onClick={() => void send()}>
+              <Kbd>⌘↵</Kbd>
+              {busy ? "Sending…" : state.kind === "error" ? "Try again" : "Send"}
+            </span>
+            <span className="verb esc" onClick={onEsc}>
+              Esc
+            </span>
+          </span>
+        </div>
       </div>
     </div>
   );

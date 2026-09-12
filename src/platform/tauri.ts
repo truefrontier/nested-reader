@@ -146,4 +146,6 @@ export const tauriPlatform: Platform = {
 
   defaultMarkdownApp: () => invoke<DefaultApp>("default_markdown_app"),
   setDefaultMarkdownApp: () => invoke<DefaultApp>("set_default_markdown_app"),
+
+  sendFeedback: (message, email) => invoke("send_feedback", { message, email: email?.trim() || null }),
 };

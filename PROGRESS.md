@@ -1,5 +1,35 @@
 # Progress
 
+## Session: 2026-09-12 — Claude on GitHub, and a Send feedback link that files issues
+
+### Leading assumptions
+- "Claude workflows" means the Claude Code GitHub Action: `@claude` replies on issues and PRs, an automatic PR review, and (since the feedback lands as issues) a triage pass on each new feedback issue.
+- The app's users are not collaborators, and the repo is private, so the app cannot create issues itself without a token it must not carry. A small relay holds the token instead: a dependency-free Cloudflare Worker in `feedback-relay/`. Its URL is compiled into the app from `src-tauri/.cargo/config.toml` (`NESTED_FEEDBACK_URL`); empty means the box says feedback is not set up in this build.
+- "Subtle link at the bottom of the sidebar" is a muted 11px "Send feedback" under the New page button. "Popup" is the app's own bottom-of-pane box (the ⌘N / ⌘R one), so it is centred over the reading pane and Esc treats it like the others.
+- The optional email goes on the issue as a contact line. The repository is private, so only collaborators see it.
+
+### World facts
+- Frontend: `Platform.sendFeedback(message, email?)`; the mock logs the note (a note starting with `fail:` is refused, to try the error state); Tauri calls `send_feedback`. `ui.panePopover` gains `"feedback"`; `store.toggleFeedback()` and `store.sendFeedback()`. `FeedbackPopover` in `Popovers.tsx`: textarea (↵ new line, ⌘↵ send, `field-sizing: content` grows it), email input, one status line (idle / Sending… / Thanks / error with Try again); a sent note closes the box after 1.6s. CSS: `.side-foot`, `.feedback-pop`.
+- Rust: `src-tauri/src/feedback.rs` builds the payload (trimmed note, email when given, app version, OS, arch; 5000-char cap), reads `option_env!("NESTED_FEEDBACK_URL")`, posts JSON with a 20s timeout and turns a plain-text refusal, a timeout or a lost connection into a sentence. `send_feedback` in `lib.rs` uses `app.package_info().version`.
+- Relay: `feedback-relay/worker.js` validates (POST, JSON, note ≤5000, loose email check), creates the issue via the REST API with `labels: ["feedback"]`, title = first line (≤72 chars), body = quoted note + Contact + App lines. `wrangler.toml` sets `GITHUB_REPO` and `LABEL`; `GITHUB_TOKEN` is a Worker secret (fine-grained PAT, Issues: read/write on this repo). `node --test` runs 6 tests against a stubbed `fetch`.
+- Workflows: `claude.yml` (@claude mentions; `if` guards so plain comments cost nothing), `claude-code-review.yml` (sticky comment + inline notes, drafts skipped), `feedback-triage.yml` (issues opened with the `feedback` label, or labelled later: labels bug/enhancement/question/needs-info, looks for duplicates, one comment ≤200 words, no code changes). All three need the Claude GitHub App on the repo and an `ANTHROPIC_API_KEY` secret; neither exists yet as far as this session can tell.
+- The full Rust crate still cannot build on this Linux box (no GTK); `feedback.rs` + `error.rs` were compiled and tested in a scratch crate with a stub `tauri` crate: 5 tests pass, including two against a one-request localhost server.
+
+### Timeline
+1. Kevin asked for Claude workflows on the repo, plus a feedback button (subtle link at the bottom of the sidebar) opening a popup with a form and an optional email, filing GitHub issues.
+2. Read the sidebar, popover, platform and Rust command layers; confirmed the repo is private with no issues yet; fetched the Claude Code Action v1 syntax.
+3. Wrote the three workflows, the relay (worker, wrangler config, README, tests), the Rust module and command, the `.cargo/config.toml` slot for the URL, and the frontend (contract, mock, tauri bridge, store, popover, sidebar link, CSS). README and `docs/architecture.md` describe the path.
+4. Verified: `tsc`, `pnpm build`, relay `node --test` (6 pass), scratch-crate `cargo test` (5 pass), and a Playwright drive of the browser build: link at the sidebar's foot at 0.75 opacity; click opens the box centred over the pane with the textarea focused; ↵ makes a new line; ⌘↵ shows Sending… then "Thanks. It's on its way." and the box closes itself; a refused note shows the reason with Try again; Esc from either field closes only the box; the link toggles; Tab reaches the email box. Screenshots in light and dark.
+5. Committed on `claude/lucid-curie-3onszg` and pushed.
+
+### Possible next steps
+- Deploy the relay (`cd feedback-relay && npx wrangler deploy`, then `wrangler secret put GITHUB_TOKEN`), paste the printed URL into `src-tauri/.cargo/config.toml`, rebuild.
+- Install the Claude GitHub App on the repo and add `ANTHROPIC_API_KEY` under Actions secrets; the workflows do nothing until then.
+- A `cargo check` of the whole crate on a Mac, since only the new module was compiled here.
+- Remember the email between notes (a `feedbackEmail` setting) if people send more than one.
+- The Home screen has no sidebar, so no link there; a matching link under the recent sessions would cover it.
+- Rate limiting on the relay's route in the Cloudflare dashboard if the URL ever gets abused.
+
 ## Session: 2026-09-12 — Nested as the Mac's app for Markdown files
 
 ### Leading assumptions

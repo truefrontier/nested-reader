@@ -114,6 +114,9 @@ export type Settings = {
   offerDefaultApp: boolean;
 };
 
+/** The Send feedback box keeps the note this long at most; the relay refuses more. */
+export const FEEDBACK_MAX = 5000;
+
 /** Which Mac app opens .md files today, from the desktop backend. */
 export type DefaultApp = {
   /** Display name, e.g. "Typora"; missing when no app is set. */
@@ -262,4 +265,6 @@ export interface Platform {
   defaultMarkdownApp(): Promise<DefaultApp>;
   /** Asks the OS to make this app the default for .md files; resolves once it has answered, with the new state. */
   setDefaultMarkdownApp(): Promise<DefaultApp>;
+  /** Sends a note from the Send feedback box; it is filed as a GitHub issue. Rejects with a sentence to show. */
+  sendFeedback(message: string, email?: string): Promise<void>;
 }

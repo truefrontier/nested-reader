@@ -1,0 +1,52 @@
+# The Send feedback link in the app files an issue labelled "feedback" (see feedback-relay/).
+# When one arrives, Claude reads it against the code, writes a short triage note, and labels it
+# bug, enhancement, or question, so the queue is sorted before anyone opens it.
+#
+# Needs: the Claude GitHub App and an ANTHROPIC_API_KEY secret (see claude.yml).
+name: Feedback Triage
+
+on:
+  issues:
+    types: [opened, labeled]
+
+jobs:
+  triage:
+    # Runs once per issue: on open when the relay set the label, or when someone adds it by hand.
+    if: |
+      (github.event.action == 'opened' && contains(github.event.issue.labels.*.name, 'feedback')) ||
+      (github.event.action == 'labeled' && github.event.label.name == 'feedback')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            ISSUE NUMBER: ${{ github.event.issue.number }}
+
+            This issue is feedback sent from inside the Nested app by a user. Read it with
+            `gh issue view ${{ github.event.issue.number }}`. Then:
+
+            1. Decide whether it is a bug, an enhancement, or a question, and add that label
+               with `gh issue edit ${{ github.event.issue.number }} --add-label <label>`.
+               Add "needs-info" as well when the note is too thin to act on.
+            2. Find the part of the app it concerns (docs/architecture.md maps the code) and,
+               for a bug, the most likely cause.
+            3. Check for an earlier issue about the same thing with
+               `gh issue list --search "<a few words>" --state all` and mention it if there is one.
+            4. Post one comment with `gh issue comment`: what the feedback is asking for in a
+               sentence, where in the code it lands (file paths), a likely cause or a way to
+               do it, and what is still unknown. Keep it under 200 words. Do not address the
+               reporter; they do not see this repository.
+
+            Do not change any code and do not close the issue.
+          claude_args: |
+            --allowedTools "Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh issue edit:*),Bash(gh issue comment:*),Bash(gh search issues:*)"

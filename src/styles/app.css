@@ -1034,6 +1034,50 @@ button {
 .pane-pop .pop {
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.14);
 }
+/* The Send feedback box: a note, an optional email, one line of status. */
+.feedback-pop .pop textarea {
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--fg);
+  padding: 0;
+  width: 100%;
+  resize: none;
+  min-height: 3.4em;
+  max-height: 40vh;
+  field-sizing: content;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.feedback-pop .pop textarea::placeholder,
+.feedback-pop .pop input.email::placeholder {
+  color: var(--mute);
+}
+.feedback-pop .pop input.email {
+  font-size: 12px;
+  padding-top: 7px;
+  border-top: 1px solid var(--hair);
+  border-radius: 0;
+}
+.feedback-pop .pop textarea:disabled,
+.feedback-pop .pop input.email:disabled {
+  opacity: 0.6;
+}
+.feedback-pop .verbs .note {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.feedback-pop .verbs .note.ok {
+  color: var(--acc);
+}
+.feedback-pop .verbs .note.err {
+  color: var(--warn);
+}
 
 /* ---------- top strip ---------- */
 
@@ -1622,6 +1666,25 @@ button {
 }
 .home-new:hover {
   background: var(--card);
+}
+/* The sidebar's foot: the Send feedback link, quiet until hovered. */
+.side-foot {
+  flex: none;
+  margin: 10px 14px 0;
+  text-align: center;
+  font-size: 11px;
+  letter-spacing: 0.01em;
+}
+.side-foot .link {
+  color: var(--mute);
+  opacity: 0.75;
+  cursor: pointer;
+  transition: opacity 0.12s ease-out;
+}
+.side-foot .link:hover,
+.side-foot .link.on {
+  opacity: 1;
+  color: var(--fg);
 }
 .home-new .k,
 .home-card .k {

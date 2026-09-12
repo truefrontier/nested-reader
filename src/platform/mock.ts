@@ -303,6 +303,13 @@ export const mockPlatform: Platform = {
     return { app: markdownApp, isNested: true, available: true };
   },
 
+  /** No relay in the browser: the note is logged. A note starting with "fail:" is refused, to try the error state. */
+  async sendFeedback(message, email) {
+    await new Promise((r) => setTimeout(r, 500));
+    if (/^fail:/i.test(message.trim())) throw new Error("The feedback server refused the note (502).");
+    console.info("[feedback]", { message, email });
+  },
+
   /** A dropped .md file is read into the in-memory folder; browsers give no path for folders. */
   onDragDrop(handler) {
     const over = (e: DragEvent) => {

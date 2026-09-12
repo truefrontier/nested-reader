@@ -3,6 +3,7 @@ mod cli;
 #[cfg(target_os = "macos")]
 mod default_app;
 mod error;
+mod feedback;
 mod files;
 mod migrate;
 #[cfg(target_os = "macos")]
@@ -251,6 +252,16 @@ fn has_api_key(provider: String) -> Result<bool> {
     Ok(ai::api_key(&provider).is_ok())
 }
 
+// ---------- feedback ----------
+
+/// The Send feedback box: posts the note to the relay, which files a GitHub issue.
+#[tauri::command]
+async fn send_feedback(app: AppHandle, message: String, email: Option<String>) -> Result<()> {
+    let url = feedback::relay_url(feedback::RELAY_URL)?;
+    let payload = feedback::payload(&message, email.as_deref(), &app.package_info().version.to_string())?;
+    feedback::send(url, &payload).await
+}
+
 // ---------- AI ----------
 
 #[tauri::command]
@@ -475,6 +486,7 @@ pub fn run() {
             ai_stream,
             ai_cancel,
             ai_ping,
+            send_feedback,
             open_settings,
             open_page_window,
         ])

@@ -1,0 +1,10 @@
+name = "nested-feedback"
+main = "worker.js"
+compatibility_date = "2026-09-01"
+
+[vars]
+# owner/repo the issues are filed on, and the label the triage workflow watches for.
+GITHUB_REPO = "truefrontier/nested-reader"
+LABEL = "feedback"
+
+# GITHUB_TOKEN is a secret, not a var: `wrangler secret put GITHUB_TOKEN`.

@@ -1,0 +1,53 @@
+# Claude reviews every pull request when it opens and again on each push, leaving one comment
+# it keeps up to date, plus inline notes on specific lines.
+#
+# Needs: the Claude GitHub App and an ANTHROPIC_API_KEY secret (see claude.yml).
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review]
+
+jobs:
+  review:
+    # Drafts are reviewed once they are marked ready.
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          use_sticky_comment: true
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            Review this pull request. Nested is a Tauri 2 desktop app: a React + TypeScript
+            webview in src/, Rust in src-tauri/src/. Read docs/architecture.md first so the
+            review matches how the app is put together.
+
+            Look for:
+            - Bugs and behaviour that differs from what the PR description says
+            - State that is written to disk in a way older sessions could not read back
+            - Anything that lets the model or a command reach outside the opened folder
+            - Frontend changes that would break the browser build (pnpm dev, the mock backend)
+            - Missing updates to README.md or docs/architecture.md when behaviour changed
+
+            Keep it short. Skip style remarks the formatter would catch. If nothing is wrong,
+            say so in one line.
+
+            The PR branch is already checked out in the working directory.
+            Use `gh pr comment` for the summary and
+            `mcp__github_inline_comment__create_inline_comment` for notes on specific lines.
+            Only post GitHub comments; do not return the review as a message.
+          claude_args: |
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"

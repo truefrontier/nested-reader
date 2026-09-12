@@ -24,6 +24,9 @@ src-tauri/src/
   files.rs               pages, session.json, versions (atomic writes)
   ai.rs                  streaming for OpenAI, Anthropic, Ollama and OpenAI-compatible APIs
   cli.rs                 plan access through the claude and codex command-line tools
+  feedback.rs            the Send feedback note, posted to the relay
+feedback-relay/          Cloudflare Worker that files a feedback note as a GitHub issue
+.github/workflows/       Claude on GitHub: @claude replies, PR review, feedback triage
 examples/sleep-memory/   sample corpus used by the mock backend
 design/                  Claude Design source files this app implements
 ```
@@ -112,6 +115,14 @@ The plans get the CLI's own tools instead. Claude Code runs with `--tools Read,G
 The store keeps `working[key]` per stream (`lookup`, `page:<path>`, `refine:<path>`) from those events, clearing it on the next text delta and at the end. The answer card shows the line in place of the empty answer, a page being written shows it under its skeleton (`.tool-line`), and the refine status card adds it under the instruction.
 
 `tsc` and the Playwright drive cover the browser build (the mock sends two tool events before its answer when `folder` is set). The tool loops are tested in `ai.rs` against a fake HTTP server on localhost for all three API shapes, and `tools.rs` has unit tests; both run with `cargo test` (on a Mac, or off a Mac against a stub `tauri` crate, since the real one needs the platform's webview libraries).
+
+## Feedback
+
+The **Send feedback** link at the foot of the sidebar (`.side-foot`) opens `FeedbackPopover`, the same bottom-of-pane box as ⌘N and ⌘R (`ui.panePopover = "feedback"`, so Esc and the other popovers treat it alike). It holds a note, an optional email, and one status line; ↵ makes a new line and ⌘↵ sends. The store's `sendFeedback` hands the note to the platform. In the browser the mock logs it (a note starting with `fail:` is refused, to see the error state). In the app, `send_feedback` in `lib.rs` builds the payload in `src-tauri/src/feedback.rs` (the trimmed note, the email when given, the app version, OS and architecture) and posts it as JSON to the relay URL compiled in from `NESTED_FEEDBACK_URL` in `src-tauri/.cargo/config.toml`; an empty URL makes the box say feedback is not set up in this build. A refusal from the relay is plain text and is shown as is; a timeout or a lost connection gets its own sentence. The note is capped at 5000 characters on both sides.
+
+The relay (`feedback-relay/worker.js`) is a dependency-free Cloudflare Worker holding a fine-grained GitHub token with Issues: write on this repository. It files the note as an issue labelled `feedback`: the first line as the title, the note quoted in the body, a contact line with the email or "none given", and the app line. The repository is private, so the email is visible to collaborators only. `node --test` in that folder runs its tests against a stubbed `fetch`.
+
+`.github/workflows/feedback-triage.yml` runs on a new issue carrying that label (or when the label is added by hand): Claude reads it, labels it bug, enhancement or question (and needs-info when it is too thin), looks for an earlier issue about the same thing, and leaves one comment saying where in the code it lands and a likely cause. `claude.yml` answers @claude mentions on issues and pull requests and `claude-code-review.yml` reviews each pull request with a sticky comment. All three need the Claude GitHub App installed and an `ANTHROPIC_API_KEY` repository secret.
 
 ## Appearance
 

@@ -6,7 +6,7 @@ import { Home } from "./reader/Home";
 import { Page } from "./reader/Page";
 import { SplitPane } from "./reader/SplitPane";
 import { MapOverlay } from "./reader/MapOverlay";
-import { NewFilePopover, RefinePopover, RefineStatus } from "./reader/Popovers";
+import { FeedbackPopover, NewFilePopover, RefinePopover, RefineStatus } from "./reader/Popovers";
 import { SidebarIcon } from "./reader/Icons";
 import { useSyncScroll } from "./reader/useSyncScroll";
 import { SettingsApp } from "./settings/SettingsApp";
@@ -146,6 +146,7 @@ export default function App() {
             )}
             {split && <SplitPane />}
             {s.ui.panePopover === "new" && current && <NewFilePopover onSubmit={(text, verb, alt) => void store.newFile(text, verb, alt)} onEsc={() => store.closePopover()} />}
+            {s.ui.panePopover === "feedback" && <FeedbackPopover onSend={(message, email) => store.sendFeedback(message, email)} onEsc={() => store.closePopover()} />}
             {s.ui.panePopover === "refine" && current && (
               <RefinePopover
                 pane

@@ -61,7 +61,7 @@ export type NewFileVerb = "here" | "page" | "deep";
 export type PageOrigin = "highlight" | "session";
 
 /** The box at the bottom of the pane: refine the page or corpus (⌘R), or start a new page (⌘N). */
-export type PanePopover = "refine" | "new";
+export type PanePopover = "refine" | "new" | "feedback";
 
 /** Which pane something belongs to: the reading pane, or the one opened beside or below it. */
 export type PaneRole = "main" | "split";
@@ -855,6 +855,18 @@ export class ReaderStore {
     if (!this.state.session.current) return;
     this.dropLookup();
     this.setUi({ panePopover: ui.panePopover === "new" ? undefined : "new", popover: undefined, selection: undefined, lookup: undefined });
+  }
+
+  /** The Send feedback link at the bottom of the sidebar. Clicking it again closes the box. */
+  toggleFeedback() {
+    const ui = this.state.ui;
+    this.dropLookup();
+    this.setUi({ panePopover: ui.panePopover === "feedback" ? undefined : "feedback", popover: undefined, selection: undefined, lookup: undefined, refineError: undefined });
+  }
+
+  /** Sends the note; the box shows the rejection's message when it fails. */
+  sendFeedback(message: string, email: string) {
+    return platform.sendFeedback(message, email);
   }
 
   /** Reopens the refine box, pre-filled, after a failed attempt. */

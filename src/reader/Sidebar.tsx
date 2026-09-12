@@ -216,6 +216,11 @@ export function Sidebar() {
         <span>New page</span>
         <span className="k">⌘N</span>
       </button>
+      <div className="side-foot">
+        <span className={`link${s.ui.panePopover === "feedback" ? " on" : ""}`} onClick={() => store.toggleFeedback()} title="A bug, an idea, anything">
+          Send feedback
+        </span>
+      </div>
       <div
         className="side-grip"
         title="Drag to resize"
