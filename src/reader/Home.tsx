@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { store, useReader } from "../state/store";
 import type { RecentSession } from "../platform";
-import { MoreIcon, PlusIcon } from "./Icons";
+import { MoreIcon } from "./Icons";
 
 const stop = (e: MouseEvent | KeyboardEvent) => e.stopPropagation();
 
@@ -137,11 +137,6 @@ export function Home() {
             );
           })}
         </div>
-        <button className="home-new" onClick={() => void store.pickPath()}>
-          <PlusIcon />
-          <span>New session</span>
-          <span className="k">⌘O</span>
-        </button>
       </aside>
       <div className="home-main">
         <div className="home-start">

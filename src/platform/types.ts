@@ -44,7 +44,16 @@ export type Session = {
   name?: string;
   /** Answered quick asks, by page path, kept so the answer can be read again from the text it was asked about. */
   asks?: Record<string, Ask[]>;
+  /** Folders and files added to the session with ⌘⇧O, beyond the folder it was opened from. */
+  roots?: SessionRoot[];
 };
+
+/**
+ * Another root of the session: a folder, or with `file` one page (and the pages grown from it) in that
+ * folder. Its pages are keyed by their absolute path, `<folder>/<page>`, so they never collide with the
+ * session folder's own relative paths; `.reader` state for them lives in this folder.
+ */
+export type SessionRoot = { folder: string; file?: string };
 
 /** A quick ask whose answer has come back: the text it was asked about, where that text sat, and the exchange. */
 export type Ask = {
@@ -70,6 +79,8 @@ export type RecentSession = {
 };
 
 export type PathKind = "folder" | "file" | "other";
+/** What the Open panel is for: a new session (⌘O) or a root added to the open one (⌘⇧O). */
+export type PickPurpose = "open" | "add";
 
 /** Something dragged over or dropped on the window. `paths` is set for "enter" and "drop". */
 export type DragDropEvent = { type: "enter" | "over" | "drop" | "leave"; paths: string[] };
@@ -186,6 +197,8 @@ export type AiRequest = {
   maxTokens?: number;
   /** The session folder the model may read with its tools; without it no tools are offered. */
   folder?: string;
+  /** The folders of the session's other roots, which the tools may read too. */
+  roots?: string[];
 };
 
 /** A tool the model is using, reported so the UI can say what it is looking at. */
@@ -204,8 +217,8 @@ export type StreamHandle = { cancel(): void };
 
 export interface Platform {
   isTauri: boolean;
-  /** Shows the Open panel; resolves to the chosen folder or Markdown file, or null when cancelled. */
-  pickPath(): Promise<string | null>;
+  /** Shows the Open panel; resolves to the chosen folder or Markdown file, or null when cancelled. "add" words the panel for ⌘⇧O. */
+  pickPath(purpose?: PickPurpose): Promise<string | null>;
   /** Picks a folder only; Settings uses it for the default folder. */
   pickFolder(): Promise<string | null>;
   /** Whether a dropped path is a folder, a Markdown file, or something else. */

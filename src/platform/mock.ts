@@ -14,10 +14,10 @@ import {
   type VersionInfo,
 } from "./types";
 import { metaFromRaw } from "../lib/frontmatter";
-import { SAMPLE_FILES, SAMPLE_FOLDER } from "./sample";
+import { EXTRA_FILES, EXTRA_FOLDER, SAMPLE_FILES, SAMPLE_FOLDER } from "./sample";
 
 /**
- * Browser-only backend. Keeps a folder in memory so the reader can be
+ * Browser-only backend. Keeps two folders in memory (keyed `<folder>/<page>`) so the reader can be
  * developed, demoed and screenshotted without the Rust side.
  */
 const files = new Map<string, { raw: string; modified: string; created: string }>();
@@ -41,7 +41,11 @@ const stamps: Record<string, number> = {
 };
 for (const [path, raw] of Object.entries(SAMPLE_FILES)) {
   const at = new Date(stamps[path] ?? t0).toISOString();
-  files.set(path, { raw, modified: at, created: at });
+  files.set(`${SAMPLE_FOLDER}/${path}`, { raw, modified: at, created: at });
+}
+for (const [path, raw] of Object.entries(EXTRA_FILES)) {
+  const at = new Date(t0 - 86_400_000).toISOString();
+  files.set(`${EXTRA_FOLDER}/${path}`, { raw, modified: at, created: at });
 }
 
 try {
@@ -55,8 +59,8 @@ try {
 
 const MARKDOWN = /\.(md|markdown)$/i;
 
-function key(path: string) {
-  return path;
+function key(folder: string, path: string) {
+  return `${folder}/${path}`;
 }
 
 function fakeAnswer(req: AiRequest): string {
@@ -95,9 +99,9 @@ function fakeAnswer(req: AiRequest): string {
 export const mockPlatform: Platform = {
   isTauri: false,
 
-  /** The browser has no Open panel, so ⌘O opens the sample folder. */
-  async pickPath() {
-    return SAMPLE_FOLDER;
+  /** The browser has no Open panel, so ⌘O opens the sample folder and ⌘⇧O adds the second one. */
+  async pickPath(purpose) {
+    return purpose === "add" ? EXTRA_FOLDER : SAMPLE_FOLDER;
   },
 
   async pickFolder() {
@@ -125,24 +129,28 @@ export const mockPlatform: Platform = {
     }
   },
 
-  async listPages(): Promise<PageMeta[]> {
-    return [...files.entries()].map(([path, f]) => {
-      const { meta } = metaFromRaw(path, f.raw, f.modified);
-      return { ...meta, created: meta.created ?? f.created };
-    });
+  async listPages(folder): Promise<PageMeta[]> {
+    const prefix = `${folder}/`;
+    return [...files.entries()]
+      .filter(([k]) => k.startsWith(prefix))
+      .map(([k, f]) => {
+        const path = k.slice(prefix.length);
+        const { meta } = metaFromRaw(path, f.raw, f.modified);
+        return { ...meta, created: meta.created ?? f.created };
+      });
   },
 
-  async readPage(_folder, path): Promise<Page> {
-    const f = files.get(key(path));
+  async readPage(folder, path): Promise<Page> {
+    const f = files.get(key(folder, path));
     if (!f) throw new Error(`No such page: ${path}`);
     const { meta, body } = metaFromRaw(path, f.raw, f.modified);
     return { ...meta, created: meta.created ?? f.created, body };
   },
 
-  async writePage(_folder, path, content) {
-    const prev = files.get(key(path));
+  async writePage(folder, path, content) {
+    const prev = files.get(key(folder, path));
     const now = new Date().toISOString();
-    files.set(key(path), { raw: content, modified: now, created: prev?.created ?? now });
+    files.set(key(folder, path), { raw: content, modified: now, created: prev?.created ?? now });
   },
 
   async loadSession(folder, file) {
@@ -153,34 +161,34 @@ export const mockPlatform: Platform = {
     sessions.set(`${folder}#${file ?? ""}`, JSON.parse(JSON.stringify(s)));
   },
 
-  async listVersions(_folder, path): Promise<VersionInfo[]> {
-    return (versions.get(path) ?? []).map(({ n, at }) => ({ n, at }));
+  async listVersions(folder, path): Promise<VersionInfo[]> {
+    return (versions.get(key(folder, path)) ?? []).map(({ n, at }) => ({ n, at }));
   },
 
-  async readVersion(_folder, path, n) {
-    const v = versions.get(path)?.find((x) => x.n === n);
+  async readVersion(folder, path, n) {
+    const v = versions.get(key(folder, path))?.find((x) => x.n === n);
     if (!v) throw new Error(`No version ${n}`);
     return v.content;
   },
 
-  async snapshotVersion(_folder, path) {
-    const f = files.get(key(path));
+  async snapshotVersion(folder, path) {
+    const f = files.get(key(folder, path));
     if (!f) throw new Error(`No such page: ${path}`);
-    const list = versions.get(path) ?? [];
+    const list = versions.get(key(folder, path)) ?? [];
     const n = (list.at(-1)?.n ?? 0) + 1;
     list.push({ n, at: new Date().toISOString(), content: f.raw });
-    versions.set(path, list);
+    versions.set(key(folder, path), list);
     return n;
   },
 
   async restoreVersion(folder, path, n) {
     const content = await this.readVersion(folder, path, n);
     await this.writePage(folder, path, content);
-    versions.set(path, (versions.get(path) ?? []).filter((v) => v.n < n));
+    versions.set(key(folder, path), (versions.get(key(folder, path)) ?? []).filter((v) => v.n < n));
   },
 
-  async deleteVersion(_folder, path, n) {
-    versions.set(path, (versions.get(path) ?? []).filter((v) => v.n !== n));
+  async deleteVersion(folder, path, n) {
+    versions.set(key(folder, path), (versions.get(key(folder, path)) ?? []).filter((v) => v.n !== n));
   },
 
   async getSettings() {

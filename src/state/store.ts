@@ -12,6 +12,7 @@ import {
   type Placement,
   type RecentSession,
   type Session,
+  type SessionRoot,
   type Settings,
   type StreamHandle,
   type VersionInfo,
@@ -23,7 +24,7 @@ import { serializePage, titleFromBody } from "../lib/frontmatter";
 import { slugify, titleFromQuestion, uniquePath } from "../lib/slug";
 import { nowIso } from "../lib/time";
 import { newFileMessages, newPageMessages, quickAnswerMessages, refineMessages, type AskContext, type RefineScope } from "../lib/prompts";
-import { dirOf, folderChain, growsFrom, sessionPages } from "../lib/tree";
+import { dirOf, folderChain, growsFrom, rootDirs, sessionPages } from "../lib/tree";
 
 export type Selection = {
   /** The pane the text was highlighted in: the box opens there and its verbs act on that pane's page. */
@@ -320,6 +321,96 @@ export class ReaderStore {
     }
   }
 
+  // ---------- roots added to the session ----------
+
+  /** ⌘⇧O: adds a folder or a .md file to the open session, so its pages join the tree, the context and the model's tools. */
+  async addRoot() {
+    if (!this.state.folder || this.state.home) return;
+    try {
+      const path = await platform.pickPath("add");
+      if (!path) return;
+      const kind = await platform.pathKind(path);
+      if (kind === "other") return this.fail("Add a folder or a .md file.");
+      await this.includeRoot(kind === "folder" ? { folder: path } : splitFilePath(path));
+    } catch (e) {
+      this.fail(e);
+    }
+  }
+
+  private async includeRoot(root: SessionRoot) {
+    const primary = this.state.folder;
+    if (!primary) return;
+    const roots = this.state.session.roots ?? [];
+    if (roots.some((r) => r.folder === root.folder && (r.file ?? "") === (root.file ?? ""))) return this.fail("That is already part of this session.");
+    const fresh = await this.rootPages(root, primary, takenPaths(this.state.pages, primary, this.rootDirs()));
+    if (!this.state.folder || this.state.folder !== primary) return;
+    const keys = Object.keys(fresh);
+    if (!keys.length) return this.fail(root.file ? "That page is already in this session." : "No new pages there: the folder has none, or they are already in this session.");
+    this.set({ pages: { ...this.state.pages, ...fresh } });
+    this.setSession({ roots: [...roots, root] });
+    const dir = root.folder === primary ? "" : root.folder;
+    if (this.state.session.collapsed?.includes(dir)) this.toggleFolder(dir);
+    if (!this.state.session.current) await this.navigate(root.file ? keys[0] : keys.sort()[0]);
+  }
+
+  /** Takes a root's folder (every root in it) out of the session and reloads, so its pages leave the tree. */
+  async removeRoot(folder: string) {
+    const { folder: primary, rootFile, session } = this.state;
+    if (!primary) return;
+    const roots = (session.roots ?? []).filter((r) => r.folder !== folder);
+    try {
+      window.clearTimeout(this.saveTimer);
+      await platform.saveSession(primary, { ...session, roots: roots.length ? roots : undefined }, rootFile);
+      await this.openFolder(primary, { file: rootFile });
+    } catch (e) {
+      this.fail(e);
+    }
+  }
+
+  /**
+   * The pages of one root, keyed as the session holds them: by full path, `<folder>/<page>`, or by their
+   * relative path when the root is the session folder itself. A file root gives that page and the pages grown
+   * from it, like a file session. Pages whose file is already in the session (`taken` holds full paths) are
+   * left out, so overlapping roots never list a page twice.
+   */
+  private async rootPages(root: SessionRoot, primary: string, taken: Set<string>): Promise<Record<string, PageMeta>> {
+    const list = await platform.listPages(root.folder);
+    const all: Record<string, PageMeta> = {};
+    for (const p of list) all[p.path] = p;
+    if (root.file && !all[root.file]) throw new Error(`Not a Markdown page: ${root.file}`);
+    const own = root.folder === primary;
+    const out: Record<string, PageMeta> = {};
+    for (const p of list) {
+      if (root.file && !growsFrom(p.path, root.file, all)) continue;
+      const abs = `${root.folder}/${p.path}`;
+      if (taken.has(abs)) continue;
+      const key = own ? p.path : abs;
+      out[key] = keyedMeta(p, key, root.folder);
+    }
+    return out;
+  }
+
+  /** The folders of the roots added with ⌘⇧O, other than the session folder itself. */
+  private rootDirs(): string[] {
+    return rootDirs(this.state.session.roots, this.state.folder);
+  }
+
+  /**
+   * Where a page lives on disk: the session folder and the page's path inside it, or for a page of an added
+   * root (keyed by its full path) that root's folder and the path inside it.
+   */
+  private loc(path: string): { folder: string; rel: string } {
+    const dir = rootOfKey(path, this.rootDirs());
+    return dir ? { folder: dir, rel: path.slice(dir.length + 1) } : { folder: this.state.folder ?? "", rel: path };
+  }
+
+  /** Writes a page's front matter and body where the page lives; the source is written as that folder knows it. */
+  private async writePage(path: string, body: string, meta: PageMeta = this.state.pages[path]) {
+    const { folder, rel } = this.loc(path);
+    const source = meta.source?.startsWith(folder + "/") ? meta.source.slice(folder.length + 1) : meta.source;
+    await platform.writePage(folder, rel, serializePage({ ...meta, source }, body));
+  }
+
   /**
    * Loads a folder as the session. With `file`, only that page and the pages grown from it
    * are shown. The folder's saved session is restored, so you land where you left off.
@@ -339,6 +430,19 @@ export class ReaderStore {
       const stored = await platform.loadSession(folder, file);
       if (this.opening !== target) return;
       const session: Session = { ...emptySession(), ...(stored ?? {}) };
+      // The roots added with ⌘⇧O bring their pages along; one that cannot be read any more is dropped from the session.
+      const roots: SessionRoot[] = [];
+      let lost: string | undefined;
+      for (const root of session.roots ?? []) {
+        try {
+          Object.assign(pages, await this.rootPages(root, folder, takenPaths(pages, folder, rootDirs(roots, folder))));
+          roots.push(root);
+        } catch {
+          lost = root.file ? `${root.folder}/${root.file}` : root.folder;
+        }
+      }
+      if (this.opening !== target) return;
+      session.roots = roots.length ? roots : undefined;
       session.loading = session.loading.filter((p) => pages[p]);
       session.unread = session.unread.filter((p) => pages[p]);
       for (const key of Object.keys(session.pending)) if (!pages[key]) delete session.pending[key];
@@ -363,6 +467,7 @@ export class ReaderStore {
         await this.refreshVersions(session.split);
       }
       this.rememberSession();
+      if (lost) this.fail(`Couldn't read ${lost}; it was dropped from the session.`);
       if (this.state.settings.folder !== folder) {
         const settings = { ...this.state.settings, folder };
         this.set({ settings });
@@ -466,8 +571,10 @@ export class ReaderStore {
     const cached = this.state.bodies[path];
     if (cached !== undefined) return cached;
     if (!this.state.folder) return "";
-    const page = await platform.readPage(this.state.folder, path);
-    this.set({ bodies: { ...this.state.bodies, [path]: page.body }, pages: { ...this.state.pages, [path]: { ...this.state.pages[path], ...page, body: undefined } as PageMeta } });
+    const { folder, rel } = this.loc(path);
+    const page = await platform.readPage(folder, rel);
+    const meta = keyedMeta({ ...this.state.pages[path], ...page, body: undefined } as PageMeta, path, folder);
+    this.set({ bodies: { ...this.state.bodies, [path]: page.body }, pages: { ...this.state.pages, [path]: meta } });
     return page.body;
   }
 
@@ -615,7 +722,7 @@ export class ReaderStore {
   revealInTree(path: string) {
     const list = this.state.session.collapsed ?? [];
     if (!list.length) return;
-    const chain = folderChain(dirOf(path));
+    const chain = folderChain(dirOf(path), this.rootDirs());
     const next = list.filter((d) => !chain.includes(d));
     if (next.length !== list.length) this.setSession({ collapsed: next });
   }
@@ -822,7 +929,8 @@ export class ReaderStore {
     const baseUrl = s.provider === "ollama" ? s.ollamaUrl : s.provider === "custom" ? s.baseUrl : undefined;
     // With tools on, the request names the session folder so the model can read its pages itself.
     const folder = s.tools ? this.state.folder : undefined;
-    return { provider: s.provider, auth, model: s.models[modelSlot(s.provider, auth)], baseUrl: baseUrl || undefined, system, messages, maxTokens, folder };
+    const roots = folder ? this.rootDirs() : undefined;
+    return { provider: s.provider, auth, model: s.models[modelSlot(s.provider, auth)], baseUrl: baseUrl || undefined, system, messages, maxTokens, folder, roots: roots?.length ? roots : undefined };
   }
 
   private stream(key: string, req: AiRequest, on: { delta: (t: string) => void; done: () => void; error: (m: string) => void }) {
@@ -1110,7 +1218,7 @@ export class ReaderStore {
     blocks[block] = { ...b, raw };
     const next = joinBlocks(blocks);
     this.set({ bodies: { ...this.state.bodies, [path]: next } });
-    await platform.writePage(this.state.folder, path, serializePage(this.state.pages[path], next));
+    await this.writePage(path, next);
   }
 
   // ---------- refine & review ----------
@@ -1143,8 +1251,7 @@ export class ReaderStore {
   private refinePage(path: string, instruction: string, selection: Selection | undefined): Promise<void> {
     return new Promise((resolve, reject) => {
       void (async () => {
-        const folder = this.state.folder;
-        if (!folder) return resolve();
+        if (!this.state.folder) return resolve();
         const body = await this.loadBody(path);
         const blocks = lexBlocks(body);
         const target = selection ? selection.text : body;
@@ -1171,8 +1278,9 @@ export class ReaderStore {
                   next = cleaned.endsWith("\n") ? cleaned : cleaned + "\n";
                 }
                 if (next.trim() === body.trim()) return resolve();
-                const n = await platform.snapshotVersion(folder, path);
-                await platform.writePage(folder, path, serializePage(this.state.pages[path], next));
+                const { folder: root, rel } = this.loc(path);
+                const n = await platform.snapshotVersion(root, rel);
+                await this.writePage(path, next);
                 this.set({ bodies: { ...this.state.bodies, [path]: next } });
                 this.setSession({ pending: { ...this.state.session.pending, [path]: n } });
                 if (this.isShown(path)) await this.refreshVersions(path);
@@ -1205,7 +1313,8 @@ export class ReaderStore {
     }
     if (this.state.reviewBases[path]?.n === n) return;
     try {
-      const raw = await platform.readVersion(this.state.folder, path, n);
+      const { folder, rel } = this.loc(path);
+      const raw = await platform.readVersion(folder, rel, n);
       this.set({ reviewBases: { ...this.state.reviewBases, [path]: { path, n, body: stripFrontMatter(raw) } } });
     } catch {
       const pending = { ...this.state.session.pending };
@@ -1233,7 +1342,7 @@ export class ReaderStore {
     if (!diff || !path || !this.state.folder) return;
     try {
       const next = revertChange(diff, change);
-      await platform.writePage(this.state.folder, path, serializePage(this.state.pages[path], next));
+      await this.writePage(path, next);
       this.set({ bodies: { ...this.state.bodies, [path]: next } });
       if (diffBodies(this.state.reviewBases[path]?.body ?? "", next).changes.length === 0) await this.undoAll(path);
     } catch (e) {
@@ -1245,8 +1354,9 @@ export class ReaderStore {
     const base = path ? this.state.reviewBases[path] : undefined;
     if (!path || !base || !this.state.folder) return;
     try {
-      await platform.writePage(this.state.folder, path, serializePage(this.state.pages[path], base.body));
-      await platform.deleteVersion(this.state.folder, path, base.n);
+      await this.writePage(path, base.body);
+      const { folder, rel } = this.loc(path);
+      await platform.deleteVersion(folder, rel, base.n);
       const pending = { ...this.state.session.pending };
       delete pending[path];
       this.set({ bodies: { ...this.state.bodies, [path]: base.body }, reviewBases: this.withoutReview(path) });
@@ -1293,7 +1403,8 @@ export class ReaderStore {
     if (!this.state.folder) return;
     let list: VersionInfo[] = [];
     try {
-      list = await platform.listVersions(this.state.folder, path);
+      const { folder, rel } = this.loc(path);
+      list = await platform.listVersions(folder, rel);
     } catch {
       list = [];
     }
@@ -1333,7 +1444,8 @@ export class ReaderStore {
         if (this.panePath(role) !== path) return;
       }
       if (this.state.versionBodies[path]?.[n] === undefined) {
-        const raw = await platform.readVersion(this.state.folder, path, n);
+        const { folder: root, rel } = this.loc(path);
+        const raw = await platform.readVersion(root, rel, n);
         const forPage = { ...(this.state.versionBodies[path] ?? {}), [n]: stripFrontMatter(raw) };
         this.set({ versionBodies: { ...this.state.versionBodies, [path]: forPage } });
       }
@@ -1363,8 +1475,9 @@ export class ReaderStore {
     const n = this.state.ui.versionView[role].viewing;
     if (!path || n === undefined || !this.state.folder) return;
     try {
-      await platform.restoreVersion(this.state.folder, path, n);
-      const page = await platform.readPage(this.state.folder, path);
+      const { folder, rel } = this.loc(path);
+      await platform.restoreVersion(folder, rel, n);
+      const page = await platform.readPage(folder, rel);
       const pending = { ...this.state.session.pending };
       delete pending[path];
       this.set({ bodies: { ...this.state.bodies, [path]: page.body }, reviewBases: this.withoutReview(path) });
@@ -1388,6 +1501,9 @@ export class ReaderStore {
     switch (id) {
       case "open":
         void this.pickPath();
+        break;
+      case "add-root":
+        void this.addRoot();
         break;
       case "home":
         this.toggleHome();
@@ -1433,6 +1549,35 @@ export class ReaderStore {
         break;
     }
   }
+}
+
+/** The folder among `dirs` an added root's page key starts with, the longest when they nest; undefined for a session-folder page. */
+function rootOfKey(key: string, dirs: string[]): string | undefined {
+  let best: string | undefined;
+  for (const dir of dirs) if (key.startsWith(dir + "/") && dir.length > (best?.length ?? 0)) best = dir;
+  return best;
+}
+
+/** A .md path as a root: its folder, and the file inside it. */
+function splitFilePath(path: string): SessionRoot {
+  const i = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+  if (i <= 0) throw new Error(`Could not find the folder of ${path}`);
+  return { folder: path.slice(0, i), file: path.slice(i + 1) };
+}
+
+/** The full path of every page the session holds, whichever root it came from. */
+function takenPaths(pages: Record<string, PageMeta>, primary: string, dirs: string[]): Set<string> {
+  return new Set(Object.keys(pages).map((k) => (rootOfKey(k, dirs) ? k : `${primary}/${k}`)));
+}
+
+/**
+ * A page as the session keys it. A page read from disk names its source relative to its own folder; under a
+ * full-path key (`key` differs from the path inside `folder`) the source is given the same prefix, so the link
+ * resolves against the session's pages.
+ */
+function keyedMeta(meta: PageMeta, key: string, folder: string): PageMeta {
+  const source = meta.source && key !== meta.path ? `${folder}/${meta.source}` : meta.source;
+  return { ...meta, path: key, source };
 }
 
 function flipPlacement(p: Placement): Placement {

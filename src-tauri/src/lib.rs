@@ -35,21 +35,29 @@ async fn pick_folder(app: AppHandle) -> Result<Option<String>> {
     Ok(rx.await.map_err(|_| AppError::Message("dialog closed".into()))?)
 }
 
-/// ⌘O: one Open panel for both kinds of session, a folder or a single Markdown file.
+/// ⌘O and ⌘⇧O: one Open panel for a folder or a single Markdown file, worded for starting a
+/// session (`purpose` "open") or for adding to the open one ("add").
 #[tauri::command]
-async fn pick_path(app: AppHandle) -> Result<Option<String>> {
+async fn pick_path(app: AppHandle, purpose: Option<String>) -> Result<Option<String>> {
+    let message = match purpose.as_deref() {
+        Some("add") => "Add a folder of Markdown notes, or a single .md file, to this session.",
+        _ => "Open a folder of Markdown notes, or a single .md file.",
+    };
     #[cfg(target_os = "macos")]
     {
         let (tx, rx) = tokio::sync::oneshot::channel();
         app.run_on_main_thread(move || {
-            let _ = tx.send(open_panel::folder_or_markdown());
+            let _ = tx.send(open_panel::folder_or_markdown(message));
         })
         .map_err(|e| AppError::Message(e.to_string()))?;
         Ok(rx.await.map_err(|_| AppError::Message("dialog closed".into()))?)
     }
     // Other platforms have no panel that takes both, so they get the folder picker.
     #[cfg(not(target_os = "macos"))]
-    pick_folder(app).await
+    {
+        let _ = message;
+        pick_folder(app).await
+    }
 }
 
 #[tauri::command]
@@ -277,11 +285,13 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
     // ⌘N stays in the webview, like ⌘R, so it also works while the ask box has focus.
     let new_page = MenuItemBuilder::with_id("new-page", "New Page… (⌘N)").build(app)?;
     let open = MenuItemBuilder::with_id("open", "Open…").accelerator("CmdOrCtrl+O").build(app)?;
+    let add_root = MenuItemBuilder::with_id("add-root", "Add to Session…").accelerator("CmdOrCtrl+Shift+O").build(app)?;
     let close_pane = MenuItemBuilder::with_id("close-pane", "Close Pane").accelerator("CmdOrCtrl+W").build(app)?;
     let file_menu = SubmenuBuilder::new(app, "File")
         .item(&new_page)
         .separator()
         .item(&open)
+        .item(&add_root)
         .separator()
         .item(&close_pane)
         .build()?;
