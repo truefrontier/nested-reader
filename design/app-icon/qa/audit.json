@@ -1,0 +1,51 @@
+{
+  "source": "design/app-icon/production/flattened/app-icon-1024.png",
+  "platform": "macos",
+  "role": "flattened",
+  "width": 1024,
+  "height": 1024,
+  "mode": "RGB",
+  "format": "PNG",
+  "icc_profile_present": false,
+  "alpha_present": false,
+  "alpha_min": 255,
+  "alpha_max": 255,
+  "nonopaque_pixels": 0,
+  "alpha_content_box": [
+    0,
+    0,
+    1024,
+    1024
+  ],
+  "corner_alpha_max": 255,
+  "corner_luma_range": 3.0,
+  "edge_luma_range": 4.0,
+  "preview_mask": "rounded-rectangle",
+  "findings": [
+    {
+      "severity": "warning",
+      "code": "icc-profile",
+      "message": "No embedded ICC profile was detected. Confirm sRGB, Display P3, or Gray Gamma 2.2 in the production source."
+    }
+  ],
+  "preview_files": [
+    "design/app-icon/previews/app-icon-1024-16x16px.png",
+    "design/app-icon/previews/app-icon-1024-20x20px.png",
+    "design/app-icon/previews/app-icon-1024-29x29px.png",
+    "design/app-icon/previews/app-icon-1024-40x40px.png",
+    "design/app-icon/previews/app-icon-1024-60x60px.png",
+    "design/app-icon/previews/app-icon-1024-76x76px.png",
+    "design/app-icon/previews/app-icon-1024-83x83px.png",
+    "design/app-icon/previews/app-icon-1024-128x128px.png",
+    "design/app-icon/previews/app-icon-1024-256x256px.png",
+    "design/app-icon/previews/app-icon-1024-macos-appearance-sheet.png",
+    "design/app-icon/previews/app-icon-1024-macos-context-board.png"
+  ],
+  "passed": true,
+  "limitations": [
+    "Static bitmap checks and approximate context previews only.",
+    "Preview masks are heuristics, not Apple's official mask geometry.",
+    "Mono and tinted previews are simulations, not Icon Composer renders.",
+    "Does not validate .icon structure, Xcode settings/builds, Simulator, device, App Store, or conversion."
+  ]
+}

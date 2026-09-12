@@ -1,5 +1,19 @@
 # Progress
 
+## Session: 2026-09-11 — app icon and brand files committed
+
+### Leading assumptions
+- "Commit the logos and app icons and all that" covers the regenerated macOS icon set in `src-tauri/icons` (`icon.icns`, `icon.png`, `32x32.png`, `128x128.png`, `128x128@2x.png`), the design sources and QA record under `design/app-icon/`, the logomark SVGs under `design/brand/`, and `src/assets/nested-mark.svg`. The Windows-only files in `src-tauri/icons` (`icon.ico`, the `Square*Logo.png` set) still hold the old artwork; the app ships for macOS, and regenerating them with `tauri icon` would overwrite the hand-built ICNS, so they were left alone.
+- "Should look like this icon for this build release" names the `Nested.app` built under `/private/tmp/nested-light-icon-build.OlKOC7`. Its `icon.icns` is byte-identical to the one committed (SHA-256 `a64d1dc0…`), the same hash `design/app-icon/qa/status.md` records.
+
+### World facts
+- The icon is the asymmetric woven Nested logomark on a cream background (`#F6EFE4`), static across appearances; a dark counterpart is kept prepared under `design/app-icon/production/`. Provenance and approval live in `design/app-icon/provenance.yaml` and `design-approval.yaml`.
+- `src/assets/nested-mark.svg` is not referenced by the app yet.
+
+### Timeline
+1. Fetched; `main` had gained "Let the model read the folder with tools". Fast-forwarded under the icon changes, which touch nothing upstream changed.
+2. Compared the repo ICNS with the release build's, then committed the icons and design files on `main` and pushed.
+
 ## Session: 2026-09-11 — tool calling: the model can read the folder itself
 
 ### Leading assumptions

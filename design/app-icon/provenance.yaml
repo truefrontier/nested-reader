@@ -1,0 +1,11 @@
+name: nested-macos-cream-static-v2
+generated_at: 2026-09-11T22:23:00Z
+input_roles:
+  - path: design/app-icon/production/flattened/light-default-large-source.png
+    role: approved light-appearance raster artwork for 64 px through 1024 px
+  - path: design/app-icon/concepts/light-appearance-b1/nested-logomark-tight-small-light.svg
+    role: thickened light-appearance SVG for 16 px and 32 px
+rights_note: User supplied and approved both source routes for this project.
+delivery_route: flattened ICNS generated with Apple iconutil for the Tauri macOS bundle.
+appearance_note: The current Tauri ICNS bundle is static; the cream appearance is the packaged default. Dark artwork is retained as a prepared, non-switching counterpart.
+status: prepared for rebuild; not yet bundle-validated.
