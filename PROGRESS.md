@@ -19,6 +19,7 @@
 3. Added `toggleUnread` to the store, the button, right‑click and dropdown to the Sidebar, the CSS, and the doc lines. `tsc` and `pnpm build` pass.
 4. Drove the browser mock with Playwright: ⋯ shows on hover; click shows "Mark unread"; choosing it adds the blue dot to the row and the unread filter dot, the current page stays current; right‑click shows "Mark read"; Esc and an outside click close it; "Mark read" clears both dots; a plain row click still opens the page.
 5. Committed on `claude/clever-curie-e6fab2` and pushed.
+6. Kevin asked for a merge into `main`. Main had gained the app icon and brand files; merged it into the branch (only `PROGRESS.md` conflicted, both entries kept), `tsc` and `pnpm build` pass, and `main` was fast-forwarded and pushed.
 
 ### Verification
 - `tsc`, `pnpm build`: pass. Playwright drive as above, screenshots of the open menu and the marked row.
@@ -28,6 +29,20 @@
 - More items in the same menu: Open beside, Open in new window, Reveal in Finder, all of which the store already knows how to do.
 - The Web map rows could carry the same menu.
 - If a tree is long, a menu on the last row extends the tree's scroll area rather than flipping upward.
+
+## Session: 2026-09-11 — app icon and brand files committed
+
+### Leading assumptions
+- "Commit the logos and app icons and all that" covers the regenerated macOS icon set in `src-tauri/icons` (`icon.icns`, `icon.png`, `32x32.png`, `128x128.png`, `128x128@2x.png`), the design sources and QA record under `design/app-icon/`, the logomark SVGs under `design/brand/`, and `src/assets/nested-mark.svg`. The Windows-only files in `src-tauri/icons` (`icon.ico`, the `Square*Logo.png` set) still hold the old artwork; the app ships for macOS, and regenerating them with `tauri icon` would overwrite the hand-built ICNS, so they were left alone.
+- "Should look like this icon for this build release" names the `Nested.app` built under `/private/tmp/nested-light-icon-build.OlKOC7`. Its `icon.icns` is byte-identical to the one committed (SHA-256 `a64d1dc0…`), the same hash `design/app-icon/qa/status.md` records.
+
+### World facts
+- The icon is the asymmetric woven Nested logomark on a cream background (`#F6EFE4`), static across appearances; a dark counterpart is kept prepared under `design/app-icon/production/`. Provenance and approval live in `design/app-icon/provenance.yaml` and `design-approval.yaml`.
+- `src/assets/nested-mark.svg` is not referenced by the app yet.
+
+### Timeline
+1. Fetched; `main` had gained "Let the model read the folder with tools". Fast-forwarded under the icon changes, which touch nothing upstream changed.
+2. Compared the repo ICNS with the release build's, then committed the icons and design files on `main` and pushed.
 
 ## Session: 2026-09-11 — tool calling: the model can read the folder itself
 

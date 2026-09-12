@@ -1,0 +1,47 @@
+schema_version: 1
+status: approved
+concept:
+  id: nested-macos-cream-static-v2
+  path: design/app-icon/production/flattened/app-icon-1024.png
+  sha256: 46a501cf82d28465cc52537db965430dcb686975f2842258f1ca15e16b482be6
+approval:
+  explicitly_approved: true
+  approved_at: 2026-09-11T22:23:00Z
+  evidence_note: User requested that the cream-background light appearance be rebuilt after visual review; the dark artwork is preserved as a prepared counterpart.
+design_lock:
+  product_promise: Calm research reader for a folder of Markdown notes.
+  recognition_anchor: Asymmetric woven Nested logomark.
+  metaphor: Interwoven nested strands.
+  silhouette: Wide, rounded nest-like weave with a slight diagonal tilt.
+  composition: Centered unmasked square artwork on a light cream background; thick optical SVG is used only at 16 px and 32 px, with the light-appearance raster used from 64 px through 1024 px.
+  palette:
+    - name: cream background
+      value: "#F6EFE4"
+    - name: warm brown mark
+      value: "#6B432D"
+  protected_invariants:
+    - Preserve the approved light-appearance raster artwork at 64 px and larger.
+    - Preserve the thickened SVG path geometry at 16 px and 32 px.
+    - Do not bake a rounded-square mask into any source image.
+  permitted_production_translations:
+    - Resize approved artwork for the macOS ICNS wells.
+    - Use the thickened SVG-derived images only for the 16 px and 32 px wells.
+production_plan:
+  authorized: true
+  delivery_route: flattened-icns
+  composer_feasibility: not selected; this Tauri macOS bundle consumes an ICNS file and the user selected a flattened raster route.
+  composer_adaptation_requires_reapproval: true
+  layers:
+    - order: 1
+      id: 01-large-raster
+      role: opaque flattened source for 64 px through 1024 px
+      source_decision: approved-light-appearance-raster
+      reason: Use the approved cream-background appearance at larger sizes.
+    - order: 2
+      id: 02-small-vector
+      role: opaque flattened source for 16 px and 32 px
+      source_decision: thickened-svg-light-appearance
+      reason: Preserve clean optical line weight and contrast where the original fine strands disappear.
+  reapproval_triggers:
+    - Changed recognition anchor, size assignment, or protected artwork.
+    - Materially changed silhouette, focal scale, palette, or lighting continuity.
