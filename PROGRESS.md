@@ -22,10 +22,12 @@
 3. Designed roots as full-path keys so nothing else in the store had to learn about folders beyond `loc`; touched every folder-bound platform call.
 4. Extended the tools, CLI note and Open panel on the Rust side; added a unit test for roots in `tools.rs`.
 5. Verified with Playwright on the browser build: no footer buttons on the tree or Home; ⌘⇧O adds `targeted-reactivation` as a header with its two pages nested by source; a page there opens, refines (snapshot, change tint, pending dot); ⌘O reopening the same folder brings the root back from the saved session; adding it twice is refused; the header's ··· and right-click show Remove from session, which empties the tree of it; a plain click on the header still collapses it.
-6. Installed the GTK/WebKit dev libraries in the container so the Tauri crate compiles; `cargo test --lib` run for the Rust side (result recorded below).
+6. Installed the GTK/WebKit dev libraries in the container so the Tauri crate compiles; `cargo test --lib` passes (10 tests, the new roots test among them).
+7. Committed on `claude/blissful-galileo-09katg` and pushed.
+8. Kevin asked for a merge into `main`. Main had gained the Finder / default Markdown app change; merged it into the branch (only `PROGRESS.md` conflicted, both entries kept). On the merged code `tsc`, `pnpm build`, `cargo test --lib` and the Playwright drive all pass; `main` fast-forwarded and pushed.
 
 ### Verification
-- `tsc --noEmit`, `pnpm build`: pass. Playwright drive as above (screenshots in the scratchpad).
+- `tsc --noEmit`, `pnpm build`, `cargo test --lib`: pass. Playwright drive as above (screenshots in the scratchpad).
 - Not checked: the desktop app itself (the panel wording, the menu item, and the CLI `--add-dir` list need a macOS build).
 
 ### Possible next steps
