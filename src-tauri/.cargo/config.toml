@@ -1,5 +1,5 @@
-# Where the Send feedback box posts its note: the URL of the worker in feedback-relay/, printed by
-# `wrangler deploy`. Compiled into the app (`option_env!` in src/feedback.rs); empty means the box
-# says feedback is not set up in this build. A value already in the shell's environment wins.
+# Where the Send feedback box posts its note: the URL of the Fly relay in feedback-relay/.
+# Compiled into the app (`option_env!` in src/feedback.rs); empty means the box says feedback
+# is not set up in this build. A value already in the shell's environment wins.
 [env]
-NESTED_FEEDBACK_URL = ""
+NESTED_FEEDBACK_URL = "https://nested-feedback.fly.dev"
