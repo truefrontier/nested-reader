@@ -21,6 +21,7 @@
 3. Wrote the three workflows, the relay (worker, wrangler config, README, tests), the Rust module and command, the `.cargo/config.toml` slot for the URL, and the frontend (contract, mock, tauri bridge, store, popover, sidebar link, CSS). README and `docs/architecture.md` describe the path.
 4. Verified: `tsc`, `pnpm build`, relay `node --test` (6 pass), scratch-crate `cargo test` (5 pass), and a Playwright drive of the browser build: link at the sidebar's foot at 0.75 opacity; click opens the box centred over the pane with the textarea focused; ↵ makes a new line; ⌘↵ shows Sending… then "Thanks. It's on its way." and the box closes itself; a refused note shows the reason with Try again; Esc from either field closes only the box; the link toggles; Tab reaches the email box. Screenshots in light and dark.
 5. Committed on `claude/lucid-curie-3onszg` and pushed.
+6. Kevin asked for a merge into `main`. Main had dropped the sidebar's New page button and gained ⌘⇧O (add a folder or file to the session); merged it into the branch, keeping main's removal of the button and this branch's Send feedback link beneath the tree (conflicts in `Sidebar.tsx`, `app.css` and `PROGRESS.md`). `tsc`, `pnpm build` and both Playwright drives pass on the merged code; `main` was fast-forwarded and pushed.
 
 ### Possible next steps
 - Deploy the relay (`cd feedback-relay && npx wrangler deploy`, then `wrangler secret put GITHUB_TOKEN`), paste the printed URL into `src-tauri/.cargo/config.toml`, rebuild.
@@ -30,6 +31,40 @@
 - The Home screen has no sidebar, so no link there; a matching link under the recent sessions would cover it.
 - Rate limiting on the relay's route in the Cloudflare dashboard if the URL ever gets abused.
 
+## Session: 2026-09-12 — sidebar buttons gone; ⌘⇧O adds a folder or file to the session
+
+### Leading assumptions
+- "The bottom of their sidebar" covers both places a footer button lived: **New page** (⌘N) at the foot of the session tree and **New session** (⌘O) under the recents list on Home. Both are gone; the keys, the File menu items and the Home card stay.
+- "Add a file or folder to the current session" means more roots, not a new session: the added pages join the tree, the Folder context toggle and the model's tools, and are remembered in the session so they come back next time. It is not the same as **Refine corpus**, which still follows `source` links from the current page, as before.
+- An added root needs a way out, so its header carries the same ··· menu the rows have, with one item: Remove from session.
+
+### World facts
+- `Session.roots?: { folder, file? }[]` (in `src/platform/types.ts`) lists the added roots; they are saved in the primary folder's `.reader/session.json`.
+- Keys: an added folder's pages are keyed `<folder>/<page>` (full path); a root that is the session folder itself keeps relative keys. `keyedMeta` prefixes `source` the same way on load, and the store's `writePage` strips it again, so files on disk stay relative to their own folder. `loc(path)` maps any key to `{ folder, rel }` for every platform call (read, write, versions, restore). Pages already in the session (by full path) are skipped, so overlapping roots never duplicate.
+- `openFolder` loads each root after the primary listing and drops one that can't be read, with a toast. `addRoot` (⌘⇧O, menu id `add-root`, File › Add to Session…) uses the Open panel worded for adding (`pickPath("add")`); `removeRoot(folder)` saves the session without those roots and reloads.
+- Tree: `buildFolders(pages, rootDirs)` hangs each added folder off the top as a header (`FolderNode.root`); `folderChain` stops at a root dir. Sidebar: `.folder.root > .frow` shows a ··· button and a `.row-menu` (auto width, no wrap), also on right-click.
+- Rust: `AiRequest.roots: Vec<String>`; `tools.rs` lists added folders' pages by full path, `locate` resolves a listed path to its folder, search spans all; `cli.rs` adds one `--add-dir` per root and words the folder note for several folders; `pick_path(purpose)` chooses the panel message; a new File menu item with `CmdOrCtrl+Shift+O`.
+- Browser mock: files keyed `<folder>/<page>`, a second sample folder `examples/targeted-reactivation` (`EXTRA_FOLDER`), and `pickPath("add")` returns it.
+- Docs: README Reading paragraph and shortcut table, `docs/architecture.md` session section (new paragraph on roots) and the ⌘N paragraph (no more button).
+
+### Timeline
+1. Kevin asked for the two footer buttons to go (keys kept) and for ⌘⇧O to add a file or folder to the current session.
+2. Removed the buttons and their CSS; wired ⌘⇧O in `App.tsx`, the store command, and the native menu.
+3. Designed roots as full-path keys so nothing else in the store had to learn about folders beyond `loc`; touched every folder-bound platform call.
+4. Extended the tools, CLI note and Open panel on the Rust side; added a unit test for roots in `tools.rs`.
+5. Verified with Playwright on the browser build: no footer buttons on the tree or Home; ⌘⇧O adds `targeted-reactivation` as a header with its two pages nested by source; a page there opens, refines (snapshot, change tint, pending dot); ⌘O reopening the same folder brings the root back from the saved session; adding it twice is refused; the header's ··· and right-click show Remove from session, which empties the tree of it; a plain click on the header still collapses it.
+6. Installed the GTK/WebKit dev libraries in the container so the Tauri crate compiles; `cargo test --lib` passes (10 tests, the new roots test among them).
+7. Committed on `claude/blissful-galileo-09katg` and pushed.
+8. Kevin asked for a merge into `main`. Main had gained the Finder / default Markdown app change; merged it into the branch (only `PROGRESS.md` conflicted, both entries kept). On the merged code `tsc`, `pnpm build`, `cargo test --lib` and the Playwright drive all pass; `main` fast-forwarded and pushed.
+
+### Verification
+- `tsc --noEmit`, `pnpm build`, `cargo test --lib`: pass. Playwright drive as above (screenshots in the scratchpad).
+- Not checked: the desktop app itself (the panel wording, the menu item, and the CLI `--add-dir` list need a macOS build).
+
+### Possible next steps
+- Drag-and-drop onto an open session could add a root instead of replacing the session; today a drop still opens a new session.
+- The Home recents card could list a session's roots so it is clear what it contains.
+- New pages grown from an added root's page are still written to the session folder (or its New pages subfolder), not beside their source in the added folder.
 ## Session: 2026-09-12 — Nested as the Mac's app for Markdown files
 
 ### Leading assumptions

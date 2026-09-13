@@ -64,12 +64,17 @@ fn transcript(req: &AiRequest) -> String {
 /// Claude Code's read-only tools; enough to look around the folder, nothing that writes or runs.
 const CLAUDE_TOOLS: &str = "Read,Grep,Glob";
 
-/// The line added to the instructions when the CLI may read the session folder.
+/// The line added to the instructions when the CLI may read the session folder (and the folders added to the session).
 fn folder_note(req: &AiRequest) -> Option<String> {
     let folder = req.folder.as_deref()?;
-    let note = format!(
-        "The session folder is {folder}. Its Markdown files are the pages; read only inside it, and ignore its .reader directory."
-    );
+    let note = if req.roots.is_empty() {
+        format!("The session folder is {folder}. Its Markdown files are the pages; read only inside it, and ignore its .reader directory.")
+    } else {
+        format!(
+            "The session's folders are {folder} and {}. Their Markdown files are the pages; read only inside them, and ignore their .reader directories.",
+            req.roots.join(", ")
+        )
+    };
     Some(match &req.system {
         Some(s) if !s.trim().is_empty() => format!("{s}\n\n{note}"),
         _ => note,
@@ -160,10 +165,17 @@ pub async fn stream_claude(req: &AiRequest, channel: &Channel<StreamEvent>, canc
     ]);
     match &req.folder {
         // Read-only tools, approved up front (print mode cannot ask), reaching only the
-        // session folder, with enough turns to look around before answering.
-        Some(folder) => cmd.args(["--max-turns", "12", "--tools", CLAUDE_TOOLS, "--allowedTools", CLAUDE_TOOLS, "--add-dir", folder]),
+        // session's folders, with enough turns to look around before answering.
+        Some(folder) => {
+            cmd.args(["--max-turns", "12", "--tools", CLAUDE_TOOLS, "--allowedTools", CLAUDE_TOOLS, "--add-dir", folder]);
+            for root in &req.roots {
+                cmd.args(["--add-dir", root]);
+            }
+        }
         // One turn and no tools at all.
-        None => cmd.args(["--max-turns", "1", "--tools", ""]),
+        None => {
+            cmd.args(["--max-turns", "1", "--tools", ""]);
+        }
     };
     if !req.model.is_empty() {
         cmd.args(["--model", &req.model]);
@@ -369,6 +381,7 @@ mod live {
             messages: vec![ChatMessage { role: "user".into(), content: "What colour is the sky on a clear day?".into() }],
             max_tokens: Some(60),
             folder: None,
+            roots: vec![],
         };
         tauri::async_runtime::block_on(crate::ai::stream(req, channel, CancelToken::default())).unwrap();
         let events = events.lock().unwrap();
@@ -398,6 +411,7 @@ mod live {
             messages: vec![ChatMessage { role: "user".into(), content: "What colour is the sky on a clear day?".into() }],
             max_tokens: Some(60),
             folder: None,
+            roots: vec![],
         };
         tauri::async_runtime::block_on(crate::ai::stream(req, channel, CancelToken::default())).unwrap();
         let events = events.lock().unwrap();

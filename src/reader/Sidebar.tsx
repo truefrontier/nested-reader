@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode } from "react";
 import { store, useReader } from "../state/store";
-import { buildFolders, dotState, type FolderNode, type TreeItem } from "../lib/tree";
-import { ChevronLeft, ChevronRight, MoreIcon, PlusIcon } from "./Icons";
+import { buildFolders, dotState, rootDirs, type FolderNode, type TreeItem } from "../lib/tree";
+import { ChevronLeft, ChevronRight, MoreIcon } from "./Icons";
 import { DEFAULT_SETTINGS } from "../platform";
 
 export function Sidebar() {
   const s = useReader();
-  const root = useMemo(() => buildFolders(s.pages), [s.pages]);
+  // The roots added with ⌘⇧O are top folders of their own, named after their last segment.
+  const roots = useMemo(() => rootDirs(s.session.roots, s.folder), [s.session.roots, s.folder]);
+  const root = useMemo(() => buildFolders(s.pages, roots), [s.pages, roots]);
   const filterRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (!s.ui.filterFocus) return;
@@ -73,7 +75,8 @@ export function Sidebar() {
     e.preventDefault();
     void store.openPage(path, store.placementFor(e));
   };
-  // Each row has a ⋯ menu (also on right-click). It closes on a click anywhere else, Esc, or when the tree scrolls.
+  // Each row has a ⋯ menu (also on right-click), and so does the header of an added root, keyed "root:<folder>".
+  // A menu closes on a click anywhere else, Esc, or when the tree scrolls.
   const [menuFor, setMenuFor] = useState<string | null>(null);
   useEffect(() => {
     if (!menuFor) return;
@@ -89,8 +92,10 @@ export function Sidebar() {
     };
   }, [menuFor]);
   useEffect(() => {
-    if (menuFor && !s.pages[menuFor]) setMenuFor(null);
-  }, [menuFor, s.pages]);
+    if (!menuFor) return;
+    const gone = menuFor.startsWith("root:") ? !roots.includes(menuFor.slice(5)) : !s.pages[menuFor];
+    if (gone) setMenuFor(null);
+  }, [menuFor, s.pages, roots]);
   const stop = (e: MouseEvent) => e.stopPropagation();
   const openMenu = (path: string) => (e: MouseEvent) => {
     e.preventDefault();
@@ -157,13 +162,33 @@ export function Sidebar() {
       );
     if (!kids.length && !own) return null;
     const open = filtering || !collapsed.includes(f.path);
+    const menuKey = `root:${f.path}`;
+    const menuOpen = f.root && menuFor === menuKey;
     return (
-      <div key={f.path} className={`folder${open ? " open" : ""}`}>
-        <div className="frow" onClick={() => store.toggleFolder(f.path)} title={f.path}>
+      <div key={f.path} className={`folder${open ? " open" : ""}${f.root ? " root" : ""}`}>
+        <div className={`frow${menuOpen ? " open" : ""}`} onClick={() => store.toggleFolder(f.path)} onContextMenu={f.root ? openMenu(menuKey) : undefined} title={f.path}>
           <span className="chev">
             <ChevronRight />
           </span>
           <span className="label">{f.name}</span>
+          {f.root && (
+            <span className="more" title="More" onMouseDown={stop} onClick={openMenu(menuKey)}>
+              <MoreIcon />
+            </span>
+          )}
+          {menuOpen && (
+            <div className="row-menu" onMouseDown={stop} onClick={stop} onContextMenu={(e) => e.preventDefault()}>
+              <div
+                className="item"
+                onClick={() => {
+                  setMenuFor(null);
+                  void store.removeRoot(f.path);
+                }}
+              >
+                Remove from session
+              </div>
+            </div>
+          )}
         </div>
         {open && (
           <div className="fbody">
@@ -211,11 +236,6 @@ export function Sidebar() {
       <div className="tree" onScroll={() => menuFor && setMenuFor(null)}>
         <div className="tree-inner">{folder(root)}</div>
       </div>
-      <button className="home-new" onClick={() => store.toggleNewFile()} title="A new page written from this session">
-        <PlusIcon />
-        <span>New page</span>
-        <span className="k">⌘N</span>
-      </button>
       <div className="side-foot">
         <span className={`link${s.ui.panePopover === "feedback" ? " on" : ""}`} onClick={() => store.toggleFeedback()} title="A bug, an idea, anything">
           Send feedback

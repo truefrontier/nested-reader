@@ -1,4 +1,11 @@
-import type { PageMeta, Session } from "../platform/types";
+import type { PageMeta, Session, SessionRoot } from "../platform/types";
+
+/** The folders of the roots added to a session with ⌘⇧O, other than the session folder itself, each once. */
+export function rootDirs(roots: SessionRoot[] | undefined, folder: string | undefined): string[] {
+  const out: string[] = [];
+  for (const r of roots ?? []) if (r.folder !== folder && !out.includes(r.folder)) out.push(r.folder);
+  return out;
+}
 
 export type TreeItem = {
   path: string;
@@ -49,27 +56,33 @@ export function buildTree(pages: Record<string, PageMeta>): TreeItem[] {
 
 /** A directory in the session folder, as the sidebar shows it. */
 export type FolderNode = {
-  /** Directory path relative to the session folder; "" for the folder itself. */
+  /** Directory path relative to the session folder; "" for the folder itself. An added root's directories carry its absolute path. */
   path: string;
   name: string;
+  /** Set on the top folder of a root added with ⌘⇧O, so the sidebar can tell it apart from the session folder's own subfolders. */
+  root?: boolean;
   /** Subfolders, by name. */
   folders: FolderNode[];
   /** The pages directly in this folder, hung under their sources (the same tree `buildTree` builds, per folder). */
   items: TreeItem[];
 };
 
-/** The directory of a relative page path, "" at the root. */
+/** The directory of a page path, "" at the root. An added root's pages are absolute, so their directory is too. */
 export function dirOf(path: string): string {
   const i = path.lastIndexOf("/");
   return i < 0 ? "" : path.slice(0, i);
 }
 
-/** The folder and each of its ancestors, nearest first, ending with "" for the root. */
-export function folderChain(dir: string): string[] {
+/**
+ * The folder and each of its ancestors, nearest first, ending with "" for the root. A directory in `rootDirs`
+ * (the folder of a root added to the session) ends the climb, since the sidebar hangs it straight off the root.
+ */
+export function folderChain(dir: string, rootDirs: string[] = []): string[] {
   const out: string[] = [];
   let cur = dir;
   while (cur) {
     out.push(cur);
+    if (rootDirs.includes(cur)) break;
     cur = dirOf(cur);
   }
   out.push("");
@@ -80,16 +93,18 @@ export function folderChain(dir: string): string[] {
  * The sidebar's tree: the session folder's directories, nested as on disk, each with the pages inside it hung
  * under their sources. A page whose source sits in another directory is a root of its own directory, so the
  * folders stay the outer structure. Subfolders come before pages, by name; an empty folder is not listed
- * because only directories holding pages are known.
+ * because only directories holding pages are known. Each folder in `rootDirs` (a root added with ⌘⇧O, whose
+ * pages are keyed by absolute path) is listed as a top folder of its own, named after its last segment.
  */
-export function buildFolders(pages: Record<string, PageMeta>): FolderNode {
+export function buildFolders(pages: Record<string, PageMeta>, rootDirs: string[] = []): FolderNode {
   const nodes = new Map<string, FolderNode>();
   const node = (dir: string): FolderNode => {
     let n = nodes.get(dir);
     if (n) return n;
-    n = { path: dir, name: dir.slice(dir.lastIndexOf("/") + 1), folders: [], items: [] };
+    const isRoot = rootDirs.includes(dir);
+    n = { path: dir, name: dir.slice(dir.lastIndexOf("/") + 1), root: isRoot || undefined, folders: [], items: [] };
     nodes.set(dir, n);
-    if (dir) node(dirOf(dir)).folders.push(n);
+    if (dir) node(isRoot ? "" : dirOf(dir)).folders.push(n);
     return n;
   };
   const root = node("");

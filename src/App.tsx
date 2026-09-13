@@ -90,6 +90,9 @@ export default function App() {
       } else if (k === "o" && !e.shiftKey) {
         e.preventDefault();
         store.command("open");
+      } else if (k === "o" && e.shiftKey) {
+        e.preventDefault();
+        store.command("add-root");
       } else if (k === "h" && e.shiftKey) {
         e.preventDefault();
         store.command("home");
