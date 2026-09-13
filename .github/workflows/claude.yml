@@ -2,7 +2,8 @@
 # It reads the thread and the code, replies, and can open a branch with the change when asked.
 #
 # Needs: the Claude GitHub App installed on this repo (run /install-github-app in Claude Code)
-# and an ANTHROPIC_API_KEY secret under Settings › Secrets and variables › Actions.
+# and a CLAUDE_CODE_OAUTH_TOKEN secret under Settings › Secrets and variables › Actions
+# (from `claude setup-token`; bills Kevin's Claude subscription).
 name: Claude
 
 on:
@@ -37,7 +38,7 @@ jobs:
 
       - uses: anthropics/claude-code-action@v1
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Lets Claude read CI results when a PR check fails.
           additional_permissions: |
             actions: read
