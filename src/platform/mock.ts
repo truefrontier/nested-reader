@@ -263,7 +263,7 @@ export const mockPlatform: Platform = {
     if (provider === "builtin") return { ok: false, error: "Built-in plan is not available in this build" };
     if (provider === "ollama") return { ok: true, ms: 9, models: ["gemma3:4b", "qwen3.5:4b", "gemma4:12b", "gpt-oss:20b-cloud"] };
     if (auth === "subscription") {
-      return { ok: true, ms: 130, models: provider === "anthropic" ? ["haiku", "sonnet", "opus"] : ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.5"] };
+      return { ok: true, ms: 130, models: provider === "anthropic" ? ["haiku", "sonnet", "opus", "fable"] : ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.5"] };
     }
     if (!keys.has(provider)) return { ok: false, error: "No API key" };
     const lists: Record<string, string[]> = {

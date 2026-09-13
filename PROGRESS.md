@@ -1,5 +1,27 @@
 # Progress
 
+## Session: 2026-09-13 — Fable in the Claude plan model menu
+
+### Leading assumptions
+- "Add Fable model to the drop-down in connection settings" means the Model menu in Settings › AI. With an API key that menu already lists whatever Anthropic's `/v1/models` returns, so `claude-fable-5-1` appears there on its own. The gap is the Claude plan: its list is a fixed set of Claude Code aliases in `src-tauri/src/cli.rs`, and it stopped at `opus`.
+- The plan entry should be the short alias `fable`, like `haiku`, `sonnet` and `opus`, so Claude Code resolves it to the current Fable model. The installed CLI (2.1.270) documents `--model` as taking `haiku`, `sonnet`, `opus`, `fable` or a full ID.
+
+### World facts
+- `CLAUDE_MODELS` in `src-tauri/src/cli.rs` is now `["haiku", "sonnet", "opus", "fable"]`, cheapest first; the plan ping returns it, and the Settings pane shows it as the menu. `pickDefaultModel` still starts a plan on `haiku`.
+- The browser mock (`src/platform/mock.ts`) mirrors the list, so `pnpm dev` and `pnpm preview` show `fable` under Anthropic › Claude plan.
+- `docs/architecture.md` names the list and where it lives.
+- The Rust side still cannot be compiled in this container (missing GTK dev libraries); the change there is one constant.
+
+### Timeline
+1. 2026-09-13: User asked for Fable in the connection settings drop-down.
+2. Found the API-key list is live from the provider, the plan list is a constant, and confirmed the CLI accepts `fable` as an alias.
+3. Added `fable` to the constant, the mock, and the doc. Type check and production build pass.
+4. Verified in a headless browser against the built app: Settings › AI › Anthropic › Claude plan shows haiku, sonnet, opus, fable; choosing fable sticks.
+
+### Possible next steps
+- Run the real Tauri build on a Mac signed in to Claude Code and ask a question with `fable` picked, to see the CLI accept it end to end.
+- Show a friendlier label per alias in the menu (for example "Fable — hardest problems") if the bare aliases read as cryptic.
+
 ## Session: 2026-09-12 — Claude on GitHub, and a Send feedback link that files issues
 
 ### Leading assumptions
