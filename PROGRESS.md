@@ -17,9 +17,10 @@
 2. Found the API-key list is live from the provider, the plan list is a constant, and confirmed the CLI accepts `fable` as an alias.
 3. Added `fable` to the constant, the mock, and the doc. Type check and production build pass.
 4. Verified in a headless browser against the built app: Settings › AI › Anthropic › Claude plan shows haiku, sonnet, opus, fable; choosing fable sticks.
+5. User asked to merge into main. Opened pull request #8 and merged it (merge commit cc5661c).
 
 ### Possible next steps
-- Run the real Tauri build on a Mac signed in to Claude Code and ask a question with `fable` picked, to see the CLI accept it end to end.
+- The change is on main now (pull request #8). Run the real Tauri build on a Mac signed in to Claude Code and ask a question with `fable` picked, to see the CLI accept it end to end.
 - Show a friendlier label per alias in the menu (for example "Fable — hardest problems") if the bare aliases read as cryptic.
 
 ## Session: 2026-09-12 — Claude on GitHub, and a Send feedback link that files issues
