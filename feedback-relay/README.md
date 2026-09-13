@@ -6,6 +6,8 @@ It is one file with no dependencies, written for Cloudflare Workers.
 
 ## Deploy
 
+### Cloudflare Workers
+
 ```bash
 cd feedback-relay
 npx wrangler login
@@ -16,6 +18,17 @@ npx wrangler secret put GITHUB_TOKEN
 The token is a [fine-grained personal access token](https://github.com/settings/personal-access-tokens/new) scoped to this one repository with **Issues: Read and write**. Nothing else. Issues are filed under the account that made the token.
 
 `wrangler deploy` prints the worker's URL. Put it in `src-tauri/.cargo/config.toml` as `NESTED_FEEDBACK_URL` and rebuild the app; until then the box in the app says feedback is not set up in this build.
+
+### Fly.io (no Cloudflare account required)
+
+```bash
+cd feedback-relay
+fly launch --no-deploy  # Creates the app; say no to postgres/redis
+fly secrets set GITHUB_TOKEN=ghp_your_token_here
+fly deploy
+```
+
+The app scales to zero when idle and wakes on the first request. `fly deploy` prints the app's URL (typically `https://nested-feedback.fly.dev`). Put it in `src-tauri/.cargo/config.toml` as `NESTED_FEEDBACK_URL` and rebuild the app.
 
 ## What it accepts
 
