@@ -12,8 +12,8 @@ use tauri::ipc::Channel;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::process::{Child, Command};
 
-/// Claude Code resolves these aliases to the current model of each tier.
-pub const CLAUDE_MODELS: &[&str] = &["haiku", "sonnet", "opus"];
+/// Claude Code resolves these aliases to the current model of each tier, cheapest first.
+pub const CLAUDE_MODELS: &[&str] = &["haiku", "sonnet", "opus", "fable"];
 /// Codex has no model-list command; these are the models a ChatGPT plan offers, cheapest first.
 pub const CODEX_MODELS: &[&str] = &["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.5"];
 
