@@ -1495,6 +1495,95 @@ button {
 
 /* ---------- misc ---------- */
 
+/* A newer version is ready: a quiet card at the foot of the window, above the toast, until Later or the relaunch. */
+.update-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 20px;
+  transform: translateX(-50%);
+  z-index: 8;
+  max-width: min(560px, 90%);
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--hair);
+  background: var(--card);
+  color: var(--fg);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  animation: rise 0.15s ease-out;
+}
+.update-bar .what {
+  color: var(--mute);
+}
+.update-bar .what b {
+  font-weight: 500;
+  color: var(--fg);
+}
+.update-bar .acts {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.update-bar button {
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--hair);
+  background: var(--card);
+  color: var(--fg);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.update-bar button:hover {
+  border-color: var(--fg);
+}
+.update-bar button.quiet {
+  border-color: transparent;
+  background: transparent;
+  color: var(--mute);
+}
+.update-bar button.quiet:hover {
+  color: var(--fg);
+}
+.update-bar button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+/* The download's share of the card's bottom edge. */
+.update-bar .meter {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 0;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--hair);
+  overflow: hidden;
+}
+.update-bar .meter i {
+  display: block;
+  height: 100%;
+  background: var(--fg);
+  transition: width 0.15s ease-out;
+}
+.update-bar .meter.busy i {
+  width: 30% !important;
+  animation: slide 1.2s ease-in-out infinite;
+}
+@keyframes slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(400%);
+  }
+}
 .toast {
   position: absolute;
   left: 50%;

@@ -9,6 +9,7 @@ mod migrate;
 #[cfg(target_os = "macos")]
 mod open_panel;
 mod tools;
+mod updater;
 
 use ai::tokio_util_lite::CancelToken;
 use ai::{AiRequest, PingResult, StreamEvent};
@@ -270,6 +271,26 @@ async fn send_feedback(app: AppHandle, message: String, email: Option<String>) -
     feedback::send(url, &payload).await
 }
 
+// ---------- updates ----------
+
+/// Asks the relay whether a newer release exists. Quiet under `tauri dev`, which cannot update itself.
+#[tauri::command]
+async fn check_for_update(app: AppHandle, pending: State<'_, updater::Pending>) -> Result<updater::UpdateCheck> {
+    updater::check(&app, &pending).await
+}
+
+/// Downloads and installs the update the last check found; progress goes down the channel.
+#[tauri::command]
+async fn install_update(pending: State<'_, updater::Pending>, channel: Channel<updater::UpdateProgress>) -> Result<()> {
+    updater::install(&pending, channel).await
+}
+
+/// Starts the app again, after an update has been installed.
+#[tauri::command]
+fn relaunch(app: AppHandle) {
+    app.restart()
+}
+
 // ---------- AI ----------
 
 #[tauri::command]
@@ -354,9 +375,11 @@ fn urlencode(s: &str) -> String {
 
 fn build_menu(app: &AppHandle) -> tauri::Result<()> {
     let about = PredefinedMenuItem::about(app, Some("About Nested"), Some(AboutMetadata::default()))?;
+    let check_update = MenuItemBuilder::with_id("check-update", "Check for Updates…").build(app)?;
     let settings = MenuItemBuilder::with_id("settings", "Settings…").accelerator("CmdOrCtrl+,").build(app)?;
     let app_menu = SubmenuBuilder::new(app, "Nested")
         .item(&about)
+        .item(&check_update)
         .separator()
         .item(&settings)
         .separator()
@@ -436,8 +459,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(Streams::default())
         .manage(Opened::default())
+        .manage(updater::Pending::default())
         .setup(|app| {
             migrate::run(app.handle());
             build_menu(app.handle())?;
@@ -497,6 +522,9 @@ pub fn run() {
             ai_cancel,
             ai_ping,
             send_feedback,
+            check_for_update,
+            install_update,
+            relaunch,
             open_settings,
             open_page_window,
         ])

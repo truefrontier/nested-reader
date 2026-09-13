@@ -27,6 +27,12 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU1NzAyODA1OTZDQzE5MApSV1NRd1d4WmdBSlhEcC8yYjBmWEFqVFVIVnY4TkFHNlhodVVSV3FLWm1kempFb1o0UWJDTktJZgo=",
+      "endpoints": ["https://nested-feedback.fly.dev/updates/latest.json?version={{current_version}}&target={{target}}&arch={{arch}}"]
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",

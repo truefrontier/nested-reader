@@ -1,3 +1,4 @@
+import { version as APP_VERSION } from "../../package.json";
 import {
   DEFAULT_SETTINGS,
   type AiRequest,
@@ -316,6 +317,37 @@ export const mockPlatform: Platform = {
     await new Promise((r) => setTimeout(r, 500));
     if (/^fail:/i.test(message.trim())) throw new Error("The feedback server refused the note (502).");
     console.info("[feedback]", { message, email });
+  },
+
+  /** No release server in the browser. `?update` in the URL pretends one is out; `?update=fail` makes the install fail part way. */
+  async checkForUpdate() {
+    await new Promise((r) => setTimeout(r, 600));
+    const sim = new URL(location.href).searchParams.get("update");
+    return {
+      current: APP_VERSION,
+      supported: true,
+      update: sim === null ? undefined : { version: "0.9.0", notes: "A pretend release, to try the update bar." },
+    };
+  },
+
+  async installUpdate(onProgress) {
+    const sim = new URL(location.href).searchParams.get("update");
+    const total = 24_000_000;
+    for (let i = 1; i <= 10; i++) {
+      await new Promise((r) => setTimeout(r, 180));
+      if (sim === "fail" && i === 4) throw new Error("Couldn't download the update: the connection dropped.");
+      onProgress({ type: "progress", downloaded: Math.round((total * i) / 10), total });
+    }
+    await new Promise((r) => setTimeout(r, 400));
+    onProgress({ type: "installed" });
+  },
+
+  /** The browser build cannot swap itself; a reload stands in for the relaunch, after the beat the real install takes. */
+  async relaunch() {
+    await new Promise((r) => setTimeout(r, 900));
+    const url = new URL(location.href);
+    url.searchParams.delete("update");
+    location.assign(url.toString());
   },
 
   /** A dropped .md file is read into the in-memory folder; browsers give no path for folders. */

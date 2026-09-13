@@ -1,8 +1,12 @@
-// Feedback relay: a Cloudflare Worker that takes a note from the Send feedback box in Nested and
-// files it as a GitHub issue on this repo. The app never holds a GitHub token; only this worker does.
+// Feedback relay: a Cloudflare Worker (or, through server.mjs, a Fly machine) that takes a note
+// from the Send feedback box in Nested and files it as a GitHub issue on this repo. It also serves
+// the app's updates from the repo's releases (updates.js). The app never holds a GitHub token;
+// only this relay does.
 //
 // Deploy with `wrangler deploy` from this folder, then `wrangler secret put GITHUB_TOKEN` with a
-// fine-grained token that has Issues: read and write on the repo. See README.md.
+// fine-grained token that has Issues: read and write and Contents: read on the repo. See README.md.
+
+import { handleUpdates } from "./updates.js";
 
 const MAX_MESSAGE = 5000;
 const MAX_EMAIL = 200;
@@ -10,6 +14,8 @@ const MAX_TITLE = 72;
 
 export default {
   async fetch(request, env) {
+    const url = new URL(request.url);
+    if (url.pathname.startsWith("/updates")) return handleUpdates(request, env, url);
     if (request.method !== "POST") return text(405, "POST only");
     if (!env.GITHUB_TOKEN) return text(500, "The relay has no GITHUB_TOKEN set");
     if (!/^[\w.-]+\/[\w.-]+$/.test(env.GITHUB_REPO || "")) return text(500, "The relay has no GITHUB_REPO set");

@@ -134,8 +134,32 @@ export type ReaderState = {
   apiKeyMissing?: boolean;
   /** Which app opens .md files on this Mac; the Home offer and the Settings row follow it. */
   defaultApp?: DefaultApp;
+  /** Where the app stands with updates; the bar at the bottom of the window follows it. */
+  update: UpdateState;
   ui: UiState;
 };
+
+export type UpdatePhase = "idle" | "checking" | "available" | "downloading" | "installing" | "error";
+
+export type UpdateState = {
+  phase: UpdatePhase;
+  /** The running version, once a check has answered. */
+  current?: string;
+  /** The newer version, from "available" on. */
+  version?: string;
+  notes?: string;
+  downloaded?: number;
+  total?: number;
+  /** Why the last check or install failed. */
+  message?: string;
+  /** Later was clicked: the bar stays away until the next launch or a check from the menu. */
+  dismissed?: boolean;
+};
+
+/** How long after launch the first check waits, so it never competes with opening the session. */
+const UPDATE_CHECK_DELAY = 4000;
+/** How often a running app looks again. */
+const UPDATE_CHECK_EVERY = 6 * 60 * 60 * 1000;
 
 const closedVersionView: VersionView = { history: false, confirmRestore: false };
 
@@ -178,6 +202,7 @@ export class ReaderStore {
     reviewBases: {},
     pageErrors: {},
     working: {},
+    update: { phase: "idle" },
     ui: initialUi,
   };
 
@@ -227,7 +252,11 @@ export class ReaderStore {
   }
 
   fail(err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
+    this.notify(err instanceof Error ? err.message : String(err));
+  }
+
+  /** A sentence in the toast at the bottom of the window, for six seconds. */
+  notify(message: string) {
     this.setUi({ error: message });
     window.setTimeout(() => {
       if (this.state.ui.error === message) this.setUi({ error: undefined });
@@ -269,6 +298,8 @@ export class ReaderStore {
         platform.onOpened((paths) => void this.openOpened(paths));
         window.addEventListener("focus", () => void this.loadDefaultApp());
         void this.loadDefaultApp();
+        window.setTimeout(() => void this.checkForUpdate(), UPDATE_CHECK_DELAY);
+        window.setInterval(() => void this.checkForUpdate(), UPDATE_CHECK_EVERY);
       }
       // The file that launched the app (a double-click in Finder) wins over "Open at launch".
       const opened = page ? [] : await platform.openedPaths();
@@ -778,6 +809,56 @@ export class ReaderStore {
   /** Not now: the Home screen stops offering. The row in Settings › General stays. */
   dismissDefaultAppOffer() {
     void this.saveSettings({ offerDefaultApp: false });
+  }
+
+  // ---------- app updates ----------
+
+  /**
+   * Asks the update server for a newer release. The launch and timer checks are quiet: a
+   * failure shows nothing, and no update shows nothing. From the menu (`manual`), both get a word,
+   * and an update that was put off with Later comes back.
+   */
+  async checkForUpdate(manual = false) {
+    const u = this.state.update;
+    if (u.phase === "downloading" || u.phase === "installing" || u.phase === "checking") return;
+    if (u.phase === "available" && !manual) return;
+    this.set({ update: { ...u, phase: "checking", message: undefined } });
+    try {
+      const found = await platform.checkForUpdate();
+      if (found.update) {
+        this.set({ update: { phase: "available", current: found.current, version: found.update.version, notes: found.update.notes, dismissed: manual ? false : u.dismissed } });
+      } else {
+        this.set({ update: { phase: "idle", current: found.current } });
+        if (manual) this.notify(found.supported ? `You're on the latest version, Nested ${found.current}.` : "Updates arrive in the built app, not this preview.");
+      }
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      this.set({ update: manual ? { phase: "error", current: u.current, message } : { phase: "idle", current: u.current } });
+    }
+  }
+
+  /** Downloads and installs the update the bar offers, then relaunches. */
+  async installUpdate() {
+    const u = this.state.update;
+    if (u.phase !== "available" && u.phase !== "error") return;
+    if (!u.version) return void this.checkForUpdate(true);
+    this.set({ update: { ...u, phase: "downloading", downloaded: 0, total: undefined, message: undefined, dismissed: false } });
+    try {
+      await platform.installUpdate((p) => {
+        if (p.type === "progress") this.set({ update: { ...this.state.update, phase: "downloading", downloaded: p.downloaded, total: p.total ?? undefined } });
+        else this.set({ update: { ...this.state.update, phase: "installing" } });
+      });
+      this.set({ update: { ...this.state.update, phase: "installing" } });
+      await platform.relaunch();
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      this.set({ update: { ...this.state.update, phase: "error", message } });
+    }
+  }
+
+  /** Later: the bar goes away until the next launch, or until Check for Updates… in the menu. */
+  dismissUpdate() {
+    this.set({ update: { ...this.state.update, dismissed: true } });
   }
 
   /** Closes a sidebar folder, or opens it again. */
@@ -1577,8 +1658,11 @@ export class ReaderStore {
 
   command(id: string) {
     // Home replaces the window, so only the commands that make sense there get through.
-    if (this.state.home && !["open", "home", "settings"].includes(id)) return;
+    if (this.state.home && !["open", "home", "settings", "check-update"].includes(id)) return;
     switch (id) {
+      case "check-update":
+        void this.checkForUpdate(true);
+        break;
       case "open":
         void this.pickPath();
         break;

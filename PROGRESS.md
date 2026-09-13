@@ -1,5 +1,41 @@
 # Progress
 
+## Session: 2026-09-13 — App updates: one command to publish, one click to install
+
+### Leading assumptions
+- "A really easy way for the user to get app updates" means two halves: the person using Nested should never hunt for a download (the app tells them and installs it), and Kevin should publish with one command. Today there was neither: no release workflow, no tags, no updater; the only way to get the app was `pnpm tauri build` on a Mac.
+- The repository is private, so installed copies cannot read its releases. Rather than a second public repo, the relay already on Fly (`nested-feedback.fly.dev`) serves the update manifest and downloads with its own token, the same way it files feedback. The app carries only the relay URL and the public half of the updater key.
+- A quiet card, not a modal: the check runs a few seconds after launch (and every six hours) and shows nothing unless there is something newer or the person asked from the menu. Later hides it until the next launch or a menu check.
+- Apple code signing and notarization are out of scope (no Developer ID on hand); the workflow's comment names the six `APPLE_*` secrets tauri-action picks up once there is one.
+
+### World facts
+- Rust: `src-tauri/src/updater.rs` wraps `tauri-plugin-updater` in `check_for_update` (keeps the found `Update` in a `Pending` state), `install_update` (progress down a `Channel`: `{type:"progress",downloaded,total}` then `{type:"installed"}`; a flag stops two windows installing at once) and `relaunch` (`app.restart()`). Debug builds report `supported: false`. Errors become sentences (offline, timeout, refused, bad signature). The menu gains Nested › Check for Updates… (command id `check-update`, allowed on Home). `tauri.conf.json` holds `plugins.updater.pubkey` and the endpoint `https://nested-feedback.fly.dev/updates/latest.json?version=…&target=…&arch=…`. `tauri.release.conf.json` is a CI-only overlay that turns on `createUpdaterArtifacts`, so a local `pnpm tauri build` still works without the key.
+- Frontend: `Platform.checkForUpdate / installUpdate / relaunch`; the mock pretends `0.9.0` is out with `?update` (`?update=fail` fails the download at 40%) and reloads instead of relaunching. Store: `state.update = { phase: idle|checking|available|downloading|installing|error, current, version, notes, downloaded, total, message, dismissed }`, `checkForUpdate(manual)`, `installUpdate()`, `dismissUpdate()`; `notify()` shares the toast with `fail()`. `UpdateBar` (`src/reader/UpdateBar.tsx`, `.update-bar` + a 2px meter along its bottom edge) renders in `App.tsx` above the toast, on Home and in sessions. Settings › General › Updates row (`UpdateRow`) shows the version with Check for updates, or the newer version with Update and relaunch, talking to the platform directly like the Markdown files row.
+- Relay: `feedback-relay/updates.js` — `GET /updates/latest.json` (manifest with download URLs rewritten to the relay; 204 when nothing is released), `GET /updates/download/<asset id>/<name>` (302 to GitHub's signed link, bytes never pass through), `GET /updates/dmg` (302 to the newest `.dmg`, a stable first-install link). Release lookup cached for 60s. `worker.js` dispatches `/updates*` to it. The token now needs Contents: read as well as Issues: write. `updates.test.js`: 7 tests with a stubbed `fetch`.
+- Publishing: `pnpm release <version|patch|minor|major> [--dry]` (`scripts/release.mjs`) from a clean `main` bumps `package.json`, `tauri.conf.json`, `Cargo.toml`, `Cargo.lock`, commits "Nested X", tags `vX`, pushes (a failed push prints the command to retry). `.github/workflows/release.yml` runs on `v*` tags: checks the tag against the config version, builds `--target universal-apple-darwin` on `macos-latest`, `tauri-action` publishes the Release with `.dmg`, `.app.tar.gz`, `.sig` and `latest.json`. Secrets: `TAURI_SIGNING_PRIVATE_KEY` (required), `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (leave unset: the key's password is empty, and an unset secret arrives as "" which is what the key expects; a missing variable, by contrast, fails with "incorrect updater private key password").
+- The updater keypair was generated in this session with `tauri signer generate -p ""`. The public key is committed in `tauri.conf.json`; the private key was handed to Kevin as a file in the chat and is not in the repo.
+- Docs: README "Install and update" section, `docs/architecture.md` "Updates" section and layout lines, `feedback-relay/README.md` "Updates" table and token scope, a pointer in `src-tauri/.cargo/config.toml`.
+
+### Timeline
+1. Kevin asked for a really easy way for users to get app updates.
+2. Found: Tauri 2 app, private repo, no releases/tags/workflow, feedback relay on Fly with a GitHub token. Chose the updater plugin + relay-served releases + a tag-driven release workflow.
+3. Installed GTK/WebKit dev libraries so the crate compiles here; wrote the Rust module, plugin wiring, menu item and config; `cargo test --lib` passes (18, three new).
+4. Wrote the relay routes and tests (13 pass), the platform contract, mock, store, bar, Settings row and CSS; `tsc` and `pnpm build` pass.
+5. Wrote the workflow and the release script; exercised the script in a scratch clone (dry runs, bad input, a real bump with the push blocked shows the retry hint). Confirmed the key signs with an empty password variable set.
+6. Drove the built app headlessly: bar appears after launch with `?update`; Later hides it; the menu check brings it back, also on Home; Update and relaunch shows the download percentage, Installing, then reloads without the flag; `?update=fail` shows the reason with Try again / Later; a plain launch shows nothing and the menu check toasts "You're on the latest version, Nested 0.1.0."; Settings row idle → "You're on the latest version." → "0.9.0 is ready" → Downloading → relaunch. Light and dark screenshots; no console errors.
+7. Committed on `claude/app-update-accessibility-csc7id` and pushed.
+
+### Verification
+- `tsc --noEmit`, `pnpm build`, `cargo test --lib` (18 pass), `node --test` in feedback-relay (13 pass), Playwright drive as above.
+- Not checked: the desktop app end to end (a real release, the updater swapping the bundle, the menu item). That needs the secrets in place and a first `pnpm release` on a Mac, then the relay redeployed.
+
+### Possible next steps
+- Add the `TAURI_SIGNING_PRIVATE_KEY` secret (the file from the chat), give the relay's token Contents: read, `fly deploy` from `feedback-relay/`, merge to `main`, then `pnpm release 0.2.0`: that is the first release, and installed 0.1.0 builds (which have no updater) need a one-time install from `/updates/dmg`.
+- Apple Developer ID signing and notarization, so the first install opens without right-click › Open; add the `APPLE_*` secrets to the workflow's build step.
+- A "Skip this version" choice if Later on every launch turns out to nag.
+- Show the release notes (`update.notes`, already carried) in the bar or a popover.
+- Rename the Fly app from `nested-feedback` to something like `nested-relay` now that it does two jobs; both URLs would need updating.
+
 ## Session: 2026-09-13 — Fable in the Claude plan model menu
 
 ### Leading assumptions

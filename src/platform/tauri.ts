@@ -18,6 +18,8 @@ import {
   type Settings,
   type StreamEvent,
   type StreamHandle,
+  type UpdateCheck,
+  type UpdateProgress,
   type VersionInfo,
 } from "./types";
 
@@ -148,4 +150,14 @@ export const tauriPlatform: Platform = {
   setDefaultMarkdownApp: () => invoke<DefaultApp>("set_default_markdown_app"),
 
   sendFeedback: (message, email) => invoke("send_feedback", { message, email: email?.trim() || null }),
+
+  checkForUpdate: () => invoke<UpdateCheck>("check_for_update"),
+
+  installUpdate(onProgress) {
+    const channel = new Channel<UpdateProgress>();
+    channel.onmessage = onProgress;
+    return invoke("install_update", { channel });
+  },
+
+  relaunch: () => invoke("relaunch"),
 };
