@@ -217,6 +217,8 @@ export class ReaderStore {
   private lastIdentity: { folderId?: string; fileId?: string; bookmark?: string } = {};
   /** True while a focus rematch is in flight, so a second focus does not overlap it. */
   private rematching = false;
+  /** Cumulative Finder remaps this session (`from` → `to`), so an in-flight write still finds the page. */
+  private pathRemaps = new Map<string, string>();
 
   get = () => this.state;
 
@@ -487,10 +489,31 @@ export class ReaderStore {
   }
 
   /** Writes a page's front matter and body where the page lives; the source is written as that folder knows it. */
-  private async writePage(path: string, body: string, meta: PageMeta = this.state.pages[path]) {
+  private async writePage(path: string, body: string, meta?: PageMeta) {
+    // Rematch rewrites `source:` on disk; wait so a flush cannot put the old parent path back.
+    while (this.rematching) {
+      await new Promise((r) => window.setTimeout(r, 50));
+    }
+    path = this.livePath(path);
+    const live = this.state.pages[path];
+    const base = live
+      ? { ...live, title: meta?.title ?? live.title, question: meta?.question ?? live.question, mode: meta?.mode ?? live.mode, created: meta?.created ?? live.created, source: live.source, path: live.path }
+      : meta;
+    if (!base) return;
     const { folder, rel } = this.loc(path);
-    const source = meta.source?.startsWith(folder + "/") ? meta.source.slice(folder.length + 1) : meta.source;
-    await platform.writePage(folder, rel, serializePage({ ...meta, source }, body));
+    const source = base.source?.startsWith(folder + "/") ? base.source.slice(folder.length + 1) : base.source;
+    await platform.writePage(folder, rel, serializePage({ ...base, source }, body));
+  }
+
+  /** Follow Finder remaps so a stream started under the old path still writes the live page. */
+  private livePath(path: string): string {
+    let cur = path;
+    const seen = new Set<string>();
+    while (this.pathRemaps.has(cur) && !seen.has(cur)) {
+      seen.add(cur);
+      cur = this.pathRemaps.get(cur)!;
+    }
+    return cur;
   }
 
   /**
@@ -547,6 +570,7 @@ export class ReaderStore {
       session.trailIndex = before.length - 1;
       const recent = this.findRecent(folder, file) ?? this.findRecentById(resolved.folderId, resolved.fileId) ?? recentHint;
       const folderName = session.name || recent?.name || (file ? pages[file].title : prettyFolderName(folder));
+      this.pathRemaps.clear();
       this.set({ folder, rootFile: file, folderName, pages, bodies: {}, session, versions: {}, versionBodies: {}, reviewBases: {}, pageErrors: {}, home: false, ui: { ...initialUi } });
       let current = initialPage && pages[initialPage] ? initialPage : session.current;
       if (!current || !pages[current]) {
@@ -980,6 +1004,10 @@ export class ReaderStore {
   /**
    * If a Finder rename happened while Nested was in the background, remap the open session.
    * Quiet: a missing path is retried on the next focus rather than toasted.
+   *
+   * Page streams and writeTimers keep running. `writePage` / `generatePage` wait while
+   * `rematching` is set, so a debounced flush cannot overwrite `rewrite_source_keys`
+   * with a stale in-memory `source` (the race `deletePage` stops by cancelling the write).
    */
   private async rematchOpenSession() {
     const folder = this.state.folder;
@@ -1041,6 +1069,22 @@ export class ReaderStore {
     for (const [k, v] of Object.entries(this.state.working)) {
       const nk = k.startsWith("page:") ? `page:${swap(k.slice(5))}` : k.startsWith("refine:") ? `refine:${swap(k.slice(7))}` : k;
       working[nk] = v;
+    }
+    for (const [from, to] of remaps) {
+      if (from === to) continue;
+      this.pathRemaps.set(from, to);
+      const timer = this.writeTimers.get(from);
+      if (timer !== undefined) {
+        this.writeTimers.delete(from);
+        this.writeTimers.set(to, timer);
+      }
+      for (const prefix of ["page:", "refine:"] as const) {
+        const handle = this.streams.get(prefix + from);
+        if (handle) {
+          this.streams.delete(prefix + from);
+          this.streams.set(prefix + to, handle);
+        }
+      }
     }
     const oldFolder = this.state.folder;
     const s = this.state.session;
@@ -1564,22 +1608,39 @@ export class ReaderStore {
     const { system, messages } = opts.from === "session" ? newFileMessages(ctx, opts.question, deep) : newPageMessages(ctx, opts.question, deep);
     let text = "";
     const flush = (final: boolean) => {
+      const dest = this.livePath(path);
       const body = text.trim().startsWith("#") ? text : heading + text;
-      this.set({ bodies: { ...this.state.bodies, [path]: body } });
+      this.set({ bodies: { ...this.state.bodies, [dest]: body } });
       const write = () => {
+        // Hold the disk write until rematch has updated in-memory `source`, then re-read meta.
+        if (this.rematching) {
+          window.clearTimeout(this.writeTimers.get(dest));
+          this.writeTimers.set(
+            dest,
+            window.setTimeout(() => {
+              this.writeTimers.delete(this.livePath(path));
+              write();
+            }, 100),
+          );
+          return;
+        }
+        const at = this.livePath(path);
+        const live = this.state.pages[at];
+        if (!live) return;
         const t = titleFromBody(body, title);
-        const m: PageMeta = { ...this.state.pages[path], title: t };
-        this.set({ pages: { ...this.state.pages, [path]: m } });
-        platform.writePage(folder, path, serializePage(m, body)).catch((e) => this.fail(e));
+        const m: PageMeta = { ...live, title: t };
+        this.set({ pages: { ...this.state.pages, [at]: m } });
+        void this.writePage(at, body, m).catch((e) => this.fail(e));
       };
       if (final) {
-        window.clearTimeout(this.writeTimers.get(path));
+        window.clearTimeout(this.writeTimers.get(dest));
+        this.writeTimers.delete(dest);
         write();
-      } else if (!this.writeTimers.has(path)) {
+      } else if (!this.writeTimers.has(dest)) {
         this.writeTimers.set(
-          path,
+          dest,
           window.setTimeout(() => {
-            this.writeTimers.delete(path);
+            this.writeTimers.delete(this.livePath(path));
             write();
           }, 500),
         );
@@ -1587,7 +1648,8 @@ export class ReaderStore {
     };
     const stopLoading = () => {
       const s = this.state.session;
-      this.setSession({ loading: s.loading.filter((p) => p !== path) });
+      const at = this.livePath(path);
+      this.setSession({ loading: s.loading.filter((p) => p !== at && p !== path) });
     };
     this.stream(`page:${path}`, this.request(system, messages, opts.mode === "deep-dive" ? 2400 : 1200), {
       delta: (t) => {
@@ -1596,17 +1658,23 @@ export class ReaderStore {
       },
       done: () => {
         flush(true);
+        const at = this.livePath(path);
         const s = this.state.session;
-        const visible = s.current === path || s.split === path;
-        this.setSession({ loading: s.loading.filter((p) => p !== path), unread: visible || s.unread.includes(path) ? s.unread : [...s.unread, path] });
-        if (this.state.pageErrors[path]) this.set({ pageErrors: this.withoutPageError(path) });
+        const visible = s.current === at || s.split === at;
+        this.setSession({ loading: s.loading.filter((p) => p !== at && p !== path), unread: visible || s.unread.includes(at) ? s.unread : [...s.unread, at] });
+        if (this.state.pageErrors[at] || this.state.pageErrors[path]) {
+          const errors = this.withoutPageError(at);
+          delete errors[path];
+          this.set({ pageErrors: errors });
+        }
       },
       error: (m) => {
         flush(true);
         stopLoading();
-        this.set({ pageErrors: { ...this.state.pageErrors, [path]: m } });
+        const at = this.livePath(path);
+        this.set({ pageErrors: { ...this.state.pageErrors, [at]: m } });
         const s = this.state.session;
-        if (s.current !== path && s.split !== path) this.fail(`Couldn't write "${title}": ${m}`);
+        if (s.current !== at && s.split !== at) this.fail(`Couldn't write "${title}": ${m}`);
       },
     });
   }
