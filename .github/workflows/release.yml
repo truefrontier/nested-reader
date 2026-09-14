@@ -4,12 +4,14 @@
 # them with latest.json. Running copies of Nested see the new version through the relay in
 # feedback-relay/ within a few hours, or at their next launch.
 #
-# Needs two repository secrets (Settings › Secrets and variables › Actions):
+# Needs three repository secrets (Settings › Secrets and variables › Actions):
 #   TAURI_SIGNING_PRIVATE_KEY           the private half of the updater key (its public half is
 #                                       plugins.updater.pubkey in src-tauri/tauri.conf.json)
 #   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  the key's password. The key made for this repo has an empty
 #                                       one, so leave this secret unset: an unset secret reaches the
 #                                       build as an empty string, which is what that key expects.
+#   APTABASE_APP_KEY                    (optional) the Aptabase app key for privacy-friendly analytics.
+#                                       When unset, all tracking is disabled.
 #
 # To also code-sign and notarize with Apple (so a fresh install opens without the right-click
 # dance), add APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY, APPLE_ID,
@@ -65,6 +67,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APTABASE_APP_KEY: ${{ secrets.APTABASE_APP_KEY }}
         with:
           tagName: v__VERSION__
           releaseName: Nested __VERSION__

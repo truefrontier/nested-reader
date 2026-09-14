@@ -1,4 +1,5 @@
 mod ai;
+mod analytics;
 mod cli;
 #[cfg(target_os = "macos")]
 mod default_app;
@@ -283,7 +284,11 @@ fn has_api_key(provider: String) -> Result<bool> {
 async fn send_feedback(app: AppHandle, message: String, email: Option<String>) -> Result<()> {
     let url = feedback::relay_url(feedback::RELAY_URL)?;
     let payload = feedback::payload(&message, email.as_deref(), &app.package_info().version.to_string())?;
-    feedback::send(url, &payload).await
+    let result = feedback::send(url, &payload).await;
+    if result.is_ok() {
+        analytics::track_feedback_sent(&app, email.is_some());
+    }
+    result
 }
 
 // ---------- updates ----------
@@ -296,8 +301,8 @@ async fn check_for_update(app: AppHandle, pending: State<'_, updater::Pending>) 
 
 /// Downloads and installs the update the last check found; progress goes down the channel.
 #[tauri::command]
-async fn install_update(pending: State<'_, updater::Pending>, channel: Channel<updater::UpdateProgress>) -> Result<()> {
-    updater::install(&pending, channel).await
+async fn install_update(app: AppHandle, pending: State<'_, updater::Pending>, channel: Channel<updater::UpdateProgress>) -> Result<()> {
+    updater::install(&pending, channel, &app).await
 }
 
 /// Starts the app again, after an update has been installed.
@@ -309,9 +314,12 @@ fn relaunch(app: AppHandle) {
 // ---------- AI ----------
 
 #[tauri::command]
-async fn ai_stream(id: String, req: AiRequest, channel: Channel<StreamEvent>, streams: State<'_, Streams>) -> Result<()> {
+async fn ai_stream(app: AppHandle, id: String, req: AiRequest, channel: Channel<StreamEvent>, streams: State<'_, Streams>) -> Result<()> {
     let token = CancelToken::default();
     streams.0.lock().unwrap().insert(id.clone(), token.clone());
+    if let Some(kind) = &req.kind {
+        analytics::track_ai_ask(&app, kind);
+    }
     let result = ai::stream(req, channel, token).await;
     streams.0.lock().unwrap().remove(&id);
     result
@@ -471,10 +479,20 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_updater::Builder::new().build());
+    
+    // Register Aptabase plugin only when the app key is set at compile time.
+    #[cfg(feature = "aptabase")]
+    if let Some(key) = analytics::APP_KEY {
+        if !key.trim().is_empty() {
+            builder = builder.plugin(freshjuice_tauri_aptabase::Builder::new(key).build());
+        }
+    }
+    
+    builder
         .manage(Streams::default())
         .manage(Opened::default())
         .manage(updater::Pending::default())
@@ -548,10 +566,16 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
-            #[cfg(target_os = "macos")]
-            if let tauri::RunEvent::Opened { urls } = event {
-                let paths = urls.iter().filter_map(|u| u.to_file_path().ok()).map(|p| p.to_string_lossy().into_owned()).collect();
-                open_paths(app, paths);
+            match event {
+                tauri::RunEvent::Ready => {
+                    analytics::track_app_opened(app);
+                }
+                #[cfg(target_os = "macos")]
+                tauri::RunEvent::Opened { urls } => {
+                    let paths = urls.iter().filter_map(|u| u.to_file_path().ok()).map(|p| p.to_string_lossy().into_owned()).collect();
+                    open_paths(app, paths);
+                }
+                _ => {}
             }
             #[cfg(not(target_os = "macos"))]
             let _ = (app, event);

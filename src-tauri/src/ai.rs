@@ -30,6 +30,9 @@ pub struct AiRequest {
     /// The folders of the roots added to the session, which the tools may read too.
     #[serde(default)]
     pub roots: Vec<String>,
+    /// The kind of AI ask: "quick_answer", "new_page", "deep_dive", or "refine" (for analytics).
+    #[serde(default)]
+    pub kind: Option<String>,
 }
 
 #[derive(Deserialize, Serialize, Clone)]
