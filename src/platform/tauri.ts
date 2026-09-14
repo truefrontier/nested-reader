@@ -14,6 +14,7 @@ import {
   type Platform,
   type Provider,
   type RecentSession,
+  type ResolvedSession,
   type Session,
   type Settings,
   type StreamEvent,
@@ -61,6 +62,8 @@ export const tauriPlatform: Platform = {
 
   loadSession: (folder, file) => invoke<Session | null>("load_session", { folder, file }),
   saveSession: (folder, session, file) => invoke("save_session", { folder, session, file }),
+  resolveSession: (folder, file, ids, bookmark) =>
+    invoke<ResolvedSession>("resolve_session", { folder, file: file ?? null, ids: ids ?? null, bookmark: bookmark ?? null }),
 
   listVersions: (folder, path) => invoke<VersionInfo[]>("list_versions", { folder, path }),
   readVersion: (folder, path, n) => invoke<string>("read_version", { folder, path, n }),

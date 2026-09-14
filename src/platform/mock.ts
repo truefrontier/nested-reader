@@ -8,6 +8,7 @@ import {
   type Platform,
   type Provider,
   type RecentSession,
+  type ResolvedSession,
   type Session,
   type Settings,
   type StreamEvent,
@@ -167,7 +168,23 @@ export const mockPlatform: Platform = {
   },
 
   async saveSession(folder, s, file) {
-    sessions.set(`${folder}#${file ?? ""}`, JSON.parse(JSON.stringify(s)));
+    const ids: Record<string, string> = {};
+    const prefix = `${folder}/`;
+    for (const k of files.keys()) {
+      if (!k.startsWith(prefix) || !MARKDOWN.test(k)) continue;
+      ids[k.slice(prefix.length)] = `mock:${k}`;
+    }
+    sessions.set(`${folder}#${file ?? ""}`, JSON.parse(JSON.stringify({ ...s, ids })));
+  },
+
+  async resolveSession(folder, file): Promise<ResolvedSession> {
+    return {
+      folder,
+      file,
+      remaps: [],
+      folderId: `mock:${folder}`,
+      fileId: file ? `mock:${folder}/${file}` : undefined,
+    };
   },
 
   async listVersions(folder, path): Promise<VersionInfo[]> {
