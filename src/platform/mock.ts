@@ -51,6 +51,16 @@ for (const [path, raw] of Object.entries(EXTRA_FILES)) {
   const at = new Date(t0 - 86_400_000).toISOString();
   files.set(`${EXTRA_FOLDER}/${path}`, { raw, modified: at, created: at });
 }
+/** `?longtree` pads the sample folder so the sidebar scrolls, to try a row at the foot of the list. */
+if (typeof location !== "undefined" && new URL(location.href).searchParams.has("longtree")) {
+  for (let i = 1; i <= 24; i++) {
+    const n = String(i).padStart(2, "0");
+    const path = `more/note-${n}.md`;
+    const title = `Note ${n}`;
+    const at = new Date(t0 - i * 45_000).toISOString();
+    files.set(`${SAMPLE_FOLDER}/${path}`, { raw: `---\ntitle: ${title}\n---\n\n# ${title}\n\n`, modified: at, created: at });
+  }
+}
 
 try {
   const stored = localStorage.getItem("ml:settings");
