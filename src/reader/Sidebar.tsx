@@ -1,9 +1,91 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { store, useReader } from "../state/store";
 import { buildFolders, dotState, rootDirs, type FolderNode, type TreeItem } from "../lib/tree";
 import { ChevronLeft, ChevronRight, MoreIcon } from "./Icons";
 import { RenameInput } from "./RenameInput";
 import { DEFAULT_SETTINGS } from "../platform";
+
+const stop = (e: MouseEvent) => e.stopPropagation();
+
+const EDGE = 8;
+/** The old `top: 26px` on a 28px row: tuck the layer 2px over the row's edge. */
+const TUCK = 2;
+
+/**
+ * The tree's ⋯ menu and delete confirmation. Drawn on `document.body` so `.tree`'s overflow
+ * cannot clip them, and flipped above the row when there is no room below.
+ */
+function AnchoredLayer({
+  anchor,
+  className,
+  stretch,
+  children,
+}: {
+  anchor: HTMLElement | undefined;
+  className: string;
+  stretch?: boolean;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [box, setBox] = useState<{ top: number; left: number; width?: number; up: boolean } | null>(null);
+
+  useLayoutEffect(() => {
+    const menu = ref.current;
+    if (!menu || !anchor) return;
+
+    const place = () => {
+      const a = anchor.getBoundingClientRect();
+      let width: number | undefined;
+      if (stretch) {
+        const inner = anchor.closest(".tree-inner");
+        const left0 = (inner?.getBoundingClientRect().left ?? a.left) - 2;
+        width = Math.max(148, a.right - 8 - left0);
+        menu.style.width = `${width}px`;
+      } else {
+        menu.style.width = "";
+      }
+      const mh = menu.offsetHeight;
+      const mw = width ?? menu.offsetWidth;
+      const spaceBelow = window.innerHeight - a.bottom;
+      const spaceAbove = a.top;
+      const up = spaceBelow < mh + EDGE && spaceAbove > spaceBelow;
+      let top = up ? a.top - mh + TUCK : a.bottom - TUCK;
+      top = Math.max(EDGE, Math.min(top, window.innerHeight - mh - EDGE));
+      let left = stretch ? (anchor.closest(".tree-inner")?.getBoundingClientRect().left ?? a.left) - 2 : a.right - 8 - mw;
+      left = Math.max(EDGE, Math.min(left, window.innerWidth - mw - EDGE));
+      setBox({ top, left, width, up });
+    };
+
+    place();
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
+  }, [anchor, stretch]);
+
+  if (!anchor) return null;
+
+  return createPortal(
+    <div
+      ref={ref}
+      className={`${className}${box?.up ? " up" : ""}${box ? " placed" : ""}`}
+      data-flip={box ? (box.up ? "up" : "down") : undefined}
+      style={{
+        position: "fixed",
+        top: box?.top ?? 0,
+        left: box?.left ?? 0,
+        right: "auto",
+        width: box?.width,
+        visibility: box ? "visible" : "hidden",
+      }}
+      onMouseDown={stop}
+      onClick={stop}
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      {children}
+    </div>,
+    document.body,
+  );
+}
 
 export function Sidebar() {
   const s = useReader();
@@ -78,15 +160,19 @@ export function Sidebar() {
   };
   // Each row has a ⋯ menu (also on right-click), and so does the header of an added root, keyed "root:<folder>".
   // A menu, the rename box it opens, and the delete confirmation all close on a click anywhere else,
-  // Esc, or when the tree scrolls.
+  // Esc, or when the tree scrolls. The menu and confirmation sit in a body-level layer so a row
+  // at the foot of a long tree still shows them in full, without scrolling the tree to reach them.
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
+  // The row that opened the menu or confirmation, so the body-level layer can sit against it.
+  const [layerAnchor, setLayerAnchor] = useState<HTMLElement | null>(null);
   // The confirmation's checkbox, cleared each time it opens so a tick never carries over unseen.
   const [dontAsk, setDontAsk] = useState(false);
   const closeMenus = () => {
     setMenuFor(null);
     setDeleting(null);
+    setLayerAnchor(null);
   };
   useEffect(() => {
     if (!menuFor && !deleting) return;
@@ -104,16 +190,27 @@ export function Sidebar() {
   // A row whose page has left the session (deleted here or elsewhere) takes its menu and boxes with it.
   useEffect(() => {
     const gone = (key: string | null) => !!key && (key.startsWith("root:") ? !roots.includes(key.slice(5)) : !s.pages[key]);
-    if (gone(menuFor)) setMenuFor(null);
-    if (gone(deleting)) setDeleting(null);
+    if (gone(menuFor)) {
+      setMenuFor(null);
+      if (!deleting || gone(deleting)) setLayerAnchor(null);
+    }
+    if (gone(deleting)) {
+      setDeleting(null);
+      if (!menuFor || gone(menuFor)) setLayerAnchor(null);
+    }
     if (gone(renaming)) setRenaming(null);
   }, [menuFor, deleting, renaming, s.pages, roots]);
-  const stop = (e: MouseEvent) => e.stopPropagation();
   const openMenu = (path: string) => (e: MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setDeleting(null);
-    setMenuFor(menuFor === path ? null : path);
+    if (menuFor === path) {
+      setMenuFor(null);
+      setLayerAnchor(null);
+    } else {
+      setMenuFor(path);
+      setLayerAnchor((e.currentTarget as HTMLElement).closest(".row, .frow") as HTMLElement);
+    }
   };
   // Delete asks from the row itself, until "Do not ask again" has been ticked once.
   const askDelete = (path: string) => {
@@ -164,7 +261,7 @@ export function Sidebar() {
                 <MoreIcon />
               </span>
               {open && (
-                <div className="row-menu" onMouseDown={stop} onClick={stop} onContextMenu={(e) => e.preventDefault()}>
+                <AnchoredLayer anchor={layerAnchor ?? undefined} className="row-menu">
                   <div
                     className="item"
                     onClick={() => {
@@ -203,10 +300,10 @@ export function Sidebar() {
                   >
                     Delete
                   </div>
-                </div>
+                </AnchoredLayer>
               )}
               {confirming && (
-                <div className="row-confirm" onMouseDown={stop} onClick={stop} onContextMenu={(e) => e.preventDefault()}>
+                <AnchoredLayer anchor={layerAnchor ?? undefined} className="row-confirm" stretch>
                   <div>Delete “{p.title}”?</div>
                   <div className="sub">
                     Its file moves to <code>.reader/trash</code> inside the folder.
@@ -229,7 +326,7 @@ export function Sidebar() {
                       Delete
                     </span>
                   </div>
-                </div>
+                </AnchoredLayer>
               )}
             </div>
           );
@@ -265,7 +362,7 @@ export function Sidebar() {
             </span>
           )}
           {menuOpen && (
-            <div className="row-menu" onMouseDown={stop} onClick={stop} onContextMenu={(e) => e.preventDefault()}>
+            <AnchoredLayer anchor={layerAnchor ?? undefined} className="row-menu">
               <div
                 className="item"
                 onClick={() => {
@@ -275,7 +372,7 @@ export function Sidebar() {
               >
                 Remove from session
               </div>
-            </div>
+            </AnchoredLayer>
           )}
         </div>
         {open && (
