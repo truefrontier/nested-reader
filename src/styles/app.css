@@ -681,6 +681,8 @@ button {
   min-height: 0;
   overflow-y: auto;
   position: relative;
+  /* Trap the scroll compositor so reading text cannot paint over window overlays. */
+  z-index: 0;
   user-select: text;
   -webkit-user-select: text;
 }
@@ -1594,10 +1596,10 @@ button {
 /* ---------- misc ---------- */
 
 /* A newer version is ready: a quiet card at the foot of the window, above the toast, until Later or the relaunch.
-   `--bg` rather than `--card`: the card token is a wash, so page text showed through. Isolation plus a z-index
-   above `.main` / `.home` keeps WebKit's scrolled reading layer from compositing over the card. */
+   `--bg` rather than `--card`: the card token is a wash, so page text showed through. `fixed` plus isolation
+   keeps it in the viewport layer, above the reading pane's scroll compositor. */
 .update-bar {
-  position: absolute;
+  position: fixed;
   left: 50%;
   bottom: 20px;
   transform: translateX(-50%);
@@ -1616,7 +1618,7 @@ button {
   gap: 14px;
   font-size: 12.5px;
   line-height: 1.45;
-  animation: rise 0.15s ease-out;
+  animation: rise-centered 0.15s ease-out;
 }
 .update-bar .what {
   color: var(--mute);
@@ -1686,7 +1688,7 @@ button {
   }
 }
 .toast {
-  position: absolute;
+  position: fixed;
   left: 50%;
   bottom: 20px;
   transform: translateX(-50%);
@@ -1697,7 +1699,7 @@ button {
   font-size: 12.5px;
   z-index: 9;
   max-width: 70%;
-  animation: rise 0.15s ease-out;
+  animation: rise-centered 0.15s ease-out;
 }
 .empty-state {
   flex: 1;
