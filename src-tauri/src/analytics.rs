@@ -4,7 +4,6 @@
 //! When `APTABASE_APP_KEY` is not set at compile time, every call becomes a no-op.
 
 use serde_json::json;
-use std::collections::HashMap;
 
 /// Compiled in from the environment; when absent or empty, tracking is disabled.
 pub const APP_KEY: Option<&str> = option_env!("APTABASE_APP_KEY");
@@ -23,9 +22,7 @@ pub fn track_app_opened(app: &tauri::AppHandle) {
     {
         use freshjuice_tauri_aptabase::EventTracker;
         let version = app.package_info().version.to_string();
-        let mut props = HashMap::new();
-        props.insert("version".to_string(), json!(version));
-        app.track_event("app_opened", Some(props));
+        let _ = app.track_event("app_opened", Some(json!({ "version": version })));
     }
 }
 
@@ -37,9 +34,7 @@ pub fn track_feedback_sent(app: &tauri::AppHandle, has_email: bool) {
     #[cfg(feature = "aptabase")]
     {
         use freshjuice_tauri_aptabase::EventTracker;
-        let mut props = HashMap::new();
-        props.insert("has_email".to_string(), json!(if has_email { 1 } else { 0 }));
-        app.track_event("feedback_sent", Some(props));
+        let _ = app.track_event("feedback_sent", Some(json!({ "has_email": if has_email { 1 } else { 0 } })));
     }
 }
 
@@ -51,9 +46,7 @@ pub fn track_update_checked(app: &tauri::AppHandle, result: &str) {
     #[cfg(feature = "aptabase")]
     {
         use freshjuice_tauri_aptabase::EventTracker;
-        let mut props = HashMap::new();
-        props.insert("result".to_string(), json!(result));
-        app.track_event("update_checked", Some(props));
+        let _ = app.track_event("update_checked", Some(json!({ "result": result })));
     }
 }
 
@@ -65,10 +58,10 @@ pub fn track_update_installed(app: &tauri::AppHandle, from_version: &str, to_ver
     #[cfg(feature = "aptabase")]
     {
         use freshjuice_tauri_aptabase::EventTracker;
-        let mut props = HashMap::new();
-        props.insert("from_version".to_string(), json!(from_version));
-        props.insert("to_version".to_string(), json!(to_version));
-        app.track_event("update_installed", Some(props));
+        let _ = app.track_event(
+            "update_installed",
+            Some(json!({ "from_version": from_version, "to_version": to_version })),
+        );
     }
 }
 
@@ -80,9 +73,7 @@ pub fn track_ai_ask(app: &tauri::AppHandle, kind: &str) {
     #[cfg(feature = "aptabase")]
     {
         use freshjuice_tauri_aptabase::EventTracker;
-        let mut props = HashMap::new();
-        props.insert("kind".to_string(), json!(kind));
-        app.track_event("ai_ask", Some(props));
+        let _ = app.track_event("ai_ask", Some(json!({ "kind": kind })));
     }
 }
 
