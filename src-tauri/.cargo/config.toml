@@ -1,5 +1,6 @@
 # Where the Send feedback box posts its note: the URL of the Fly relay in feedback-relay/.
 # Compiled into the app (`option_env!` in src/feedback.rs); empty means the box says feedback
-# is not set up in this build. A value already in the shell's environment wins.
+# is not set up in this build. A value already in the shell's environment wins. The same relay
+# serves app updates; that URL lives in tauri.conf.json under plugins.updater.endpoints.
 [env]
 NESTED_FEEDBACK_URL = "https://nested-feedback.fly.dev"

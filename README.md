@@ -19,6 +19,18 @@ pnpm tauri dev
 
 `pnpm tauri build` produces the `.app` and `.dmg` under `src-tauri/target/release/bundle/`.
 
+## Install and update
+
+The newest build is always at **https://nested-feedback.fly.dev/updates/dmg**: open the `.dmg`, drag Nested to Applications. After that the app keeps itself current. A few seconds after it opens (and every few hours while it runs) it asks for a newer version; when there is one, a quiet card at the foot of the window says so, and **Update and relaunch** downloads it, swaps it in and starts the app again. **Later** puts it off until the next launch. To look right now, use **Nested › Check for Updates…** in the menu, or the Updates row in Settings › General, which also shows the version you are on. Under `pnpm tauri dev` nothing can be swapped in, so both say updates arrive in the built app.
+
+Publishing a version is one command from a clean `main`:
+
+```bash
+pnpm release 0.2.0     # or: pnpm release patch | minor | major
+```
+
+It writes the version into `package.json`, `tauri.conf.json`, `Cargo.toml` and `Cargo.lock`, commits, tags `v0.2.0` and pushes. GitHub Actions ([`release.yml`](.github/workflows/release.yml)) then builds a universal Mac app, signs the updater bundle, and publishes a GitHub Release with the `.dmg`, the bundle, and `latest.json`. The repository is private, so installed copies do not read the release directly: the relay in [`feedback-relay/`](feedback-relay/README.md) serves `latest.json` and the downloads with its own token. The Actions workflow needs the updater's private key as the `TAURI_SIGNING_PRIVATE_KEY` secret; its public half is in `tauri.conf.json`.
+
 ## Opening pages
 
 Click a link or a tree row to open the page here. ⌘‑click opens it beside (the default for "⌘‑click opens", which New Page ⌘↵ shares), and ⌘⇧‑click marks it unread to read later, or read again if it already was (the default for "⌘⇧‑click opens", shared with Deep Dive ⌘⇧↵). Hold ⌥ for the other placement. Both are under Settings › General. In the tree, a blue dot means unread, a green ring means changes to review, and an amber dot means the page failed to generate; open it and press ↵ to try again. Hover a row for its ⋯ menu (or right‑click it) to mark the page unread or read again, **rename** it (the title, which is what the tree shows — the file keeps its name, so links to it still work), **reveal it in Finder**, or **delete** it. Delete asks first and moves the file to `.reader/trash` inside the folder, snapshots and all, so you can fetch it back; tick “Do not ask again” to stop the question, and turn it back on under Settings › General › Deleting a page.

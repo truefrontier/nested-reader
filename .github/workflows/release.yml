@@ -1,0 +1,78 @@
+# Builds the Mac app and publishes it as a GitHub Release whenever a version tag is pushed.
+# `pnpm release 0.2.0` bumps the version everywhere, commits, tags v0.2.0 and pushes; this then
+# builds a universal (Apple silicon + Intel) .dmg and the signed updater bundle, and attaches
+# them with latest.json. Running copies of Nested see the new version through the relay in
+# feedback-relay/ within a few hours, or at their next launch.
+#
+# Needs two repository secrets (Settings › Secrets and variables › Actions):
+#   TAURI_SIGNING_PRIVATE_KEY           the private half of the updater key (its public half is
+#                                       plugins.updater.pubkey in src-tauri/tauri.conf.json)
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  the key's password. The key made for this repo has an empty
+#                                       one, so leave this secret unset: an unset secret reaches the
+#                                       build as an empty string, which is what that key expects.
+#
+# To also code-sign and notarize with Apple (so a fresh install opens without the right-click
+# dance), add APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY, APPLE_ID,
+# APPLE_PASSWORD and APPLE_TEAM_ID to the build step's env; tauri-action picks them up by name.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The tag and the app's own version must agree, or the release would carry the wrong number.
+      - name: Check the tag against the app version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          tag="${GITHUB_REF#refs/tags/v}"
+          if [ "$version" != "$tag" ]; then
+            echo "Tag v$tag does not match src-tauri/tauri.conf.json version $version. Use pnpm release."
+            exit 1
+          fi
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: pnpm install --frozen-lockfile
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: v__VERSION__
+          releaseName: Nested __VERSION__
+          releaseBody: |
+            Download the `.dmg` to install Nested. Copies already installed update themselves from the Nested menu › Check for Updates…, or on their own within a few hours.
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true
+          # tauri.release.conf.json turns on the updater artifacts (which need the signing key) only here,
+          # so a plain `pnpm tauri build` on a Mac keeps working without it.
+          args: --target universal-apple-darwin --config src-tauri/tauri.release.conf.json

@@ -8,6 +8,7 @@ import { SplitPane } from "./reader/SplitPane";
 import { MapOverlay } from "./reader/MapOverlay";
 import { FeedbackPopover, NewFilePopover, RefinePopover, RefineStatus } from "./reader/Popovers";
 import { SidebarIcon } from "./reader/Icons";
+import { UpdateBar } from "./reader/UpdateBar";
 import { useSyncScroll } from "./reader/useSyncScroll";
 import { SettingsApp } from "./settings/SettingsApp";
 
@@ -174,6 +175,7 @@ export default function App() {
           </div>
         </>
       )}
+      <UpdateBar />
       {s.ui.error && <div className="toast">{s.ui.error}</div>}
       {mockSettings && (
         <div className="modal-back" onMouseDown={(e) => e.target === e.currentTarget && setMockSettings(false)}>

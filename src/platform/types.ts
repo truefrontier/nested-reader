@@ -139,6 +139,15 @@ export type DefaultApp = {
   available: boolean;
 };
 
+/** A newer release of the app, as the desktop backend reports it. */
+export type UpdateInfo = { version: string; notes?: string };
+
+/** What a check for updates found. `supported` is false where nothing can be swapped in: the browser preview and `tauri dev`. */
+export type UpdateCheck = { current: string; supported: boolean; update?: UpdateInfo };
+
+/** Download progress while an update installs; `installed` comes once, just before the app relaunches. */
+export type UpdateProgress = { type: "progress"; downloaded: number; total?: number | null } | { type: "installed" };
+
 export const DEFAULT_SETTINGS: Settings = {
   newPagesSubfolder: "",
   openAtLaunch: "last-session",
@@ -285,4 +294,10 @@ export interface Platform {
   setDefaultMarkdownApp(): Promise<DefaultApp>;
   /** Sends a note from the Send feedback box; it is filed as a GitHub issue. Rejects with a sentence to show. */
   sendFeedback(message: string, email?: string): Promise<void>;
+  /** Asks the update server for a newer release. Rejects with a sentence to show. */
+  checkForUpdate(): Promise<UpdateCheck>;
+  /** Downloads and installs the update the last check found; resolves once it is in place, ready for `relaunch`. */
+  installUpdate(onProgress: (p: UpdateProgress) => void): Promise<void>;
+  /** Starts the app again, on the new version. */
+  relaunch(): Promise<void>;
 }

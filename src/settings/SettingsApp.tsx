@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { DEFAULT_SETTINGS, READING_WIDTH_RANGE, isTauri, platform, type Auth, type DefaultApp, type OpenAtLaunch, type Placement, type Provider, type ReadingWidthUnit, type Settings } from "../platform";
+import { DEFAULT_SETTINGS, READING_WIDTH_RANGE, isTauri, platform, type Auth, type DefaultApp, type OpenAtLaunch, type UpdateCheck, type Placement, type Provider, type ReadingWidthUnit, type Settings } from "../platform";
 import { authFor, chatModels, modelSlot, pickDefaultModel } from "../lib/models";
 import { AiIcon, AppearanceIcon, CheckIcon, GeneralIcon, UpDownIcon } from "../reader/Icons";
 
@@ -270,6 +270,9 @@ function General({ settings, save, dialogOpen }: SectionProps & { dialogOpen: { 
           <span className="note">Into .reader/trash</span>
         </span>
       </Row>
+      <Row label="Updates" top>
+        <UpdateRow />
+      </Row>
       <div className="divider" />
       <Row label="⌘‑click opens">
         <span className="with-note">
@@ -341,6 +344,95 @@ function DefaultAppRow({ save, dialogOpen }: { save: (patch: Partial<Settings>) 
         )}
       </span>
       <span className="note wrap">{error ?? (app.isNested ? "A double‑click in Finder opens the file here." : "Also Open With in Finder. macOS may ask you to confirm.")}</span>
+    </span>
+  );
+}
+
+type UpdateRowState =
+  | { kind: "idle" }
+  | { kind: "checking" }
+  | { kind: "latest" }
+  | { kind: "found"; version: string }
+  | { kind: "installing"; version: string; pct?: number }
+  | { kind: "error"; message: string; version?: string };
+
+/**
+ * The running version with Check for updates, and the install when one is found. The reader
+ * window checks by itself a few seconds after launch; this row is for looking now.
+ */
+function UpdateRow() {
+  const [check, setCheck] = useState<UpdateCheck | null>(null);
+  const [state, setState] = useState<UpdateRowState>({ kind: "idle" });
+  useEffect(() => {
+    platform
+      .checkForUpdate()
+      .then((c) => {
+        setCheck(c);
+        if (c.update) setState({ kind: "found", version: c.update.version });
+      })
+      .catch(() => setCheck({ current: "", supported: true }));
+  }, []);
+  const look = async () => {
+    setState({ kind: "checking" });
+    try {
+      const c = await platform.checkForUpdate();
+      setCheck(c);
+      setState(c.update ? { kind: "found", version: c.update.version } : { kind: "latest" });
+    } catch (e) {
+      setState({ kind: "error", message: e instanceof Error ? e.message : String(e) });
+    }
+  };
+  const install = async (version: string) => {
+    setState({ kind: "installing", version });
+    try {
+      await platform.installUpdate((p) => {
+        if (p.type === "progress") setState({ kind: "installing", version, pct: p.total ? Math.min(100, Math.round((p.downloaded / p.total) * 100)) : undefined });
+      });
+      await platform.relaunch();
+    } catch (e) {
+      setState({ kind: "error", message: e instanceof Error ? e.message : String(e), version });
+    }
+  };
+  if (!check) return <span className="mute">…</span>;
+  if (!check.supported) return <span className="mute">Available in the built app</span>;
+  const current = check.current ? `Nested ${check.current}` : "Nested";
+  const busy = state.kind === "checking" || state.kind === "installing";
+  const version = state.kind === "found" || state.kind === "installing" ? state.version : state.kind === "error" ? state.version : undefined;
+  const status =
+    state.kind === "installing"
+      ? state.pct === undefined
+        ? `Installing ${state.version}…`
+        : `Downloading ${state.version}… ${state.pct}%`
+      : version
+        ? `${version} is ready`
+        : current;
+  const note =
+    state.kind === "error"
+      ? state.message
+      : state.kind === "latest"
+        ? "You're on the latest version."
+        : state.kind === "installing"
+          ? "The app relaunches when it is in place."
+          : version
+            ? `You're on ${check.current || "an older version"}. The update takes a moment and relaunches the app.`
+            : "The app looks for a newer version a few seconds after it opens, and every few hours after that.";
+  return (
+    <span className="stack">
+      <span className="spread">
+        <span>{status}</span>
+        {busy ? (
+          <span className="act busy">{state.kind === "checking" ? "Checking…" : "Working…"}</span>
+        ) : version ? (
+          <span className="act" onClick={() => void install(version)}>
+            {state.kind === "error" ? "Try again" : "Update and relaunch"}
+          </span>
+        ) : (
+          <span className="act" onClick={() => void look()}>
+            Check for updates
+          </span>
+        )}
+      </span>
+      <span className="note wrap">{note}</span>
     </span>
   );
 }
