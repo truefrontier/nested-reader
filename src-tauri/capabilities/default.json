@@ -10,6 +10,6 @@
     "core:window:allow-close",
     "opener:default",
     "dialog:default",
-    "aptabase:allow-track-event"
+    "freshjuice-tauri-aptabase:allow-track-event"
   ]
 }

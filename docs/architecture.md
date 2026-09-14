@@ -107,7 +107,7 @@ Nested uses Aptabase for privacy-friendly desktop analytics (`analytics.rs`). Al
 - **update_installed**: after an update installs successfully (includes `from_version` and `to_version`)
 - **ai_ask**: when an AI request starts streaming (includes `kind`: `quick_answer`, `new_page`, `deep_dive`, or `refine`)
 
-No content, file paths, markdown, prompts, emails, API keys, model output, or user data is sent. The plugin is registered conditionally in `lib.rs` only when a key is present, and the ACL permission `aptabase:allow-track-event` is in `capabilities/default.json`. For release builds, the key is set in the GitHub Actions workflow as `APTABASE_APP_KEY` (from a secret of the same name).
+No content, file paths, markdown, prompts, emails, API keys, model output, or user data is sent. The plugin is registered conditionally in `lib.rs` only when a key is present, and the ACL permission `freshjuice-tauri-aptabase:allow-track-event` is in `capabilities/default.json`. For release builds, the key is set in the GitHub Actions workflow as `APTABASE_APP_KEY` (from a secret of the same name).
 
 ## AI
 
