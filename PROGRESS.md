@@ -744,3 +744,10 @@
 - Undo for a delete: the file is in `.reader/trash`, so a toast with an Undo could move it back; nothing reads that folder today.
 - If file names turn out to matter, a real file rename would need link rewriting across every body — worth its own task.
 - A "Empty trash" action, since `.reader/trash` grows without limit.
+
+### Merged into main — 2026-09-14
+- Main had moved on two commits (release tooling, in-app updater, `Nested 0.2.0`). Merged `origin/main` into the branch first.
+- One conflict, in `src/settings/SettingsApp.tsx`: both sides added a row after "Markdown files". Kept both — "Deleting a page" with the file-handling rows, then "Updates" closing the group before the divider.
+- The other overlapping files (`store.ts`, `mock.ts`, `tauri.ts`, `types.ts`, `app.css`, the docs) auto-merged; main's additions are a separate concern (`UpdateInfo`, `checkForUpdate`, `UpdateBar`) with no overlap on `confirmDelete` or `deletePage`.
+- Re-ran the checks on the merged tree: 18 store checks and 9 UI checks in headless Chromium, including that main's Updates row survived. `tsc` and `pnpm build` pass.
+- `main` is now at `36732a3`; the branch `claude/zen-hamilton-hn1mfa` is pushed and matches it.
