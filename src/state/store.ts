@@ -1220,7 +1220,7 @@ export class ReaderStore {
 
   // ---------- AI plumbing ----------
 
-  private request(system: string, messages: ChatMessage[], maxTokens?: number): AiRequest {
+  private request(system: string, messages: ChatMessage[], maxTokens?: number, kind?: string): AiRequest {
     const s = this.state.settings;
     const auth = authFor(s, s.provider);
     // Only the providers with a server field carry a base URL; OpenAI and Anthropic go to their own hosts.
@@ -1228,7 +1228,7 @@ export class ReaderStore {
     // With tools on, the request names the session folder so the model can read its pages itself.
     const folder = s.tools ? this.state.folder : undefined;
     const roots = folder ? this.rootDirs() : undefined;
-    return { provider: s.provider, auth, model: s.models[modelSlot(s.provider, auth)], baseUrl: baseUrl || undefined, system, messages, maxTokens, folder, roots: roots?.length ? roots : undefined };
+    return { provider: s.provider, auth, model: s.models[modelSlot(s.provider, auth)], baseUrl: baseUrl || undefined, system, messages, maxTokens, folder, roots: roots?.length ? roots : undefined, kind };
   }
 
   private stream(key: string, req: AiRequest, on: { delta: (t: string) => void; done: () => void; error: (m: string) => void }) {
@@ -1331,7 +1331,7 @@ export class ReaderStore {
       const ctx = await this.askContext(selection ?? this.state.ui.selection, thread, this.panePath(pane));
       if (!ctx) return;
       const { system, messages } = quickAnswerMessages(ctx, q);
-      this.stream("lookup", this.request(system, messages, 400), {
+      this.stream("lookup", this.request(system, messages, 400, "quick_answer"), {
         delta: (t) => {
           const cur = this.state.ui.lookup;
           if (cur) this.setUi({ lookup: { ...cur, answer: cur.answer + t } });
@@ -1418,6 +1418,7 @@ export class ReaderStore {
     if (!ctx) return;
     const deep = opts.mode === "deep-dive";
     const { system, messages } = opts.from === "session" ? newFileMessages(ctx, opts.question, deep) : newPageMessages(ctx, opts.question, deep);
+    const kind = opts.mode === "deep-dive" ? "deep_dive" : "new_page";
     let text = "";
     const flush = (final: boolean) => {
       const body = text.trim().startsWith("#") ? text : heading + text;
@@ -1445,7 +1446,7 @@ export class ReaderStore {
       const s = this.state.session;
       this.setSession({ loading: s.loading.filter((p) => p !== path) });
     };
-    this.stream(`page:${path}`, this.request(system, messages, opts.mode === "deep-dive" ? 2400 : 1200), {
+    this.stream(`page:${path}`, this.request(system, messages, opts.mode === "deep-dive" ? 2400 : 1200, kind), {
       delta: (t) => {
         text += t;
         flush(false);
@@ -1557,7 +1558,7 @@ export class ReaderStore {
         if (!ctx) return resolve();
         const { system, messages } = refineMessages({ ...ctx, page: { meta: this.state.pages[path], body } }, instruction, selection ? "selection" : "page", target);
         let out = "";
-        this.stream(`refine:${path}`, this.request(system, messages, selection ? 800 : 4000), {
+        this.stream(`refine:${path}`, this.request(system, messages, selection ? 800 : 4000, "refine"), {
           delta: (t) => {
             out += t;
           },

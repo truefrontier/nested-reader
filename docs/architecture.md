@@ -95,6 +95,18 @@ When a page is created from a highlight, the highlighted words in the source are
 
 Diffing happens in TypeScript on the rendered text of each block (`src/lib/diff.ts`), so Rust never needs to understand Markdown.
 
+## Analytics
+
+Nested uses Aptabase for privacy-friendly desktop analytics (`analytics.rs`). All tracking becomes a no-op when `APTABASE_APP_KEY` is not set at compile time (or is empty), making development and local builds safe by default. Five events are tracked:
+
+- **app_opened**: on app launch (includes app version)
+- **feedback_sent**: after successful feedback submission (includes whether an email was provided: 0 or 1)
+- **update_checked**: after an update check settles (includes result: `latest`, `available`, `unsupported`, or `error`)
+- **update_installed**: after an update installs successfully (includes `from_version` and `to_version`)
+- **ai_ask**: when an AI request starts streaming (includes `kind`: `quick_answer`, `new_page`, `deep_dive`, or `refine`)
+
+No content, file paths, markdown, prompts, emails, API keys, model output, or user data is sent. The plugin is registered conditionally in `lib.rs` only when a key is present, and the ACL permission `aptabase:allow-track-event` is in `capabilities/default.json`. For release builds, the key is set in the GitHub Actions workflow as `APTABASE_APP_KEY` (from a secret of the same name).
+
 ## AI
 
 `ai_stream` takes a provider, model, optional base URL, a system prompt and messages, and streams deltas back over a `tauri::ipc::Channel`. Providers:

@@ -53,22 +53,35 @@ pub const SUPPORTED: bool = !cfg!(debug_assertions);
 pub async fn check(app: &AppHandle, pending: &Pending) -> Result<UpdateCheck> {
     let current = app.package_info().version.to_string();
     if !SUPPORTED {
+        crate::analytics::track_update_checked(app, "unsupported");
         return Ok(UpdateCheck { current, supported: false, update: None });
     }
     let updater = app.updater().map_err(describe)?;
-    let found = updater.check().await.map_err(describe)?;
-    let update = found.as_ref().map(|u| UpdateInfo { version: u.version.clone(), notes: notes_of(u.body.as_deref()) });
-    *pending.update.lock().unwrap() = found;
-    Ok(UpdateCheck { current, supported: true, update })
+    let result = updater.check().await;
+    match result {
+        Ok(found) => {
+            let has_update = found.is_some();
+            let update = found.as_ref().map(|u| UpdateInfo { version: u.version.clone(), notes: notes_of(u.body.as_deref()) });
+            *pending.update.lock().unwrap() = found;
+            crate::analytics::track_update_checked(app, if has_update { "available" } else { "latest" });
+            Ok(UpdateCheck { current, supported: true, update })
+        }
+        Err(e) => {
+            crate::analytics::track_update_checked(app, "error");
+            Err(describe(e))
+        }
+    }
 }
 
 /// Downloads and installs the update the last check found, reporting progress on the channel.
 /// The caller relaunches afterwards.
-pub async fn install(pending: &Pending, channel: Channel<UpdateProgress>) -> Result<()> {
+pub async fn install(pending: &Pending, channel: Channel<UpdateProgress>, app: &AppHandle) -> Result<()> {
     let update = pending.update.lock().unwrap().clone().ok_or_else(|| AppError::Message("Check for updates first.".into()))?;
     if pending.installing.swap(true, Ordering::SeqCst) {
         return Err(AppError::Message("An update is already installing.".into()));
     }
+    let from_version = app.package_info().version.to_string();
+    let to_version = update.version.clone();
     let downloaded = std::sync::atomic::AtomicU64::new(0);
     let result = update
         .download_and_install(
@@ -85,6 +98,7 @@ pub async fn install(pending: &Pending, channel: Channel<UpdateProgress>) -> Res
     pending.installing.store(false, Ordering::SeqCst);
     if result.is_ok() {
         *pending.update.lock().unwrap() = None;
+        crate::analytics::track_update_installed(app, &from_version, &to_version);
     }
     result
 }

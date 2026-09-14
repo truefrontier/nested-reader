@@ -226,6 +226,8 @@ export type AiRequest = {
   folder?: string;
   /** The folders of the session's other roots, which the tools may read too. */
   roots?: string[];
+  /** The kind of AI ask for analytics: "quick_answer", "new_page", "deep_dive", or "refine". */
+  kind?: string;
 };
 
 /** A tool the model is using, reported so the UI can say what it is looking at. */

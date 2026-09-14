@@ -19,6 +19,26 @@ pnpm tauri dev
 
 `pnpm tauri build` produces the `.app` and `.dmg` under `src-tauri/target/release/bundle/`.
 
+## Analytics
+
+Nested uses [Aptabase](https://aptabase.com/) for privacy-friendly desktop analytics. Events are only tracked when the `APTABASE_APP_KEY` environment variable is set at compile time. Without a key, all tracking is a no-op.
+
+To enable analytics in a release build, set the app key before building:
+
+```bash
+export APTABASE_APP_KEY="your-app-key-here"
+pnpm tauri build
+```
+
+The tracked events are:
+- **app_opened**: when the app launches (includes app version)
+- **feedback_sent**: after successful feedback submission (includes whether an email was provided)
+- **update_checked**: after an update check settles (includes result: latest, available, unsupported, or error)
+- **update_installed**: after an update installs successfully (includes from and to versions)
+- **ai_ask**: when an AI ask is submitted (includes kind: quick_answer, new_page, deep_dive, or refine)
+
+No content, file paths, prompts, API keys, or user data is ever tracked.
+
 ## Install and update
 
 The newest build is always at **https://nested-feedback.fly.dev/updates/dmg**: open the `.dmg`, drag Nested to Applications. After that the app keeps itself current. A few seconds after it opens (and every few hours while it runs) it asks for a newer version; when there is one, a quiet card at the foot of the window says so, and **Update and relaunch** downloads it, swaps it in and starts the app again. **Later** puts it off until the next launch. To look right now, use **Nested › Check for Updates…** in the menu, or the Updates row in Settings › General, which also shows the version you are on. Under `pnpm tauri dev` nothing can be swapped in, so both say updates arrive in the built app.
