@@ -121,6 +121,8 @@ export type Settings = {
   context: { highlight: boolean; session: boolean; folder: boolean };
   /** Let the model list, read and search the session folder's pages itself while it answers. */
   tools: boolean;
+  /** Ask before deleting a page from the tree; "Do not ask again" in that confirmation turns it off. */
+  confirmDelete: boolean;
   /** The Home screen still offers to make Nested the Mac's app for .md files; off after Not now or once it is. */
   offerDefaultApp: boolean;
 };
@@ -162,6 +164,7 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   context: { highlight: true, session: true, folder: false },
   tools: true,
+  confirmDelete: true,
   offerDefaultApp: true,
 };
 
@@ -246,6 +249,8 @@ export interface Platform {
   readPage(folder: string, path: string): Promise<Page>;
   /** Writes the full file content (front matter included). */
   writePage(folder: string, path: string, content: string): Promise<void>;
+  /** Takes a page out of the folder; the desktop backend parks it in `.reader/trash` rather than removing it. */
+  deletePage(folder: string, path: string): Promise<void>;
   /** A folder's session, or with `file`, the separate session kept for a single-file session in that folder. */
   loadSession(folder: string, file?: string): Promise<Session | null>;
   saveSession(folder: string, session: Session, file?: string): Promise<void>;

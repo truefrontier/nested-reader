@@ -678,3 +678,33 @@
 ### Possible next steps
 - Show the Before / Now change cards in the split pane too, since the tints and strip already appear there.
 - Keep a split-pane highlight when the main pane navigates (today `navigate` resets all of `ui`).
+
+## Session: 2026-09-14 — Rename, Reveal in Finder and Delete in the tree's ⋯ menu
+
+### Leading assumptions
+- "Files in the sidebar" means the page rows, not the folder headers. The root header's ⋯ menu keeps its one item (Remove from session).
+- **Rename means the page's title, not the file name.** The tree, the maps and the crumbs all show the title; the file name is only ever derived from it at creation. Renaming the file itself would break every `[[wiki-link]]` (`resolveWikiTarget` matches on the file's base name) and every `source:` line pointing at the page, and the bodies that hold those links are not all in memory to rewrite. So `renamePage` writes the new title to the front matter and to the page's first heading when that heading still reads as the old title, and leaves the file where it is. This is a judgement call worth revisiting if file names turn out to matter to the user.
+- **Delete should be undoable.** No `trash` crate and no new objc bindings (the container cannot compile the Rust side at all), so `files::delete_page` moves the page and its snapshot folder into `.reader/trash/` inside the folder the page lives in — the same thing Obsidian does by default. `list_pages` already skips hidden directories, so a trashed page stays out of the tree.
+- "Do not ask again" belongs in settings, and a setting the user can turn off needs a way back: Settings › General › Deleting a page.
+
+### World facts
+- Rust: `files::delete_page(folder, rel)` parks `<stem>.md` and `<stem>-versions/` in `.reader/trash/`, with `-2`, `-3` … on a name clash; it refuses a path outside the folder, a missing page and a directory. Registered as the `delete_page` command in `lib.rs`.
+- Platform contract: `deletePage(folder, path)` and `Settings.confirmDelete` (default `true`; the Tauri `getSettings` spread gives old settings files the default).
+- Store: `renamePage`, `revealPage`, `deletePage`, plus private `forgetPage`, `endFileSession`, `dropRoots` and `rootKey`. `removeRoot` now calls `dropRoots`. Module helpers `newestPath` and `renameHeading`.
+- `deletePage` stops `page:<path>` and `refine:<path>` streams and clears the write timer *before* touching disk — a flush in flight would otherwise write the file straight back. The "Do not ask again" setting is only saved once the delete itself goes through.
+- Deleting the page a **file session** was opened from ends that session (Home, and out of recents); deleting the page an **added root** was opened from drops that root and reloads.
+- UI: `RenameInput` moved out of `Home.tsx` into `src/reader/RenameInput.tsx` and is shared. The confirmation (`.row-confirm`) undoes the row's indent with per-depth `left` offsets so it reads the same at any depth and any sidebar width. Delete uses `--warn` (the amber already used for a page that failed to write); the palette has no red.
+- The container cannot run `cargo check`: no cargo registry cache and `keyring`'s `apple-native` feature does not build on Linux. The new Rust was verified by extracting `safe_join` / `reader_dir` / `page_key` / `versions_dir` / `delete_page` into a standalone file and running real filesystem tests against it.
+
+### Timeline
+1. 2026-09-14: User asked for Rename, Reveal in Finder and Delete (with a confirmation carrying a "Do not ask again" checkbox) in the sidebar's ⋯ menu.
+2. Read the sidebar, store, platform contract, `files.rs` and the docs. Weighed rename-the-file against rename-the-title and chose the title, for the link-breakage reason above.
+3. Wrote the Rust, the platform methods (both backends), the store actions, the menu, the confirmation, the CSS and the Settings row.
+4. Verified: 8 filesystem checks on `delete_page` (trash layout, snapshots moved, subfolder pages, name clashes, `.markdown`, path escape, missing page, directory); 24 store checks in headless Chromium against the mock backend (rename trims, writes front matter and the heading, keeps the file name; delete clears the tree, bodies, trail, read list, closes the split pane, moves the reader on, empties cleanly); 11 UI checks (right-click, four items, Esc and Cancel leave the page alone, the checkbox turns the asking off and it stays off, Settings shows the way back). Screenshots in light and dark.
+5. `tsc` and `pnpm build` pass. Updated `README.md` and `docs/architecture.md`.
+
+### Possible next steps
+- Offer the same three items on the reading pane's own tools, so a page can be renamed or deleted without the tree.
+- Undo for a delete: the file is in `.reader/trash`, so a toast with an Undo could move it back; nothing reads that folder today.
+- If file names turn out to matter, a real file rename would need link rewriting across every body — worth its own task.
+- A "Empty trash" action, since `.reader/trash` grows without limit.

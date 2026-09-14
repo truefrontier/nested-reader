@@ -382,9 +382,14 @@ export class ReaderStore {
 
   /** Takes a root's folder (every root in it) out of the session and reloads, so its pages leave the tree. */
   async removeRoot(folder: string) {
+    await this.dropRoots((r) => r.folder !== folder);
+  }
+
+  /** Saves the session with only the roots `keep` accepts, then reloads it so the tree matches. */
+  private async dropRoots(keep: (r: SessionRoot) => boolean) {
     const { folder: primary, rootFile, session } = this.state;
     if (!primary) return;
-    const roots = (session.roots ?? []).filter((r) => r.folder !== folder);
+    const roots = (session.roots ?? []).filter(keep);
     try {
       window.clearTimeout(this.saveTimer);
       await platform.saveSession(primary, { ...session, roots: roots.length ? roots : undefined }, rootFile);
@@ -392,6 +397,12 @@ export class ReaderStore {
     } catch (e) {
       this.fail(e);
     }
+  }
+
+  /** The key a root's own page is held under: relative in the session folder, absolute in any other. */
+  private rootKey(r: SessionRoot): string | undefined {
+    if (!r.file) return undefined;
+    return r.folder === this.state.folder ? r.file : `${r.folder}/${r.file}`;
   }
 
   /**
@@ -657,6 +668,132 @@ export class ReaderStore {
     const s = this.state.session;
     if (!this.state.pages[path]) return;
     this.setSession({ unread: s.unread.includes(path) ? s.unread.filter((p) => p !== path) : [...s.unread, path] });
+  }
+
+  /**
+   * Renames a page: its title, which is what the tree, the maps and the page's own first heading show.
+   * The file keeps its name, so the [[wiki links]] and `source` lines that point at it stay good.
+   */
+  async renamePage(path: string, name: string) {
+    const meta = this.state.pages[path];
+    const title = name.trim();
+    if (!meta || !title || title === meta.title || !this.state.folder) return;
+    try {
+      const body = await this.loadBody(path);
+      const nextBody = renameHeading(body, meta.title, title);
+      const next: PageMeta = { ...meta, title };
+      await this.writePage(path, nextBody, next);
+      this.set({ pages: { ...this.state.pages, [path]: next }, bodies: { ...this.state.bodies, [path]: nextBody } });
+      // A session opened from this page is named after it, until it is given a name of its own on Home.
+      if (this.state.rootFile === path && !this.state.session.name) {
+        this.set({ folderName: title });
+        this.touchRecent({ name: title });
+      }
+    } catch (e) {
+      this.fail(e);
+    }
+  }
+
+  /** Selects a page's file in Finder. */
+  async revealPage(path: string) {
+    const { folder, rel } = this.loc(path);
+    try {
+      await platform.revealInFinder(`${folder}/${rel}`);
+    } catch (e) {
+      this.fail(e);
+    }
+  }
+
+  /**
+   * Deletes a page. The desktop backend parks its file and its snapshots in `.reader/trash` inside the
+   * folder the page lives in, rather than removing them, so the delete can still be undone by hand.
+   * `dontAskAgain` is the confirmation's checkbox: it turns the confirmation off for good.
+   */
+  async deletePage(path: string, dontAskAgain = false) {
+    if (!this.state.pages[path] || !this.state.folder) return;
+    // A page still being written, or with a write waiting behind its timer, would put the file straight back.
+    this.stopStream(`page:${path}`);
+    this.stopStream(`refine:${path}`);
+    window.clearTimeout(this.writeTimers.get(path));
+    this.writeTimers.delete(path);
+    const { folder, rel } = this.loc(path);
+    try {
+      await platform.deletePage(folder, rel);
+    } catch (e) {
+      // The write in flight is stopped either way; with the file still there, the page is simply idle now.
+      const s = this.state.session;
+      if (s.loading.includes(path)) this.setSession({ loading: s.loading.filter((p) => p !== path) });
+      return this.fail(e);
+    }
+    // The checkbox only counts once the delete itself has gone through.
+    if (dontAskAgain && this.state.settings.confirmDelete) void this.saveSettings({ confirmDelete: false });
+    // The page a session, or an added root, was opened from takes that root with it.
+    if (this.state.rootFile === path) return this.endFileSession();
+    const root = (this.state.session.roots ?? []).find((r) => this.rootKey(r) === path);
+    if (root) return this.dropRoots((r) => r !== root);
+    this.forgetPage(path);
+  }
+
+  /** Drops every trace of a page from the open session, once its file is gone. */
+  private forgetPage(path: string) {
+    const without = <T,>(map: Record<string, T>): Record<string, T> => {
+      const next = { ...map };
+      delete next[path];
+      return next;
+    };
+    const working = { ...this.state.working };
+    delete working[`page:${path}`];
+    delete working[`refine:${path}`];
+    const s = this.state.session;
+    const pages = without(this.state.pages);
+    this.set({
+      pages,
+      bodies: without(this.state.bodies),
+      versions: without(this.state.versions),
+      versionBodies: without(this.state.versionBodies),
+      reviewBases: without(this.state.reviewBases),
+      pageErrors: without(this.state.pageErrors),
+      working,
+    });
+    if (s.split === path) this.closeSplit();
+    // The trail keeps its place: the index follows the entries still standing before it.
+    const before = s.trail.slice(0, s.trailIndex + 1).filter((p) => p !== path);
+    this.setSession({
+      read: without(s.read),
+      unread: s.unread.filter((p) => p !== path),
+      loading: s.loading.filter((p) => p !== path),
+      pending: without(s.pending),
+      asks: s.asks ? without(s.asks) : undefined,
+      trail: s.trail.filter((p) => p !== path),
+      trailIndex: before.length - 1,
+    });
+    if (s.current !== path) return;
+    // The page being read is gone: fall back to where the trail now points, or to the newest page left.
+    const next = this.state.session.trail[this.state.session.trailIndex] ?? newestPath(pages);
+    if (next) void this.navigate(next, { push: false });
+    else this.setSession({ current: undefined });
+  }
+
+  /** The page a file session was opened from is gone, so the session is too: back to Home, and out of recents. */
+  private endFileSession() {
+    const recent = this.currentRecent();
+    window.clearTimeout(this.saveTimer);
+    this.set({
+      folder: undefined,
+      rootFile: undefined,
+      folderName: "",
+      pages: {},
+      bodies: {},
+      session: emptySession(),
+      versions: {},
+      versionBodies: {},
+      reviewBases: {},
+      pageErrors: {},
+      working: {},
+      home: true,
+      ui: { ...initialUi },
+    });
+    if (recent) this.removeRecent(recent);
   }
 
   /**
@@ -1658,6 +1795,18 @@ function takenPaths(pages: Record<string, PageMeta>, primary: string, dirs: stri
 function keyedMeta(meta: PageMeta, key: string, folder: string): PageMeta {
   const source = meta.source && key !== meta.path ? `${folder}/${meta.source}` : meta.source;
   return { ...meta, path: key, source };
+}
+
+/** The newest page of a set, by the same reckoning the session uses when it has to choose one. */
+function newestPath(pages: Record<string, PageMeta>): string | undefined {
+  return Object.values(pages).sort((a, b) => Date.parse(b.created ?? b.modified ?? "") - Date.parse(a.created ?? a.modified ?? ""))[0]?.path;
+}
+
+/** Swaps a page's first heading for its new title, when that heading still reads as the old one. */
+function renameHeading(body: string, from: string, to: string): string {
+  const m = /^([ \t]*#[ \t]+)(.+?)([ \t]*)$/m.exec(body);
+  if (!m || m[2].trim() !== from.trim()) return body;
+  return body.slice(0, m.index) + m[1] + to + m[3] + body.slice(m.index + m[0].length);
 }
 
 function flipPlacement(p: Placement): Placement {

@@ -257,6 +257,19 @@ function General({ settings, save, dialogOpen }: SectionProps & { dialogOpen: { 
       <Row label="Markdown files" top>
         <DefaultAppRow save={save} dialogOpen={dialogOpen} />
       </Row>
+      <Row label="Deleting a page">
+        <span className="with-note">
+          <Seg
+            value={settings.confirmDelete ? "ask" : "go"}
+            options={[
+              { value: "ask", label: "Ask first" },
+              { value: "go", label: "Delete right away" },
+            ]}
+            onChange={(v) => save({ confirmDelete: v === "ask" })}
+          />
+          <span className="note">Into .reader/trash</span>
+        </span>
+      </Row>
       <div className="divider" />
       <Row label="⌘‑click opens">
         <span className="with-note">

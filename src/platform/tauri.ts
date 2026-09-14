@@ -55,6 +55,7 @@ export const tauriPlatform: Platform = {
   },
 
   writePage: (folder, path, content) => invoke("write_page", { folder, path, content }),
+  deletePage: (folder, path) => invoke("delete_page", { folder, path }),
 
   loadSession: (folder, file) => invoke<Session | null>("load_session", { folder, file }),
   saveSession: (folder, session, file) => invoke("save_session", { folder, session, file }),

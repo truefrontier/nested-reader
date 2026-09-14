@@ -107,6 +107,34 @@ pub fn write_page(folder: &str, rel: &str, content: &str) -> Result<()> {
     write_atomic(&full, content)
 }
 
+/// Takes a page out of the folder: its file and its version snapshots are moved into
+/// `.reader/trash/`, rather than removed, so a delete can still be undone by hand in Finder.
+/// A name already sitting in the trash gets `-2`, `-3`, and so on.
+pub fn delete_page(folder: &str, rel: &str) -> Result<()> {
+    let full = safe_join(folder, rel)?;
+    if !full.is_file() {
+        return Err(AppError::Message(format!("No such page: {rel}")));
+    }
+    let trash = reader_dir(folder).join("trash");
+    fs::create_dir_all(&trash)?;
+    let stem = full.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "page".into());
+    let ext = full.extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_else(|| "md".into());
+    // The page and its snapshots are parked under one name, so they can be told apart and put back together.
+    let mut name = stem.clone();
+    let mut i = 2;
+    while trash.join(format!("{name}.{ext}")).exists() || trash.join(format!("{name}-versions")).exists() {
+        name = format!("{stem}-{i}");
+        i += 1;
+    }
+    fs::rename(&full, trash.join(format!("{name}.{ext}")))?;
+    let versions = versions_dir(folder, rel)?;
+    if versions.is_dir() {
+        // The page is already out of the way; snapshots left behind are stale, not a failure.
+        let _ = fs::rename(&versions, trash.join(format!("{name}-versions")));
+    }
+    Ok(())
+}
+
 fn reader_dir(folder: &str) -> PathBuf {
     Path::new(folder).join(READER_DIR)
 }

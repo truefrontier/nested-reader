@@ -1,37 +1,13 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
+import { useEffect, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { store, useReader } from "../state/store";
 import type { RecentSession } from "../platform";
 import { MoreIcon } from "./Icons";
+import { RenameInput } from "./RenameInput";
 
 const stop = (e: MouseEvent | KeyboardEvent) => e.stopPropagation();
 
 function keyOf(r: RecentSession): string {
   return `${r.folder}\n${r.file ?? ""}`;
-}
-
-/** The label of a session row while it is being renamed. Enter keeps, Esc drops, blur keeps. */
-function RenameInput({ value, onDone }: { value: string; onDone: (name: string | null) => void }) {
-  const cancelled = useRef(false);
-  return (
-    <input
-      className="rename"
-      autoFocus
-      defaultValue={value}
-      spellCheck={false}
-      onMouseDown={stop}
-      onClick={stop}
-      onFocus={(e) => e.target.select()}
-      onKeyDown={(e) => {
-        e.stopPropagation();
-        if (e.key === "Enter") e.currentTarget.blur();
-        else if (e.key === "Escape") {
-          cancelled.current = true;
-          e.currentTarget.blur();
-        }
-      }}
-      onBlur={(e) => onDone(cancelled.current ? null : e.target.value)}
-    />
-  );
 }
 
 /**

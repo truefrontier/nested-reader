@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEve
 import { store, useReader } from "../state/store";
 import { buildFolders, dotState, rootDirs, type FolderNode, type TreeItem } from "../lib/tree";
 import { ChevronLeft, ChevronRight, MoreIcon } from "./Icons";
+import { RenameInput } from "./RenameInput";
 import { DEFAULT_SETTINGS } from "../platform";
 
 export function Sidebar() {
@@ -76,11 +77,20 @@ export function Sidebar() {
     void store.openPage(path, store.placementFor(e));
   };
   // Each row has a ⋯ menu (also on right-click), and so does the header of an added root, keyed "root:<folder>".
-  // A menu closes on a click anywhere else, Esc, or when the tree scrolls.
+  // A menu, the rename box it opens, and the delete confirmation all close on a click anywhere else,
+  // Esc, or when the tree scrolls.
   const [menuFor, setMenuFor] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  // The confirmation's checkbox, cleared each time it opens so a tick never carries over unseen.
+  const [dontAsk, setDontAsk] = useState(false);
+  const closeMenus = () => {
+    setMenuFor(null);
+    setDeleting(null);
+  };
   useEffect(() => {
-    if (!menuFor) return;
-    const close = () => setMenuFor(null);
+    if (!menuFor && !deleting) return;
+    const close = () => closeMenus();
     const onKey = (e: globalThis.KeyboardEvent) => {
       if (e.key === "Escape") close();
     };
@@ -90,17 +100,29 @@ export function Sidebar() {
       window.removeEventListener("mousedown", close);
       window.removeEventListener("keydown", onKey);
     };
-  }, [menuFor]);
+  }, [menuFor, deleting]);
+  // A row whose page has left the session (deleted here or elsewhere) takes its menu and boxes with it.
   useEffect(() => {
-    if (!menuFor) return;
-    const gone = menuFor.startsWith("root:") ? !roots.includes(menuFor.slice(5)) : !s.pages[menuFor];
-    if (gone) setMenuFor(null);
-  }, [menuFor, s.pages, roots]);
+    const gone = (key: string | null) => !!key && (key.startsWith("root:") ? !roots.includes(key.slice(5)) : !s.pages[key]);
+    if (gone(menuFor)) setMenuFor(null);
+    if (gone(deleting)) setDeleting(null);
+    if (gone(renaming)) setRenaming(null);
+  }, [menuFor, deleting, renaming, s.pages, roots]);
   const stop = (e: MouseEvent) => e.stopPropagation();
   const openMenu = (path: string) => (e: MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    setDeleting(null);
     setMenuFor(menuFor === path ? null : path);
+  };
+  // Delete asks from the row itself, until "Do not ask again" has been ticked once.
+  const askDelete = (path: string) => {
+    if (!s.settings.confirmDelete) {
+      void store.deletePage(path);
+      return;
+    }
+    setDontAsk(false);
+    setDeleting(path);
   };
   const rows = (items: TreeItem[]) => {
     const visible = items.filter(shows);
@@ -115,13 +137,24 @@ export function Sidebar() {
           if (d === "current") cls.push("current");
           const unread = s.session.unread.includes(it.path);
           const open = menuFor === it.path;
-          if (open) cls.push("open");
+          const confirming = deleting === it.path;
+          if (open || confirming) cls.push("open");
           const showTick = it.branch && !filtering;
           return (
             <div key={it.path} className={cls.join(" ")} onClick={onRow(it.path)} onContextMenu={openMenu(it.path)} title={p.title}>
               {showTick && <span className="tick" />}
               <span className={`dot ${d === "current" ? "current" : d === "loading" ? "loading" : ""}`} />
-              <span className={`label${d === "loading" ? " shimmer" : ""}`}>{p.title}</span>
+              {renaming === it.path ? (
+                <RenameInput
+                  value={p.title}
+                  onDone={(name) => {
+                    setRenaming(null);
+                    if (name !== null) void store.renamePage(it.path, name);
+                  }}
+                />
+              ) : (
+                <span className={`label${d === "loading" ? " shimmer" : ""}`}>{p.title}</span>
+              )}
               <span className="marks">
                 {!!s.pageErrors[it.path] && <span className="fdot" title="Couldn't be written. Open it to try again." />}
                 {unread && <span className="udot" title="Unread" />}
@@ -140,6 +173,61 @@ export function Sidebar() {
                     }}
                   >
                     {unread ? "Mark read" : "Mark unread"}
+                  </div>
+                  <div className="sep" />
+                  <div
+                    className="item"
+                    onClick={() => {
+                      setMenuFor(null);
+                      setRenaming(it.path);
+                    }}
+                  >
+                    Rename
+                  </div>
+                  <div
+                    className="item"
+                    onClick={() => {
+                      setMenuFor(null);
+                      void store.revealPage(it.path);
+                    }}
+                  >
+                    Reveal in Finder
+                  </div>
+                  <div className="sep" />
+                  <div
+                    className="item warn"
+                    onClick={() => {
+                      setMenuFor(null);
+                      askDelete(it.path);
+                    }}
+                  >
+                    Delete
+                  </div>
+                </div>
+              )}
+              {confirming && (
+                <div className="row-confirm" onMouseDown={stop} onClick={stop} onContextMenu={(e) => e.preventDefault()}>
+                  <div>Delete “{p.title}”?</div>
+                  <div className="sub">
+                    Its file moves to <code>.reader/trash</code> inside the folder.
+                  </div>
+                  <label className="again">
+                    <input type="checkbox" checked={dontAsk} onChange={(e) => setDontAsk(e.target.checked)} />
+                    Do not ask again
+                  </label>
+                  <div className="acts">
+                    <span className="c" onClick={() => setDeleting(null)}>
+                      Cancel
+                    </span>
+                    <span
+                      className="d"
+                      onClick={() => {
+                        setDeleting(null);
+                        void store.deletePage(it.path, dontAsk);
+                      }}
+                    >
+                      Delete
+                    </span>
                   </div>
                 </div>
               )}
@@ -233,7 +321,7 @@ export function Sidebar() {
           </span>
         )}
       </div>
-      <div className="tree" onScroll={() => menuFor && setMenuFor(null)}>
+      <div className="tree" onScroll={() => (menuFor || deleting) && closeMenus()}>
         <div className="tree-inner">{folder(root)}</div>
       </div>
       <div className="side-foot">
