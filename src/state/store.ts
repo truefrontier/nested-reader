@@ -213,6 +213,10 @@ export class ReaderStore {
   private initialized = false;
   /** The folder (and file) an in-flight openFolder is loading, so a later open can supersede it. */
   private opening?: { folder: string; file?: string };
+  /** Inode and Mac bookmark from the last resolve, written onto recents. */
+  private lastIdentity: { folderId?: string; fileId?: string; bookmark?: string } = {};
+  /** True while a focus rematch is in flight, so a second focus does not overlap it. */
+  private rematching = false;
 
   get = () => this.state;
 
@@ -296,7 +300,10 @@ export class ReaderStore {
       // Only the main window takes files from Finder; a page window shows the one page it was opened for.
       if (!page) {
         platform.onOpened((paths) => void this.openOpened(paths));
-        window.addEventListener("focus", () => void this.loadDefaultApp());
+        window.addEventListener("focus", () => {
+          void this.loadDefaultApp();
+          void this.rematchOpenSession();
+        });
         void this.loadDefaultApp();
         window.setTimeout(() => void this.checkForUpdate(), UPDATE_CHECK_DELAY);
         window.setInterval(() => void this.checkForUpdate(), UPDATE_CHECK_EVERY);
@@ -306,12 +313,18 @@ export class ReaderStore {
       if (opened[0]) {
         await this.openPath(opened[0], OPENED_OTHERWISE);
       } else if (page && settings.folder) {
-        await this.openFolder(settings.folder, { initialPage: page, initialVersion, file: last?.folder === settings.folder ? last.file : undefined });
+        await this.openFolder(settings.folder, {
+          initialPage: page,
+          initialVersion,
+          file: last?.folder === settings.folder ? last.file : undefined,
+          bookmark: last?.folder === settings.folder ? last.bookmark : undefined,
+          ids: last?.folder === settings.folder ? idsFromRecent(last) : undefined,
+        });
       } else if (settings.openAtLaunch === "ask") {
         const path = await platform.pickPath();
         if (path) await this.openPath(path, "Open a folder or a .md file.");
       } else if (settings.openAtLaunch === "last-session") {
-        if (last) await this.openFolder(last.folder, { file: last.file });
+        if (last) await this.openFolder(last.folder, { file: last.file, bookmark: last.bookmark, ids: idsFromRecent(last) });
         else if (settings.folder) await this.openFolder(settings.folder);
       }
       // "nothing", a cancelled picker or a first launch: the Home screen shows.
@@ -484,13 +497,25 @@ export class ReaderStore {
    * Loads a folder as the session. With `file`, only that page and the pages grown from it
    * are shown. The folder's saved session is restored, so you land where you left off.
    */
-  async openFolder(folder: string, opts: { initialPage?: string; initialVersion?: number; file?: string } = {}) {
-    const { initialPage, initialVersion, file } = opts;
+  async openFolder(
+    folder: string,
+    opts: { initialPage?: string; initialVersion?: number; file?: string; bookmark?: string; ids?: Record<string, string> } = {},
+  ) {
+    const { initialPage, initialVersion } = opts;
+    let { file } = opts;
     const target = { folder, file };
     this.opening = target;
     try {
-      const list = await platform.listPages(folder);
+      const recentHint = this.findRecent(folder, file);
+      const ids = { ...idsFromRecent(recentHint), ...opts.ids };
+      const bookmark = opts.bookmark ?? recentHint?.bookmark;
+      const resolved = await platform.resolveSession(folder, file, Object.keys(ids).length ? ids : undefined, bookmark);
       if (this.opening !== target) return; // a later open superseded this one
+      folder = resolved.folder;
+      file = resolved.file ?? file;
+      this.lastIdentity = { folderId: resolved.folderId, fileId: resolved.fileId, bookmark: resolved.bookmark };
+      const list = await platform.listPages(folder);
+      if (this.opening !== target) return;
       const all: Record<string, PageMeta> = {};
       for (const p of list) all[p.path] = p;
       if (file && !all[file]) throw new Error(`Not a Markdown page: ${file}`);
@@ -520,7 +545,7 @@ export class ReaderStore {
       const before = session.trail.slice(0, session.trailIndex + 1).filter((p) => pages[p]);
       session.trail = session.trail.filter((p) => pages[p]);
       session.trailIndex = before.length - 1;
-      const recent = this.findRecent(folder, file);
+      const recent = this.findRecent(folder, file) ?? this.findRecentById(resolved.folderId, resolved.fileId) ?? recentHint;
       const folderName = session.name || recent?.name || (file ? pages[file].title : prettyFolderName(folder));
       this.set({ folder, rootFile: file, folderName, pages, bodies: {}, session, versions: {}, versionBodies: {}, reviewBases: {}, pageErrors: {}, home: false, ui: { ...initialUi } });
       let current = initialPage && pages[initialPage] ? initialPage : session.current;
@@ -559,8 +584,14 @@ export class ReaderStore {
     return this.state.recents.find((r) => this.sameSession(r, folder, file));
   }
 
+  private findRecentById(folderId?: string, fileId?: string): RecentSession | undefined {
+    if (!folderId) return undefined;
+    return this.state.recents.find((r) => r.folderId === folderId && (r.fileId ?? "") === (fileId ?? ""));
+  }
+
   private currentRecent(): RecentSession | undefined {
-    return this.state.folder ? this.findRecent(this.state.folder, this.state.rootFile) : undefined;
+    if (!this.state.folder) return undefined;
+    return this.findRecent(this.state.folder, this.state.rootFile) ?? this.findRecentById(this.lastIdentity.folderId, this.lastIdentity.fileId);
   }
 
   private setRecents(recents: RecentSession[]) {
@@ -572,8 +603,26 @@ export class ReaderStore {
   private rememberSession() {
     const { folder, rootFile, folderName, session } = this.state;
     if (!folder) return;
-    const entry: RecentSession = { folder, file: rootFile, name: folderName, openedAt: nowIso(), unread: session.unread.length };
-    this.setRecents([entry, ...this.state.recents.filter((r) => !this.sameSession(r, folder, rootFile))].slice(0, 30));
+    const id = this.lastIdentity;
+    const previous = this.findRecent(folder, rootFile) ?? this.findRecentById(id.folderId, id.fileId);
+    const entry: RecentSession = {
+      folder,
+      file: rootFile,
+      name: folderName,
+      openedAt: nowIso(),
+      unread: session.unread.length,
+      folderId: id.folderId ?? previous?.folderId,
+      fileId: rootFile ? (id.fileId ?? previous?.fileId) : undefined,
+      bookmark: id.bookmark ?? previous?.bookmark,
+    };
+    this.setRecents([entry, ...this.state.recents.filter((r) => !this.matchesRecent(r, entry, previous))].slice(0, 30));
+  }
+
+  private matchesRecent(r: RecentSession, entry: RecentSession, previous?: RecentSession): boolean {
+    if (this.sameSession(r, entry.folder, entry.file)) return true;
+    if (previous && this.sameSession(r, previous.folder, previous.file)) return true;
+    if (entry.folderId && r.folderId === entry.folderId && (r.fileId ?? "") === (entry.fileId ?? "")) return true;
+    return false;
   }
 
   private touchRecent(patch: Partial<RecentSession>) {
@@ -598,7 +647,7 @@ export class ReaderStore {
 
   async openRecent(r: RecentSession) {
     if (this.sameSession(r, this.state.folder, this.state.rootFile)) return this.leaveHome();
-    await this.openFolder(r.folder, { file: r.file });
+    await this.openFolder(r.folder, { file: r.file, bookmark: r.bookmark, ids: idsFromRecent(r) });
   }
 
   removeRecent(r: RecentSession) {
@@ -926,6 +975,101 @@ export class ReaderStore {
     } catch {
       /* no backend answer: nothing to offer */
     }
+  }
+
+  /**
+   * If a Finder rename happened while Nested was in the background, remap the open session.
+   * Quiet: a missing path is retried on the next focus rather than toasted.
+   */
+  private async rematchOpenSession() {
+    const folder = this.state.folder;
+    const rootFile = this.state.rootFile;
+    if (!folder || this.opening || this.rematching) return;
+    this.rematching = true;
+    try {
+      const recent = this.currentRecent();
+      const ids = { ...(this.state.session.ids ?? {}), ...idsFromRecent(recent) };
+      if (rootFile && recent?.fileId) ids[rootFile] = recent.fileId;
+      const resolved = await platform.resolveSession(folder, rootFile, Object.keys(ids).length ? ids : undefined, recent?.bookmark ?? this.lastIdentity.bookmark);
+      if (this.opening || this.state.folder !== folder) return;
+      const remaps = resolved.remaps ?? [];
+      const folderChanged = resolved.folder !== folder;
+      const fileChanged = (resolved.file ?? "") !== (rootFile ?? "");
+      this.lastIdentity = { folderId: resolved.folderId, fileId: resolved.fileId, bookmark: resolved.bookmark };
+      if (!remaps.length && !folderChanged && !fileChanged) {
+        if (
+          recent &&
+          (resolved.folderId !== recent.folderId || resolved.fileId !== recent.fileId || resolved.bookmark !== recent.bookmark)
+        ) {
+          this.touchRecent({
+            folderId: resolved.folderId ?? recent.folderId,
+            fileId: resolved.fileId ?? recent.fileId,
+            bookmark: resolved.bookmark ?? recent.bookmark,
+          });
+        }
+        return;
+      }
+      this.applyPathRemaps(remaps, resolved.folder, resolved.file);
+      this.rememberSession();
+      if (folderChanged && this.state.settings.folder !== resolved.folder) {
+        const settings = { ...this.state.settings, folder: resolved.folder };
+        this.set({ settings });
+        await platform.saveSettings(settings).catch(() => undefined);
+      }
+    } catch {
+      /* Finder rematch is quiet */
+    } finally {
+      this.rematching = false;
+    }
+  }
+
+  /** Rewrites in-memory page keys, session paths and `rootFile` after resolve remapped them on disk. */
+  private applyPathRemaps(remaps: [string, string][], folder: string, file: string | undefined) {
+    const table = new Map(remaps);
+    const swap = (path: string) => table.get(path) ?? path;
+    const swapKeys = <T,>(map: Record<string, T>, touch?: (key: string, value: T) => T): Record<string, T> => {
+      if (!remaps.length) return map;
+      const out: Record<string, T> = {};
+      for (const [k, v] of Object.entries(map)) {
+        const nk = swap(k);
+        out[nk] = touch ? touch(nk, v) : v;
+      }
+      return out;
+    };
+    const pages = swapKeys(this.state.pages, (key, meta) => ({ ...meta, path: key, source: meta.source ? swap(meta.source) : meta.source }));
+    const working: Record<string, string> = {};
+    for (const [k, v] of Object.entries(this.state.working)) {
+      const nk = k.startsWith("page:") ? `page:${swap(k.slice(5))}` : k.startsWith("refine:") ? `refine:${swap(k.slice(7))}` : k;
+      working[nk] = v;
+    }
+    const oldFolder = this.state.folder;
+    const s = this.state.session;
+    const session: Session = {
+      ...s,
+      current: s.current ? swap(s.current) : s.current,
+      split: s.split ? swap(s.split) : s.split,
+      trail: s.trail.map(swap),
+      unread: s.unread.map(swap),
+      loading: s.loading.map(swap),
+      read: swapKeys(s.read),
+      pending: swapKeys(s.pending),
+      asks: s.asks ? swapKeys(s.asks) : s.asks,
+      ids: s.ids ? swapKeys(s.ids) : s.ids,
+      roots: s.roots?.map((r) => (r.folder === oldFolder ? { folder, file: r.file ? swap(r.file) : r.file } : r)),
+    };
+    this.set({
+      folder,
+      rootFile: file,
+      pages,
+      bodies: swapKeys(this.state.bodies),
+      versions: swapKeys(this.state.versions),
+      versionBodies: swapKeys(this.state.versionBodies),
+      reviewBases: swapKeys(this.state.reviewBases, (key, base) => ({ ...base, path: key })),
+      pageErrors: swapKeys(this.state.pageErrors),
+      working,
+      session,
+    });
+    if (remaps.length) this.persistSession();
   }
 
   /**
@@ -1884,6 +2028,12 @@ function keyedMeta(meta: PageMeta, key: string, folder: string): PageMeta {
 /** The newest page of a set, by the same reckoning the session uses when it has to choose one. */
 function newestPath(pages: Record<string, PageMeta>): string | undefined {
   return Object.values(pages).sort((a, b) => Date.parse(b.created ?? b.modified ?? "") - Date.parse(a.created ?? a.modified ?? ""))[0]?.path;
+}
+
+/** Recents `fileId` keyed as resolve_session expects: the relative page path it last knew. */
+function idsFromRecent(r: RecentSession | undefined): Record<string, string> | undefined {
+  if (!r?.file || !r.fileId) return undefined;
+  return { [r.file]: r.fileId };
 }
 
 /** Swaps a page's first heading for its new title, when that heading still reads as the old one. */

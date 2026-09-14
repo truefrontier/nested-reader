@@ -14,7 +14,7 @@ mod updater;
 use ai::tokio_util_lite::CancelToken;
 use ai::{AiRequest, PingResult, StreamEvent};
 use error::{AppError, Result};
-use files::{RawPage, VersionInfo};
+use files::{RawPage, ResolvedSession, VersionInfo};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -176,6 +176,16 @@ fn load_session(folder: String, file: Option<String>) -> Result<Option<Value>> {
 #[tauri::command]
 fn save_session(folder: String, session: Value, file: Option<String>) -> Result<()> {
     files::save_session(&folder, &session, file.as_deref())
+}
+
+#[tauri::command]
+fn resolve_session(
+    folder: String,
+    file: Option<String>,
+    ids: Option<HashMap<String, String>>,
+    bookmark: Option<String>,
+) -> Result<ResolvedSession> {
+    files::resolve_session(&folder, file.as_deref(), ids.as_ref(), bookmark.as_deref())
 }
 
 #[tauri::command]
@@ -515,6 +525,7 @@ pub fn run() {
             delete_page,
             load_session,
             save_session,
+            resolve_session,
             list_versions,
             read_version,
             snapshot_version,

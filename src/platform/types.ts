@@ -46,6 +46,8 @@ export type Session = {
   asks?: Record<string, Ask[]>;
   /** Folders and files added to the session with ⌘⇧O, beyond the folder it was opened from. */
   roots?: SessionRoot[];
+  /** Unix `dev:ino` for each page path, written on save so a Finder rename can be remapped. */
+  ids?: Record<string, string>;
 };
 
 /**
@@ -76,6 +78,22 @@ export type RecentSession = {
   openedAt: string;
   /** Background pages not yet read, as of the last save. */
   unread: number;
+  /** Unix `dev:ino` of the session folder. */
+  folderId?: string;
+  /** Unix `dev:ino` of `file`, when the session is a single .md. */
+  fileId?: string;
+  /** Mac NSURL bookmark for the folder, used when the absolute path is gone. */
+  bookmark?: string;
+};
+
+/** What `resolveSession` found after matching missing paths by identity. */
+export type ResolvedSession = {
+  folder: string;
+  file?: string;
+  remaps: [string, string][];
+  folderId?: string;
+  fileId?: string;
+  bookmark?: string;
 };
 
 export type PathKind = "folder" | "file" | "other";
@@ -263,6 +281,11 @@ export interface Platform {
   /** A folder's session, or with `file`, the separate session kept for a single-file session in that folder. */
   loadSession(folder: string, file?: string): Promise<Session | null>;
   saveSession(folder: string, session: Session, file?: string): Promise<void>;
+  /**
+   * If a stored path is missing, match Markdown in the folder by `dev:ino` (and on Mac, the
+   * folder bookmark first). Remaps session keys and `.reader` files in the same pass.
+   */
+  resolveSession(folder: string, file: string | undefined, ids?: Record<string, string>, bookmark?: string): Promise<ResolvedSession>;
   listVersions(folder: string, path: string): Promise<VersionInfo[]>;
   readVersion(folder: string, path: string, n: number): Promise<string>;
   /** Copies the page's current content into a new numbered snapshot. */
