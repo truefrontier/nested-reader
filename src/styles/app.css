@@ -415,11 +415,6 @@ button {
 .frow.open .more {
   opacity: 1;
 }
-.frow .row-menu {
-  width: auto;
-  min-width: 148px;
-  white-space: nowrap;
-}
 .tree-line {
   position: absolute;
   left: 3px;
@@ -504,7 +499,8 @@ button {
 .row .marks:empty {
   display: none;
 }
-/* The row's ⋯ menu button shows on hover and while its menu is open; the menu is the Home list's, right-aligned to the row. */
+/* The row's ⋯ menu button shows on hover and while its menu is open. The menu itself is a
+   body-level layer (see AnchoredLayer): right-aligned to the row, flipped when the row is low. */
 .row .more {
   width: 22px;
   height: 22px;
@@ -529,10 +525,10 @@ button {
   color: var(--fg);
 }
 .row-menu {
-  position: absolute;
-  top: 26px;
-  right: 8px;
-  width: 148px;
+  position: fixed;
+  width: max-content;
+  min-width: 148px;
+  white-space: nowrap;
   padding: 4px;
   border-radius: 9px;
   background: var(--bg);
@@ -540,9 +536,11 @@ button {
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.14);
   font-size: 12.5px;
   color: var(--fg);
-  z-index: 6;
-  animation: rise 0.15s ease-out;
+  z-index: 12;
   cursor: default;
+}
+.row-menu.placed {
+  animation: rise 0.15s ease-out;
 }
 .row-menu .item {
   padding: 6px 10px;
@@ -574,13 +572,10 @@ button {
   -webkit-user-select: text;
 }
 /* Deleting asks from the row itself, until "Do not ask again" is ticked. It takes the tree's
-   width rather than one of its own, so it reads the same at any depth and at any sidebar width:
-   the left offset undoes the row's indent, and the right edge is shared by every row. */
+   width rather than one of its own, so it reads the same at any depth and at any sidebar width.
+   Placement is the same body-level layer as the ⋯ menu. */
 .row-confirm {
-  position: absolute;
-  top: 26px;
-  left: -2px;
-  right: 8px;
+  position: fixed;
   padding: 10px 12px;
   border-radius: 9px;
   background: var(--bg);
@@ -590,18 +585,11 @@ button {
   line-height: 1.45;
   color: var(--fg);
   white-space: normal;
-  z-index: 7;
-  animation: rise 0.15s ease-out;
+  z-index: 12;
   cursor: default;
 }
-.row.d1 .row-confirm {
-  left: -22px;
-}
-.row.d2 .row-confirm {
-  left: -42px;
-}
-.row.d3 .row-confirm {
-  left: -62px;
+.row-confirm.placed {
+  animation: rise 0.15s ease-out;
 }
 .row-confirm .sub {
   color: var(--mute);
