@@ -191,6 +191,7 @@ button {
   width: var(--side-width);
   flex: none;
   position: relative;
+  z-index: 0;
   background: var(--side);
   padding: 58px 0 16px;
   display: flex;
@@ -654,6 +655,8 @@ button {
   min-width: 0;
   position: relative;
   display: flex;
+  /* Own stacking context so scrolled page text cannot paint over window overlays. */
+  z-index: 0;
 }
 .main.below {
   flex-direction: column;
@@ -1590,18 +1593,21 @@ button {
 
 /* ---------- misc ---------- */
 
-/* A newer version is ready: a quiet card at the foot of the window, above the toast, until Later or the relaunch. */
+/* A newer version is ready: a quiet card at the foot of the window, above the toast, until Later or the relaunch.
+   `--bg` rather than `--card`: the card token is a wash, so page text showed through. Isolation plus a z-index
+   above `.main` / `.home` keeps WebKit's scrolled reading layer from compositing over the card. */
 .update-bar {
   position: absolute;
   left: 50%;
   bottom: 20px;
   transform: translateX(-50%);
   z-index: 8;
+  isolation: isolate;
   max-width: min(560px, 90%);
   padding: 10px 14px;
   border-radius: 10px;
   border: 1px solid var(--hair);
-  background: var(--card);
+  background: var(--bg);
   color: var(--fg);
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
   display: flex;
@@ -1741,6 +1747,8 @@ button {
   flex: 1;
   min-width: 0;
   height: 100%;
+  position: relative;
+  z-index: 0;
   animation: rise 0.2s ease-out;
 }
 .home-side {
