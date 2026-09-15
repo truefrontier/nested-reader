@@ -751,3 +751,19 @@
 - The other overlapping files (`store.ts`, `mock.ts`, `tauri.ts`, `types.ts`, `app.css`, the docs) auto-merged; main's additions are a separate concern (`UpdateInfo`, `checkForUpdate`, `UpdateBar`) with no overlap on `confirmDelete` or `deletePage`.
 - Re-ran the checks on the merged tree: 18 store checks and 9 UI checks in headless Chromium, including that main's Updates row survived. `tsc` and `pnpm build` pass.
 - `main` is now at `36732a3`; the branch `claude/zen-hamilton-hn1mfa` is pushed and matches it.
+
+## Session: 2026-09-15 — the answer stream stopped at the model's first tool call
+
+### What was wrong
+- Every answer that used a tool hung on its status line ("Searching for “…”") and never showed text. Reported from a running 0.2.3 build while reviewing a Claude Code plan in `~/.claude/plans`.
+- Evidence from the live app: no `claude -p` child process, no pipe file descriptors, no connection to the model API, idle CPU. The backend had finished minutes earlier; the window was holding a status line nothing would ever clear.
+- Cause: `aiStream` in `src/platform/tauri.ts` treated every non-`delta` event as terminal (`if (e.type !== "delta") finished = true`), so the first `tool` event closed the stream and the answer text, `done` and `error` behind it were dropped. `store.stream` clears `working[key]` only on delta, done or error, so the line stayed up for good.
+- The guard was right when it was written (2026-09-10, `f25782f`): `StreamEvent` was `delta | done | error` then. `tool` arrived the next day (`ae87313`) and the guard was never revisited. The browser mock has its own `aiStream` without the guard, which is why dev never reproduced it.
+
+### The fix
+- Only `done` and `error` end the stream — an allowlist, not `!== "delta" && !== "tool"`, so the next event type cannot bring the bug back. Released as 0.2.4.
+
+### Possible next steps
+- Route the mock through the same channel wrapper, so the browser mock exercises the real stream lifecycle.
+- The CLI path in `cli.rs` has no stall timeout: a `claude -p` that never writes and never exits leaves the stream open with nothing to clear it. The HTTP paths cap a request at 180 s.
+- A plan opened from `~/.claude/plans` only reaches that folder — `--add-dir` covers the session folder and its added roots, so the project the plan is about stays invisible unless it is added with ⌘⇧O.

@@ -92,7 +92,8 @@ export const tauriPlatform: Platform = {
     let finished = false;
     channel.onmessage = (e) => {
       if (finished) return;
-      if (e.type !== "delta") finished = true;
+      // Only `done` and `error` end the stream; `tool` lines keep arriving while the model looks things up.
+      if (e.type === "done" || e.type === "error") finished = true;
       onEvent(e);
     };
     const id = crypto.randomUUID();
