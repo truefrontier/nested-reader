@@ -1999,10 +1999,20 @@ export class ReaderStore {
                 let next: string;
                 const cleaned = stripFences(out).trim();
                 if (selection) {
-                  const b = blocks[selection.block];
-                  const raw = b ? replaceFlexible(b.raw, selection.text, cleaned) : null;
-                  if (!b || raw === null) throw new Error("Could not find the selection in the page source.");
-                  blocks[selection.block] = { ...b, raw };
+                  // A refine ahead of this one in the page's turn may have reshaped the body since the
+                  // highlight was made, so the block it names is only the first place to look.
+                  const order = [selection.block, ...blocks.map((_, i) => i).filter((i) => i !== selection.block)];
+                  let raw: string | null = null;
+                  let at = -1;
+                  for (const i of order) {
+                    raw = blocks[i] ? replaceFlexible(blocks[i].raw, selection.text, cleaned) : null;
+                    if (raw !== null) {
+                      at = i;
+                      break;
+                    }
+                  }
+                  if (raw === null) throw new Error("Could not find the selection in the page source.");
+                  blocks[at] = { ...blocks[at], raw };
                   next = joinBlocks(blocks);
                 } else {
                   next = cleaned.endsWith("\n") ? cleaned : cleaned + "\n";
