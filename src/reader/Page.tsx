@@ -140,6 +140,9 @@ export function Page({ path, role }: Props) {
   // Only one card is peeked at from hover at a time, and only that one closes when the pointer leaves.
   const peeked = cards.find(([, l]) => l.peek);
   const selectionCard = selection ? ui.lookups[lookupId(role, selection.block)] : undefined;
+  // A selection refine's card sits at the highlight it was asked from, and that highlight is the one
+  // still on screen, so the newest of this page's selection refines owns the spot.
+  const selectionRefine = useMemo(() => Object.entries(ui.refines).filter(([, r]) => r.path === path && r.scope === "selection").at(-1), [ui.refines, path]);
 
   // Remembered asks stay on the page as dotted text; hovering one shows its answer again.
   const asks = s.session.asks?.[path];
@@ -446,17 +449,18 @@ export function Page({ path, role }: Props) {
         />,
       );
     }
-    if (selection?.block === i && !ui.popover && (ui.refining[path] === "selection" || ui.refineError[path]?.scope === "selection")) {
+    if (selection?.block === i && !ui.popover && selectionRefine) {
+      const [id, run] = selectionRefine;
       out.push(
         <RefineStatus
           key="refine-status"
           scope="selection"
-          text={ui.refineText[path]}
+          text={run.text}
           working={s.working[`refine:${path}`]}
-          error={ui.refineError[path]?.message}
+          error={run.error}
           caretLeft={selection.caretX}
-          onRetry={() => store.retryRefine(path)}
-          onDismiss={() => store.dismissRefine(path)}
+          onRetry={() => store.retryRefine(id)}
+          onDismiss={() => store.dismissRefine(id)}
         />,
       );
     }

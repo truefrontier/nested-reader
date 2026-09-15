@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { isTauri, platform } from "./platform";
 import { store, useReader } from "./state/store";
-import type { RefineScope } from "./lib/prompts";
 import { Sidebar } from "./reader/Sidebar";
 import { Home } from "./reader/Home";
 import { Page } from "./reader/Page";
@@ -110,19 +109,16 @@ export default function App() {
   const current = s.session.current;
   const split = s.session.split;
   const showMainPane = !(s.ui.fullscreen && split);
-  // One status card per page being refined, or that failed to refine, so two refines never share a
-  // banner. A selection refine shows its card at the highlight instead, in the page itself.
+  // One status card per refinement asked for, so a refine running on a page keeps its card while
+  // another on the same page queues behind it. A selection refine shows its card at the highlight
+  // instead, in the page itself. `atWork` is the card whose turn it is: a page's chain runs its
+  // refines in order, so the oldest that has not failed is the one the tool line belongs to.
   const refineStatus = useMemo(() => {
-    const { refining, refineText, refineError } = s.ui;
-    const out: { path: string; scope: RefineScope; text?: string; error?: string }[] = [];
-    for (const path of new Set([...Object.keys(refining), ...Object.keys(refineError)])) {
-      const failure = refineError[path];
-      const scope = failure?.scope ?? refining[path];
-      if (!scope || scope === "selection") continue;
-      out.push({ path, scope, text: refineText[path], error: failure?.message });
-    }
-    return out;
-  }, [s.ui.refining, s.ui.refineText, s.ui.refineError]);
+    const shown = Object.entries(s.ui.refines).filter(([, r]) => r.scope !== "selection");
+    const atWork = new Map<string, string>();
+    for (const [id, r] of shown) if (!r.error && !atWork.has(r.path)) atWork.set(r.path, id);
+    return shown.map(([id, run]) => ({ id, run, atWork: atWork.get(run.path) === id }));
+  }, [s.ui.refines]);
   const paneBox = s.ui.panePopover;
   const showPaneStack = refineStatus.length > 0 || (!!paneBox && (paneBox === "feedback" || !!current));
   // Two panes on the same page scroll together while the pane's link button is on.
@@ -167,17 +163,17 @@ export default function App() {
             {split && <SplitPane />}
             {showPaneStack && (
               <div className="pane-stack">
-                {refineStatus.map((r) => (
+                {refineStatus.map(({ id, run, atWork }) => (
                   <RefineStatus
-                    key={r.path}
+                    key={id}
                     pane
-                    scope={r.scope}
-                    text={r.text}
+                    scope={run.scope}
+                    text={run.text}
                     // A corpus refine runs over every page at once, so any page's tool line stands for the set.
-                    working={r.scope === "corpus" ? Object.entries(s.working).find(([k]) => k.startsWith("refine:"))?.[1] : s.working[`refine:${r.path}`]}
-                    error={r.error}
-                    onRetry={() => store.retryRefine(r.path)}
-                    onDismiss={() => store.dismissRefine(r.path)}
+                    working={!atWork ? undefined : run.scope === "corpus" ? Object.entries(s.working).find(([k]) => k.startsWith("refine:"))?.[1] : s.working[`refine:${run.path}`]}
+                    error={run.error}
+                    onRetry={() => store.retryRefine(id)}
+                    onDismiss={() => store.dismissRefine(id)}
                   />
                 ))}
                 {paneBox === "new" && current && <NewFilePopover onSubmit={(text, verb, alt) => void store.newFile(text, verb, alt)} onEsc={() => store.closePopover()} />}
@@ -185,7 +181,7 @@ export default function App() {
                 {paneBox === "refine" && current && (
                   <RefinePopover
                     pane
-                    initial={s.ui.refineText[current]}
+                    initial={s.ui.refineRetry}
                     onSubmit={(text, scope) => void store.refine(text, scope)}
                     onEsc={() => store.closePopover()}
                     onToggle={() => store.toggleRefine()}

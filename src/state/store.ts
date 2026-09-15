@@ -75,8 +75,16 @@ export function lookupId(pane: PaneRole, block: number): string {
 /** One pane's version history UI: whether its menu is open, which old version it shows, and whether Restore awaits a yes. */
 export type VersionView = { history: boolean; viewing?: number; confirmRestore: boolean };
 
-/** A refine that came back with nothing: the scope it was asked for, and why it failed. */
-export type RefineFailure = { scope: RefineScope; message: string };
+/** One refinement asked for: what it is rewriting, and the failure it left if it came back with nothing. */
+export type RefineRun = {
+  /** The page it rewrites. A corpus refine names the page it was asked from and covers the session. */
+  path: string;
+  scope: RefineScope;
+  /** The instruction it is running, shown while it runs and kept for a retry. */
+  text: string;
+  /** Why it failed; the card then offers Try again in the place of the progress line. */
+  error?: string;
+};
 
 export type UiState = {
   selection?: Selection;
@@ -94,12 +102,14 @@ export type UiState = {
   /** Tree filters: only unread pages (with those being written or that failed), only pages with changes to review. Both on shows either. */
   unreadOnly: boolean;
   changesOnly: boolean;
-  /** The scope each page is being refined with, by path, so two refines at once keep their own status. */
-  refining: Record<string, RefineScope>;
-  /** The instruction each page is being (or was last) refined with, shown while it runs and kept for a retry. */
-  refineText: Record<string, string>;
-  /** Why a page's refine failed, by path. */
-  refineError: Record<string, RefineFailure>;
+  /**
+   * The refinements asked for, and the failures they left, by run id: a card each. Keyed per run
+   * rather than per page, so a page refine keeps its card while a selection refine on the same page
+   * queues behind it, and each card names the instruction it is actually running.
+   */
+  refines: Record<string, RefineRun>;
+  /** The instruction Try again reopened the pane refine box with. */
+  refineRetry?: string;
   error?: string;
   /** Something is being dragged over the window. */
   dragging: boolean;
@@ -177,9 +187,7 @@ const closedVersionView: VersionView = { history: false, confirmRestore: false }
 const initialUi: UiState = {
   lookups: {},
   versionView: { main: closedVersionView, split: closedVersionView },
-  refining: {},
-  refineText: {},
-  refineError: {},
+  refines: {},
   fullscreen: false,
   syncScroll: true,
   filter: "",
@@ -227,8 +235,8 @@ export class ReaderStore {
   private chains = new Map<string, Promise<void>>();
   /** Lets go of whatever waits on a stream, by stream key, since a cancelled stream sends no last event. */
   private releases = new Map<string, (err?: unknown) => void>();
-  /** How many refines a page has running or queued, so a stacked refine keeps the status card up. */
-  private refineRuns = new Map<string, number>();
+  /** Names each refine asked for, so its own card can be found again when it settles. */
+  private refineSeq = 0;
   private saveTimer: number | undefined;
   private writeTimers = new Map<string, number>();
   private initialized = false;
@@ -593,7 +601,6 @@ export class ReaderStore {
       const folderName = session.name || recent?.name || (file ? pages[file].title : prettyFolderName(folder));
       this.pathRemaps.clear();
       this.chains.clear();
-      this.refineRuns.clear();
       this.set({ folder, rootFile: file, folderName, pages, bodies: {}, session, versions: {}, versionBodies: {}, reviewBases: {}, pageErrors: {}, home: false, ui: { ...initialUi } });
       let current = initialPage && pages[initialPage] ? initialPage : session.current;
       if (!current || !pages[current]) {
@@ -772,9 +779,7 @@ export class ReaderStore {
         map: undefined,
         versionView: { ...initialUi.versionView, split: ui.versionView.split },
         lookups,
-        refining: ui.refining,
-        refineText: ui.refineText,
-        refineError: ui.refineError,
+        refines: ui.refines,
       });
       await this.refreshVersions(path);
       await this.refreshReview(path);
@@ -888,8 +893,9 @@ export class ReaderStore {
     const s = this.state.session;
     const pages = without(this.state.pages);
     this.chains.delete(path);
-    this.refineRuns.delete(path);
     const ui = this.state.ui;
+    const refines = { ...ui.refines };
+    for (const [id] of this.refinesOn(path)) delete refines[id];
     this.set({
       pages,
       bodies: without(this.state.bodies),
@@ -898,8 +904,8 @@ export class ReaderStore {
       reviewBases: without(this.state.reviewBases),
       pageErrors: without(this.state.pageErrors),
       working,
-      // A page that is gone takes its refine status card with it.
-      ui: { ...ui, refining: without(ui.refining), refineText: without(ui.refineText), refineError: without(ui.refineError) },
+      // A page that is gone takes its refine cards with it.
+      ui: { ...ui, refines },
     });
     if (s.split === path) this.closeSplit();
     // The trail keeps its place: the index follows the entries still standing before it.
@@ -1132,16 +1138,11 @@ export class ReaderStore {
           this.releases.set(prefix + to, release);
         }
       }
-      // The page's queue and its refine count travel with it, so work behind them still takes its turn.
+      // The page's queue travels with it, so the work behind it still takes its turn.
       const chain = this.chains.get(from);
       if (chain) {
         this.chains.delete(from);
         this.chains.set(to, chain);
-      }
-      const runs = this.refineRuns.get(from);
-      if (runs !== undefined) {
-        this.refineRuns.delete(from);
-        this.refineRuns.set(to, runs);
       }
     }
     const oldFolder = this.state.folder;
@@ -1170,13 +1171,8 @@ export class ReaderStore {
       pageErrors: swapKeys(this.state.pageErrors),
       working,
       session,
-      // The refine status cards are keyed by page, so they follow the rename with the rest.
-      ui: {
-        ...this.state.ui,
-        refining: swapKeys(this.state.ui.refining),
-        refineText: swapKeys(this.state.ui.refineText),
-        refineError: swapKeys(this.state.ui.refineError),
-      },
+      // Each refine card names the page it is rewriting, so it follows the rename with the rest.
+      ui: { ...this.state.ui, refines: mapValues(this.state.ui.refines, (r) => ({ ...r, path: swap(r.path) })) },
     });
     if (remaps.length) this.persistSession();
   }
@@ -1332,7 +1328,7 @@ export class ReaderStore {
   /** The page calls this with the current match once it is on screen. The refine box stays if that is what was open. */
   selectMatch(selection: Selection) {
     const popover = this.state.ui.popover === "refine" ? "refine" : "ask";
-    this.setUi({ selection, popover, panePopover: undefined, versionView: this.closedMenus(), ...this.clearedRefine(this.panePath(selection.pane), "selection") });
+    this.setUi({ selection, popover, panePopover: undefined, versionView: this.closedMenus(), ...this.withoutSelectionFailure(this.panePath(selection.pane)) });
   }
 
   openMap(kind: "web" | "timeline") {
@@ -1357,38 +1353,33 @@ export class ReaderStore {
       panePopover: undefined,
       lookups: this.withoutPeek(),
       versionView: this.closedMenus(),
-      ...this.clearedRefine(this.panePath(selection.pane), "selection"),
+      ...this.withoutSelectionFailure(this.panePath(selection.pane)),
     });
   }
 
   closePopover() {
     const at = this.state.ui.selection;
-    // A selection-scoped failure card hangs off the highlight, so it goes when the highlight does.
-    this.setUi({ popover: undefined, selection: undefined, panePopover: undefined, ...this.clearedRefine(at && this.panePath(at.pane), "selection") });
+    this.setUi({ popover: undefined, selection: undefined, panePopover: undefined, refineRetry: undefined, ...this.withoutSelectionFailure(at && this.panePath(at.pane)) });
   }
 
-  /** Esc on a refine status card: that page's failure and the instruction it kept for a retry go. */
-  dismissRefine(path: string) {
-    this.setUi({ popover: undefined, selection: undefined, panePopover: undefined, ...this.clearedRefine(path) });
+  /** Esc on a refine status card: a failure is dismissed; a refine still running keeps its card. */
+  dismissRefine(id: string) {
+    const refines = { ...this.state.ui.refines };
+    if (refines[id]?.error) delete refines[id];
+    this.setUi({ popover: undefined, selection: undefined, panePopover: undefined, refines });
   }
 
   /**
-   * The refine cards a page holds, dropped. `only` limits it to a failure of that scope, so a new
-   * highlight clears the card anchored to the old one and leaves a pane-level card alone. The
-   * instruction stays on show while that page is still being refined.
+   * A failed selection refine's card hangs off the highlight it was asked from, so it goes when that
+   * highlight does. Cards for refines still running, and the pane-level ones, are left standing.
    */
-  private clearedRefine(path: string | undefined, only?: RefineScope): Partial<UiState> {
-    const ui = this.state.ui;
+  private withoutSelectionFailure(path: string | undefined): Partial<UiState> {
     if (!path) return {};
-    const failure = ui.refineError[path];
-    if (only && failure?.scope !== only) return {};
-    if (!failure && ui.refineText[path] === undefined) return {};
-    const refineError = { ...ui.refineError };
-    delete refineError[path];
-    if (ui.refining[path]) return { refineError };
-    const refineText = { ...ui.refineText };
-    delete refineText[path];
-    return { refineError, refineText };
+    const stale = this.refinesOn(path).filter(([, r]) => r.scope === "selection" && r.error);
+    if (!stale.length) return {};
+    const refines = { ...this.state.ui.refines };
+    for (const [id] of stale) delete refines[id];
+    return { refines };
   }
 
   /** Hides one answer card. The answer is not lost: it stays under a dotted line on the text it was asked about. */
@@ -1495,7 +1486,8 @@ export class ReaderStore {
     // The refine box takes the place of the card on this highlight; cards on other blocks stay.
     const id = ui.selection ? lookupId(ui.selection.pane, ui.selection.block) : undefined;
     if (id && ui.lookups[id]) return this.setUi({ popover: "refine", lookups: this.closedLookups([id]) });
-    this.setUi({ panePopover: ui.panePopover === "refine" ? undefined : "refine", popover: undefined, selection: undefined });
+    // Opened by hand rather than by Try again, so the box starts empty.
+    this.setUi({ panePopover: ui.panePopover === "refine" ? undefined : "refine", popover: undefined, selection: undefined, refineRetry: undefined });
   }
 
   /** ⌘N: the box for a new page written from the whole session. Pressing it again closes the box. */
@@ -1516,15 +1508,15 @@ export class ReaderStore {
     return platform.sendFeedback(message, email);
   }
 
-  /** Reopens the refine box, pre-filled, after a page's attempt failed. */
-  retryRefine(path: string) {
+  /** Reopens the refine box on the instruction a failed attempt was carrying, and retires its card. */
+  retryRefine(id: string) {
     const ui = this.state.ui;
-    const failure = ui.refineError[path];
-    if (!failure) return;
-    const refineError = { ...ui.refineError };
-    delete refineError[path];
-    if (failure.scope === "selection" && ui.selection) return this.setUi({ refineError, popover: "refine" });
-    this.setUi({ refineError, panePopover: "refine", popover: undefined, selection: undefined });
+    const run = ui.refines[id];
+    if (!run?.error) return;
+    const refines = { ...ui.refines };
+    delete refines[id];
+    if (run.scope === "selection" && ui.selection) return this.setUi({ refines, popover: "refine" });
+    this.setUi({ refines, refineRetry: run.text, panePopover: "refine", popover: undefined, selection: undefined });
   }
 
   escape() {
@@ -1539,7 +1531,8 @@ export class ReaderStore {
     // A failure card belongs to a page, so this dismisses the one on the page being read.
     for (const role of roles) {
       const path = this.panePath(role);
-      if (path && ui.refineError[path]) return this.dismissRefine(path);
+      const failed = path ? this.refinesOn(path).find(([, r]) => r.error) : undefined;
+      if (failed) return this.dismissRefine(failed[0]);
     }
     const top = this.topLookupId();
     if (top) return this.closeLookup(top);
@@ -1953,53 +1946,28 @@ export class ReaderStore {
     // A corpus refine touches every page of the session, but reads as the one thing it was asked for,
     // so it keeps a single status card on the page it was asked from while the pages refine at once.
     const targets = scope === "corpus" ? [current, ...sessionPages(current, this.state.pages).map((p) => p.path)] : [current];
-    const shown = scope === "corpus" ? [current] : targets;
-    this.startRefineStatus(shown, scope, instruction);
+    // This refine's own card, so it keeps its scope and its instruction whatever is asked for next.
+    const id = `refine#${++this.refineSeq}`;
+    this.setUi({ refines: { ...this.state.ui.refines, [id]: { path: current, scope, text: instruction } }, popover: undefined, panePopover: undefined });
     const selection = scope === "selection" ? highlight : undefined;
     const failures = await Promise.all(
       targets.map((path) => this.refinePage(path, instruction, path === current ? selection : undefined).then(() => undefined, (e) => (e instanceof Error ? e.message : String(e)))),
     );
-    this.endRefineStatus(shown, scope, failures.find((m) => m));
+    const message = failures.find((m) => m);
+    const held = this.state.ui.refines[id];
+    const refines = { ...this.state.ui.refines };
+    // The failure is shown where the refine box was, with the text kept for a retry. A card dismissed
+    // while it ran stays gone.
+    if (message && held) refines[id] = { ...held, error: message };
+    else delete refines[id];
+    this.setUi({ refines });
     // The highlight the refine ran on goes once it has landed, unless it has moved on since.
-    if (!failures.some((m) => m) && highlight && this.state.ui.selection === highlight) this.setUi({ selection: undefined, popover: undefined });
+    if (!message && highlight && this.state.ui.selection === highlight) this.setUi({ selection: undefined, popover: undefined });
   }
 
-  /** Puts up the status card for each page a refine is about to touch, and clears its last failure. */
-  private startRefineStatus(paths: string[], scope: RefineScope, instruction: string) {
-    const ui = this.state.ui;
-    const refining = { ...ui.refining };
-    const refineText = { ...ui.refineText };
-    const refineError = { ...ui.refineError };
-    for (const path of paths) {
-      this.refineRuns.set(path, (this.refineRuns.get(path) ?? 0) + 1);
-      refining[path] = scope;
-      refineText[path] = instruction;
-      delete refineError[path];
-    }
-    this.setUi({ refining, refineText, refineError, popover: undefined, panePopover: undefined });
-  }
-
-  /** Takes the status card down, or leaves it up for the refine stacked behind this one. */
-  private endRefineStatus(paths: string[], scope: RefineScope, message: string | undefined) {
-    const ui = this.state.ui;
-    const refining = { ...ui.refining };
-    const refineText = { ...ui.refineText };
-    const refineError = { ...ui.refineError };
-    for (const path of paths) {
-      const left = (this.refineRuns.get(path) ?? 1) - 1;
-      if (left > 0) this.refineRuns.set(path, left);
-      else {
-        this.refineRuns.delete(path);
-        delete refining[path];
-      }
-      // The failure is shown where the refine box was, with the text kept for a retry.
-      if (message) refineError[path] = { scope, message };
-      else if (left <= 0) {
-        delete refineText[path];
-        delete refineError[path];
-      }
-    }
-    this.setUi({ refining, refineText, refineError });
+  /** The refines on one page, oldest first: the page's chain runs them in that order. */
+  private refinesOn(path: string): [string, RefineRun][] {
+    return Object.entries(this.state.ui.refines).filter(([, r]) => r.path === path);
   }
 
   private refinePage(path: string, instruction: string, selection: Selection | undefined): Promise<void> {
@@ -2336,6 +2304,13 @@ function splitFilePath(path: string): SessionRoot {
   const i = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
   if (i <= 0) throw new Error(`Could not find the folder of ${path}`);
   return { folder: path.slice(0, i), file: path.slice(i + 1) };
+}
+
+/** The same keys, with each value rewritten. */
+function mapValues<T>(map: Record<string, T>, touch: (value: T) => T): Record<string, T> {
+  const out: Record<string, T> = {};
+  for (const [k, v] of Object.entries(map)) out[k] = touch(v);
+  return out;
 }
 
 /** The full path of every page the session holds, whichever root it came from. */
