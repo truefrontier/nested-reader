@@ -169,7 +169,9 @@ export default function App() {
                     pane
                     scope={run.scope}
                     text={run.text}
-                    // A corpus refine runs over every page at once, so any page's tool line stands for the set.
+                    // A corpus refine runs over every page at once and its card names only the page it
+                    // was asked from, so any page's tool line stands for the set. Two corpus refines in
+                    // flight from different pages would therefore borrow each other's line.
                     working={!atWork ? undefined : run.scope === "corpus" ? Object.entries(s.working).find(([k]) => k.startsWith("refine:"))?.[1] : s.working[`refine:${run.path}`]}
                     error={run.error}
                     hotkey={hotkey}

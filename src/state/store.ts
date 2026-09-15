@@ -1575,8 +1575,10 @@ export class ReaderStore {
     const next = prev.catch(() => {}).then(task);
     this.chains.set(path, next);
     // Nothing behind it: the chain is dropped, so the map does not keep an entry per page ever touched.
+    // A Finder rename under the task moves the chain, so this looks for it where it now lives.
     void next.catch(() => {}).then(() => {
-      if (this.chains.get(path) === next) this.chains.delete(path);
+      const at = this.livePath(path);
+      if (this.chains.get(at) === next) this.chains.delete(at);
     });
     return next;
   }
