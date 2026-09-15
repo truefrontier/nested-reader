@@ -2113,6 +2113,8 @@ export class ReaderStore {
       const { folder, rel } = this.loc(path);
       // The pinned base is what comes back, so every snapshot taken from it on goes with the edits:
       // refines stacked on one page leave one each, and history would otherwise keep the orphans.
+      // Refining is the only thing that snapshots a page, so nothing else can sit in that span; an
+      // action that takes a snapshot for some other reason would have to be spared here.
       const list = await platform.listVersions(folder, rel).catch(() => []);
       const stale = list.filter((v) => v.n >= base.n).map((v) => v.n);
       for (const n of stale.length ? stale : [base.n]) await platform.deleteVersion(folder, rel, n);
