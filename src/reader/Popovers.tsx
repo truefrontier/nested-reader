@@ -316,6 +316,7 @@ export function RefineStatus({
   text,
   working,
   error,
+  hotkey,
   caretLeft,
   pane,
   onRetry,
@@ -326,13 +327,15 @@ export function RefineStatus({
   /** What the model is reading with its tools right now, if anything. */
   working?: string;
   error?: string;
+  /** Whether ↵ answers this card. Only one failure takes the key, so a press retries one refine. */
+  hotkey?: boolean;
   caretLeft?: number;
   pane?: boolean;
   onRetry: () => void;
   onDismiss: () => void;
 }) {
   useEffect(() => {
-    if (!error) return;
+    if (!error || !hotkey) return;
     const onKey = (e: globalThis.KeyboardEvent) => {
       if (e.key === "Enter" && !(e.target as HTMLElement)?.closest("input, textarea")) {
         e.preventDefault();
@@ -341,7 +344,7 @@ export function RefineStatus({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [error, onRetry]);
+  }, [error, hotkey, onRetry]);
   const body = error ? (
     <div className="pop small-card status-card failed">
       <div className="lab">Couldn't refine the {SCOPE_LABEL[scope]}</div>

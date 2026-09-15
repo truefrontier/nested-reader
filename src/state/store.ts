@@ -86,6 +86,17 @@ export function refineAtWork(refines: Record<string, RefineRun>): Record<string,
   return out;
 }
 
+/**
+ * The failed refine ⏎ answers, if any: the newest one carrying a failure. Several failed cards can
+ * stand at once, and each would otherwise take the key for itself, so one press would retry them all
+ * and only the last instruction reopened would survive. Try again on a card always answers that card.
+ */
+export function refineToRetry(refines: Record<string, RefineRun>): string | undefined {
+  let last: string | undefined;
+  for (const [id, run] of Object.entries(refines)) if (run.error) last = id;
+  return last;
+}
+
 /** One refinement asked for: what it is rewriting, and the failure it left if it came back with nothing. */
 export type RefineRun = {
   /** The page it rewrites. A corpus refine names the page it was asked from and covers the session. */

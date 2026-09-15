@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { isTauri, platform } from "./platform";
-import { refineAtWork, store, useReader } from "./state/store";
+import { refineAtWork, refineToRetry, store, useReader } from "./state/store";
 import { Sidebar } from "./reader/Sidebar";
 import { Home } from "./reader/Home";
 import { Page } from "./reader/Page";
@@ -114,9 +114,10 @@ export default function App() {
   // instead, in the page itself; `refineAtWork` still counts it, since it may hold the page's turn.
   const refineStatus = useMemo(() => {
     const atWork = refineAtWork(s.ui.refines);
+    const retry = refineToRetry(s.ui.refines);
     return Object.entries(s.ui.refines)
       .filter(([, r]) => r.scope !== "selection")
-      .map(([id, run]) => ({ id, run, atWork: atWork[run.path] === id }));
+      .map(([id, run]) => ({ id, run, atWork: atWork[run.path] === id, hotkey: retry === id }));
   }, [s.ui.refines]);
   const paneBox = s.ui.panePopover;
   const showPaneStack = refineStatus.length > 0 || (!!paneBox && (paneBox === "feedback" || !!current));
@@ -162,7 +163,7 @@ export default function App() {
             {split && <SplitPane />}
             {showPaneStack && (
               <div className="pane-stack">
-                {refineStatus.map(({ id, run, atWork }) => (
+                {refineStatus.map(({ id, run, atWork, hotkey }) => (
                   <RefineStatus
                     key={id}
                     pane
@@ -171,6 +172,7 @@ export default function App() {
                     // A corpus refine runs over every page at once, so any page's tool line stands for the set.
                     working={!atWork ? undefined : run.scope === "corpus" ? Object.entries(s.working).find(([k]) => k.startsWith("refine:"))?.[1] : s.working[`refine:${run.path}`]}
                     error={run.error}
+                    hotkey={hotkey}
                     onRetry={() => store.retryRefine(id)}
                     onDismiss={() => store.dismissRefine(id)}
                   />

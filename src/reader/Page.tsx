@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactElement } from "react";
-import { lookupId, refineAtWork, store, useReader, type PaneRole, type Selection } from "../state/store";
+import { lookupId, refineAtWork, refineToRetry, store, useReader, type PaneRole, type Selection } from "../state/store";
 import type { Ask } from "../platform";
 import { flexiblePattern, isStubBody, lexBlocks, resolveWikiTarget, type Block } from "../lib/markdown";
 import { diffBodies, type Change, type PageDiff } from "../lib/diff";
@@ -149,7 +149,7 @@ export function Page({ path, role }: Props) {
       .at(-1);
     if (!held) return undefined;
     const [id, run] = held;
-    return { id, run, atWork: refineAtWork(ui.refines)[path] === id };
+    return { id, run, atWork: refineAtWork(ui.refines)[path] === id, hotkey: refineToRetry(ui.refines) === id };
   }, [ui.refines, path]);
 
   // Remembered asks stay on the page as dotted text; hovering one shows its answer again.
@@ -458,7 +458,7 @@ export function Page({ path, role }: Props) {
       );
     }
     if (selection?.block === i && !ui.popover && selectionRefine) {
-      const { id, run, atWork } = selectionRefine;
+      const { id, run, atWork, hotkey } = selectionRefine;
       out.push(
         <RefineStatus
           key="refine-status"
@@ -466,6 +466,7 @@ export function Page({ path, role }: Props) {
           text={run.text}
           working={atWork ? s.working[`refine:${path}`] : undefined}
           error={run.error}
+          hotkey={hotkey}
           caretLeft={selection.caretX}
           onRetry={() => store.retryRefine(id)}
           onDismiss={() => store.dismissRefine(id)}
@@ -562,7 +563,8 @@ export function Page({ path, role }: Props) {
           <FailedCard
             title={pageError ? "This page couldn't be written" : "This page hasn't been written yet"}
             error={pageError}
-            hotkey={isMain && !ui.popover && !Object.keys(ui.lookups).length}
+            // A failed refine's card is answered by ↵ first, so the two never take one press together.
+            hotkey={isMain && !ui.popover && !Object.keys(ui.lookups).length && !refineToRetry(ui.refines)}
             onRetry={() => void store.retryPage(path)}
           />
         )}
