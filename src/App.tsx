@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { isTauri, platform } from "./platform";
 import { store, useReader } from "./state/store";
+import type { RefineScope } from "./lib/prompts";
 import { Sidebar } from "./reader/Sidebar";
 import { Home } from "./reader/Home";
 import { Page } from "./reader/Page";
@@ -109,6 +110,21 @@ export default function App() {
   const current = s.session.current;
   const split = s.session.split;
   const showMainPane = !(s.ui.fullscreen && split);
+  // One status card per page being refined, or that failed to refine, so two refines never share a
+  // banner. A selection refine shows its card at the highlight instead, in the page itself.
+  const refineStatus = useMemo(() => {
+    const { refining, refineText, refineError } = s.ui;
+    const out: { path: string; scope: RefineScope; text?: string; error?: string }[] = [];
+    for (const path of new Set([...Object.keys(refining), ...Object.keys(refineError)])) {
+      const failure = refineError[path];
+      const scope = failure?.scope ?? refining[path];
+      if (!scope || scope === "selection") continue;
+      out.push({ path, scope, text: refineText[path], error: failure?.message });
+    }
+    return out;
+  }, [s.ui.refining, s.ui.refineText, s.ui.refineError]);
+  const paneBox = s.ui.panePopover;
+  const showPaneStack = refineStatus.length > 0 || (!!paneBox && (paneBox === "feedback" || !!current));
   // Two panes on the same page scroll together while the pane's link button is on.
   const mainRef = useRef<HTMLDivElement>(null);
   useSyncScroll(mainRef, !!split && split === current && showMainPane && s.ui.syncScroll);
@@ -149,27 +165,33 @@ export default function App() {
               )
             )}
             {split && <SplitPane />}
-            {s.ui.panePopover === "new" && current && <NewFilePopover onSubmit={(text, verb, alt) => void store.newFile(text, verb, alt)} onEsc={() => store.closePopover()} />}
-            {s.ui.panePopover === "feedback" && <FeedbackPopover onSend={(message, email) => store.sendFeedback(message, email)} onEsc={() => store.closePopover()} />}
-            {s.ui.panePopover === "refine" && current && (
-              <RefinePopover
-                pane
-                initial={s.ui.refineText}
-                onSubmit={(text, scope) => void store.refine(text, scope)}
-                onEsc={() => store.closePopover()}
-                onToggle={() => store.toggleRefine()}
-              />
-            )}
-            {((s.ui.refining && s.ui.refining !== "selection") || (s.ui.refineError && s.ui.refineError.scope !== "selection")) && (
-              <RefineStatus
-                pane
-                scope={s.ui.refineError?.scope ?? s.ui.refining ?? "page"}
-                text={s.ui.refineText}
-                working={Object.entries(s.working).find(([k]) => k.startsWith("refine:"))?.[1]}
-                error={s.ui.refineError?.message}
-                onRetry={() => store.retryRefine()}
-                onDismiss={() => store.closePopover()}
-              />
+            {showPaneStack && (
+              <div className="pane-stack">
+                {refineStatus.map((r) => (
+                  <RefineStatus
+                    key={r.path}
+                    pane
+                    scope={r.scope}
+                    text={r.text}
+                    // A corpus refine runs over every page at once, so any page's tool line stands for the set.
+                    working={r.scope === "corpus" ? Object.entries(s.working).find(([k]) => k.startsWith("refine:"))?.[1] : s.working[`refine:${r.path}`]}
+                    error={r.error}
+                    onRetry={() => store.retryRefine(r.path)}
+                    onDismiss={() => store.dismissRefine(r.path)}
+                  />
+                ))}
+                {paneBox === "new" && current && <NewFilePopover onSubmit={(text, verb, alt) => void store.newFile(text, verb, alt)} onEsc={() => store.closePopover()} />}
+                {paneBox === "feedback" && <FeedbackPopover onSend={(message, email) => store.sendFeedback(message, email)} onEsc={() => store.closePopover()} />}
+                {paneBox === "refine" && current && (
+                  <RefinePopover
+                    pane
+                    initial={s.ui.refineText[current]}
+                    onSubmit={(text, scope) => void store.refine(text, scope)}
+                    onEsc={() => store.closePopover()}
+                    onToggle={() => store.toggleRefine()}
+                  />
+                )}
+              </div>
             )}
             {s.ui.map && <MapOverlay />}
           </div>

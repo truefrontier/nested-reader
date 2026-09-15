@@ -67,14 +67,23 @@ export type PanePopover = "refine" | "new" | "feedback";
 /** Which pane something belongs to: the reading pane, or the one opened beside or below it. */
 export type PaneRole = "main" | "split";
 
+/** The key an answer card is held under: one card per block per pane, so several asks stream side by side. */
+export function lookupId(pane: PaneRole, block: number): string {
+  return `${pane}:${block}`;
+}
+
 /** One pane's version history UI: whether its menu is open, which old version it shows, and whether Restore awaits a yes. */
 export type VersionView = { history: boolean; viewing?: number; confirmRestore: boolean };
+
+/** A refine that came back with nothing: the scope it was asked for, and why it failed. */
+export type RefineFailure = { scope: RefineScope; message: string };
 
 export type UiState = {
   selection?: Selection;
   popover?: Popover;
   panePopover?: PanePopover;
-  lookup?: Lookup;
+  /** The answer cards on show, by `lookupId`, so several quick asks can stream at once. */
+  lookups: Record<string, Lookup>;
   /** Version history UI, per pane, so each pane can show a different version of the same page. */
   versionView: Record<PaneRole, VersionView>;
   map?: "web" | "timeline";
@@ -85,10 +94,12 @@ export type UiState = {
   /** Tree filters: only unread pages (with those being written or that failed), only pages with changes to review. Both on shows either. */
   unreadOnly: boolean;
   changesOnly: boolean;
-  refining?: RefineScope;
-  /** The instruction being (or last) refined, shown while it runs and kept for a retry. */
-  refineText?: string;
-  refineError?: { scope: RefineScope; message: string };
+  /** The scope each page is being refined with, by path, so two refines at once keep their own status. */
+  refining: Record<string, RefineScope>;
+  /** The instruction each page is being (or was last) refined with, shown while it runs and kept for a retry. */
+  refineText: Record<string, string>;
+  /** Why a page's refine failed, by path. */
+  refineError: Record<string, RefineFailure>;
   error?: string;
   /** Something is being dragged over the window. */
   dragging: boolean;
@@ -129,7 +140,7 @@ export type ReaderState = {
   reviewBases: Record<string, ReviewBase>;
   /** Pages the model failed to write, by path, with the error; they keep their heading and can be retried. */
   pageErrors: Record<string, string>;
-  /** What the model is looking at right now, by stream key ("lookup", "page:<path>", "refine:<path>"), while it uses a tool. */
+  /** What the model is looking at right now, by stream key ("lookup:<id>", "page:<path>", "refine:<path>"), while it uses a tool. */
   working: Record<string, string>;
   apiKeyMissing?: boolean;
   /** Which app opens .md files on this Mac; the Home offer and the Settings row follow it. */
@@ -164,7 +175,11 @@ const UPDATE_CHECK_EVERY = 6 * 60 * 60 * 1000;
 const closedVersionView: VersionView = { history: false, confirmRestore: false };
 
 const initialUi: UiState = {
+  lookups: {},
   versionView: { main: closedVersionView, split: closedVersionView },
+  refining: {},
+  refineText: {},
+  refineError: {},
   fullscreen: false,
   syncScroll: true,
   filter: "",
@@ -208,6 +223,12 @@ export class ReaderStore {
 
   private listeners = new Set<() => void>();
   private streams = new Map<string, StreamHandle>();
+  /** One task chain per page, so work on the same page runs in turn while other pages run alongside. */
+  private chains = new Map<string, Promise<void>>();
+  /** Lets go of whatever waits on a stream, by stream key, since a cancelled stream sends no last event. */
+  private releases = new Map<string, (err?: unknown) => void>();
+  /** How many refines a page has running or queued, so a stacked refine keeps the status card up. */
+  private refineRuns = new Map<string, number>();
   private saveTimer: number | undefined;
   private writeTimers = new Map<string, number>();
   private initialized = false;
@@ -571,6 +592,8 @@ export class ReaderStore {
       const recent = this.findRecent(folder, file) ?? this.findRecentById(resolved.folderId, resolved.fileId) ?? recentHint;
       const folderName = session.name || recent?.name || (file ? pages[file].title : prettyFolderName(folder));
       this.pathRemaps.clear();
+      this.chains.clear();
+      this.refineRuns.clear();
       this.set({ folder, rootFile: file, folderName, pages, bodies: {}, session, versions: {}, versionBodies: {}, reviewBases: {}, pageErrors: {}, home: false, ui: { ...initialUi } });
       let current = initialPage && pages[initialPage] ? initialPage : session.current;
       if (!current || !pages[current]) {
@@ -726,6 +749,8 @@ export class ReaderStore {
     if (!this.state.pages[path]) return;
     try {
       await this.loadBody(path);
+      // The cards leaving with the old page are filed under it, so this runs before `current` moves.
+      const lookups = this.closedLookups(this.lookupIdsIn("main"));
       const s = this.state.session;
       const trail = opts.push === false ? s.trail : [...s.trail.slice(0, s.trailIndex + 1), path];
       const trailIndex = opts.push === false ? s.trailIndex : trail.length - 1;
@@ -737,8 +762,20 @@ export class ReaderStore {
         trailIndex,
       });
       const ui = this.state.ui;
-      // The split pane keeps its version view; only the main pane changed.
-      this.setUi({ ...initialUi, filter: ui.filter, unreadOnly: ui.unreadOnly, changesOnly: ui.changesOnly, map: undefined, versionView: { ...initialUi.versionView, split: ui.versionView.split } });
+      // The split pane keeps its version view and its answer cards; only the main pane changed. The
+      // refine status of every page stays: those cards follow the work, not what is being read.
+      this.setUi({
+        ...initialUi,
+        filter: ui.filter,
+        unreadOnly: ui.unreadOnly,
+        changesOnly: ui.changesOnly,
+        map: undefined,
+        versionView: { ...initialUi.versionView, split: ui.versionView.split },
+        lookups,
+        refining: ui.refining,
+        refineText: ui.refineText,
+        refineError: ui.refineError,
+      });
       await this.refreshVersions(path);
       await this.refreshReview(path);
     } catch (e) {
@@ -850,6 +887,9 @@ export class ReaderStore {
     delete working[`refine:${path}`];
     const s = this.state.session;
     const pages = without(this.state.pages);
+    this.chains.delete(path);
+    this.refineRuns.delete(path);
+    const ui = this.state.ui;
     this.set({
       pages,
       bodies: without(this.state.bodies),
@@ -858,6 +898,8 @@ export class ReaderStore {
       reviewBases: without(this.state.reviewBases),
       pageErrors: without(this.state.pageErrors),
       working,
+      // A page that is gone takes its refine status card with it.
+      ui: { ...ui, refining: without(ui.refining), refineText: without(ui.refineText), refineError: without(ui.refineError) },
     });
     if (s.split === path) this.closeSplit();
     // The trail keeps its place: the index follows the entries still standing before it.
@@ -944,14 +986,14 @@ export class ReaderStore {
     this.setUi({ fullscreen: false, versionView: { ...this.state.ui.versionView, split: closedVersionView } });
   }
 
-  /** Drops the highlight, its box and the answer card sitting in `role` when that pane's page changes or the pane closes. */
+  /** Drops the highlight, its box and the answer cards sitting in `role` when that pane's page changes or the pane closes. */
   private dropPaneUi(role: PaneRole) {
     const ui = this.state.ui;
     const selection = ui.selection?.pane === role;
-    const lookup = ui.lookup?.pane === role;
-    if (!selection && !lookup) return;
-    if (lookup) this.dropLookup();
-    this.setUi({ ...(selection ? { selection: undefined, popover: undefined } : {}), ...(lookup ? { lookup: undefined } : {}) });
+    const ids = this.lookupIdsIn(role);
+    if (!selection && !ids.length) return;
+    const lookups = this.closedLookups(ids);
+    this.setUi({ ...(selection ? { selection: undefined, popover: undefined } : {}), ...(ids.length ? { lookups } : {}) });
   }
 
   /** Turns linked scrolling of two panes showing the same page on or off. */
@@ -1084,6 +1126,22 @@ export class ReaderStore {
           this.streams.delete(prefix + from);
           this.streams.set(prefix + to, handle);
         }
+        const release = this.releases.get(prefix + from);
+        if (release) {
+          this.releases.delete(prefix + from);
+          this.releases.set(prefix + to, release);
+        }
+      }
+      // The page's queue and its refine count travel with it, so work behind them still takes its turn.
+      const chain = this.chains.get(from);
+      if (chain) {
+        this.chains.delete(from);
+        this.chains.set(to, chain);
+      }
+      const runs = this.refineRuns.get(from);
+      if (runs !== undefined) {
+        this.refineRuns.delete(from);
+        this.refineRuns.set(to, runs);
       }
     }
     const oldFolder = this.state.folder;
@@ -1112,6 +1170,13 @@ export class ReaderStore {
       pageErrors: swapKeys(this.state.pageErrors),
       working,
       session,
+      // The refine status cards are keyed by page, so they follow the rename with the rest.
+      ui: {
+        ...this.state.ui,
+        refining: swapKeys(this.state.ui.refining),
+        refineText: swapKeys(this.state.ui.refineText),
+        refineError: swapKeys(this.state.ui.refineError),
+      },
     });
     if (remaps.length) this.persistSession();
   }
@@ -1230,7 +1295,9 @@ export class ReaderStore {
   /** Opens the find bar, or refocuses it. A fresh selection becomes the query, as "use selection for find" would. */
   openFind() {
     const ui = this.state.ui;
-    const fromSelection = !ui.find && ui.popover === "ask" && !ui.lookup ? ui.selection?.text : undefined;
+    const at = ui.selection;
+    const card = at ? ui.lookups[lookupId(at.pane, at.block)] : undefined;
+    const fromSelection = !ui.find && ui.popover === "ask" && !card ? at?.text : undefined;
     if (fromSelection && fromSelection.length <= 200) {
       this.closePopover();
       this.setUi({ find: true, findQuery: fromSelection, findIndex: 0, findFocus: ui.findFocus + 1, versionView: this.closedMenus() });
@@ -1265,7 +1332,7 @@ export class ReaderStore {
   /** The page calls this with the current match once it is on screen. The refine box stays if that is what was open. */
   selectMatch(selection: Selection) {
     const popover = this.state.ui.popover === "refine" ? "refine" : "ask";
-    this.setUi({ selection, popover, panePopover: undefined, versionView: this.closedMenus(), refineError: undefined, refineText: undefined });
+    this.setUi({ selection, popover, panePopover: undefined, versionView: this.closedMenus(), ...this.clearedRefine(this.panePath(selection.pane), "selection") });
   }
 
   openMap(kind: "web" | "timeline") {
@@ -1283,25 +1350,92 @@ export class ReaderStore {
       if (this.state.ui.popover) this.setUi({ selection: undefined, popover: undefined });
       return;
     }
-    const lookup = this.state.ui.lookup?.peek ? undefined : this.state.ui.lookup;
-    this.setUi({ selection, popover: "ask", panePopover: undefined, lookup, versionView: this.closedMenus(), refineError: undefined, refineText: undefined });
+    // The cards keep streaming; only the one peeked at from hover gives way to a fresh highlight.
+    this.setUi({
+      selection,
+      popover: "ask",
+      panePopover: undefined,
+      lookups: this.withoutPeek(),
+      versionView: this.closedMenus(),
+      ...this.clearedRefine(this.panePath(selection.pane), "selection"),
+    });
   }
 
   closePopover() {
-    this.setUi({ popover: undefined, selection: undefined, panePopover: undefined, refineError: undefined, refineText: undefined });
+    const at = this.state.ui.selection;
+    // A selection-scoped failure card hangs off the highlight, so it goes when the highlight does.
+    this.setUi({ popover: undefined, selection: undefined, panePopover: undefined, ...this.clearedRefine(at && this.panePath(at.pane), "selection") });
   }
 
-  /** Hides the answer card. The answer is not lost: it stays under a dotted line on the text it was asked about. */
-  closeLookup() {
-    this.dropLookup();
-    this.setUi({ lookup: undefined, selection: undefined, popover: undefined });
+  /** Esc on a refine status card: that page's failure and the instruction it kept for a retry go. */
+  dismissRefine(path: string) {
+    this.setUi({ popover: undefined, selection: undefined, panePopover: undefined, ...this.clearedRefine(path) });
   }
 
-  /** Stops a running answer, keeping whatever has streamed in so far so nothing that was read disappears. */
-  private dropLookup() {
-    const cur = this.state.ui.lookup;
-    if (cur?.streaming) this.stopStream("lookup");
-    if (cur) this.rememberLookup(cur);
+  /**
+   * The refine cards a page holds, dropped. `only` limits it to a failure of that scope, so a new
+   * highlight clears the card anchored to the old one and leaves a pane-level card alone. The
+   * instruction stays on show while that page is still being refined.
+   */
+  private clearedRefine(path: string | undefined, only?: RefineScope): Partial<UiState> {
+    const ui = this.state.ui;
+    if (!path) return {};
+    const failure = ui.refineError[path];
+    if (only && failure?.scope !== only) return {};
+    if (!failure && ui.refineText[path] === undefined) return {};
+    const refineError = { ...ui.refineError };
+    delete refineError[path];
+    if (ui.refining[path]) return { refineError };
+    const refineText = { ...ui.refineText };
+    delete refineText[path];
+    return { refineError, refineText };
+  }
+
+  /** Hides one answer card. The answer is not lost: it stays under a dotted line on the text it was asked about. */
+  closeLookup(id: string) {
+    const cur = this.state.ui.lookups[id];
+    if (!cur) return;
+    const lookups = this.closedLookups([id]);
+    const at = this.state.ui.selection;
+    const onIt = at?.pane === cur.pane && at.block === cur.block;
+    this.setUi({ lookups, ...(onIt ? { selection: undefined, popover: undefined } : {}) });
+  }
+
+  /** Stops one running answer, keeping whatever has streamed in so far so nothing that was read disappears. */
+  private dropLookup(id: string) {
+    const cur = this.state.ui.lookups[id];
+    if (!cur) return;
+    if (cur.streaming) this.stopStream(`lookup:${id}`);
+    this.rememberLookup(cur);
+  }
+
+  /** Stops and files away the cards `ids` names, and gives back the cards left standing. */
+  private closedLookups(ids: string[]): Record<string, Lookup> {
+    for (const id of ids) this.dropLookup(id);
+    const lookups = { ...this.state.ui.lookups };
+    for (const id of ids) delete lookups[id];
+    return lookups;
+  }
+
+  /** The cards sitting in one pane. */
+  private lookupIdsIn(role: PaneRole): string[] {
+    return Object.entries(this.state.ui.lookups)
+      .filter(([, l]) => l.pane === role)
+      .map(([id]) => id);
+  }
+
+  /** Only one remembered ask is peeked at from hover at a time; the streaming cards are many. */
+  private withoutPeek(): Record<string, Lookup> {
+    const ui = this.state.ui;
+    const out: Record<string, Lookup> = {};
+    for (const [id, l] of Object.entries(ui.lookups)) if (!l.peek) out[id] = l;
+    return out;
+  }
+
+  /** The card Esc answers for: the peeked one, else the one opened last. */
+  private topLookupId(): string | undefined {
+    const ids = Object.keys(this.state.ui.lookups);
+    return ids.find((id) => this.state.ui.lookups[id].peek) ?? ids[ids.length - 1];
   }
 
   /**
@@ -1327,8 +1461,11 @@ export class ReaderStore {
    */
   showAsk(pane: PaneRole, ask: Ask, at: { block: number; start: number; end: number }, peek: boolean) {
     const ui = this.state.ui;
-    // A live answer, or one opened on purpose, is not taken over by a hover.
-    if (peek && ui.lookup && !ui.lookup.peek) return;
+    const id = lookupId(pane, at.block);
+    const held = ui.lookups[id];
+    // An answer still streaming, or one opened on purpose, is not taken over.
+    if (held?.streaming) return;
+    if (peek && held && !held.peek) return;
     if (ui.popover || ui.panePopover) return;
     const path = this.panePath(pane);
     if (!path) return;
@@ -1336,29 +1473,28 @@ export class ReaderStore {
     const paragraph = lexBlocks(body)[at.block]?.text ?? ask.text;
     const lookup: Lookup = { pane, block: at.block, anchor: { ...at, text: ask.text }, thread: ask.thread, question: ask.question, answer: ask.answer, streaming: false, peek };
     const selection: Selection = { pane, block: at.block, start: at.start, end: at.end, text: ask.text, paragraph, caretX: 0 };
-    this.setUi({ lookup, selection, popover: undefined, versionView: this.closedMenus() });
+    this.setUi({ lookups: { ...this.withoutPeek(), [id]: lookup }, selection, popover: undefined, versionView: this.closedMenus() });
   }
 
   /** A peeked card the pointer has left: closes it unless it was pinned by a click in the meantime. */
   hideAskPeek() {
-    if (!this.state.ui.lookup?.peek) return;
-    this.setUi({ lookup: undefined, selection: undefined });
+    if (!Object.values(this.state.ui.lookups).some((l) => l.peek)) return;
+    this.setUi({ lookups: this.withoutPeek(), selection: undefined });
   }
 
   /** Keeps a peeked card open after a click on it or its text, so a follow-up can be typed. */
-  pinAsk() {
-    const cur = this.state.ui.lookup;
-    if (cur?.peek) this.setUi({ lookup: { ...cur, peek: false } });
+  pinAsk(id: string) {
+    const cur = this.state.ui.lookups[id];
+    if (cur?.peek) this.setUi({ lookups: { ...this.state.ui.lookups, [id]: { ...cur, peek: false } } });
   }
 
   toggleRefine() {
     const ui = this.state.ui;
     if (ui.selection && ui.popover === "ask") return this.setUi({ popover: "refine" });
     if (ui.popover === "refine") return this.setUi({ popover: "ask" });
-    if (ui.selection && ui.lookup) {
-      this.dropLookup();
-      return this.setUi({ popover: "refine", lookup: undefined });
-    }
+    // The refine box takes the place of the card on this highlight; cards on other blocks stay.
+    const id = ui.selection ? lookupId(ui.selection.pane, ui.selection.block) : undefined;
+    if (id && ui.lookups[id]) return this.setUi({ popover: "refine", lookups: this.closedLookups([id]) });
     this.setUi({ panePopover: ui.panePopover === "refine" ? undefined : "refine", popover: undefined, selection: undefined });
   }
 
@@ -1366,15 +1502,13 @@ export class ReaderStore {
   toggleNewFile() {
     const ui = this.state.ui;
     if (!this.state.session.current) return;
-    this.dropLookup();
-    this.setUi({ panePopover: ui.panePopover === "new" ? undefined : "new", popover: undefined, selection: undefined, lookup: undefined });
+    this.setUi({ panePopover: ui.panePopover === "new" ? undefined : "new", popover: undefined, selection: undefined, lookups: this.withoutPeek() });
   }
 
   /** The Send feedback link at the bottom of the sidebar. Clicking it again closes the box. */
   toggleFeedback() {
     const ui = this.state.ui;
-    this.dropLookup();
-    this.setUi({ panePopover: ui.panePopover === "feedback" ? undefined : "feedback", popover: undefined, selection: undefined, lookup: undefined, refineError: undefined });
+    this.setUi({ panePopover: ui.panePopover === "feedback" ? undefined : "feedback", popover: undefined, selection: undefined, lookups: this.withoutPeek() });
   }
 
   /** Sends the note; the box shows the rejection's message when it fails. */
@@ -1382,13 +1516,15 @@ export class ReaderStore {
     return platform.sendFeedback(message, email);
   }
 
-  /** Reopens the refine box, pre-filled, after a failed attempt. */
-  retryRefine() {
+  /** Reopens the refine box, pre-filled, after a page's attempt failed. */
+  retryRefine(path: string) {
     const ui = this.state.ui;
-    const err = ui.refineError;
-    if (!err) return;
-    if (err.scope === "selection" && ui.selection) return this.setUi({ refineError: undefined, popover: "refine" });
-    this.setUi({ refineError: undefined, panePopover: "refine", popover: undefined, selection: undefined });
+    const failure = ui.refineError[path];
+    if (!failure) return;
+    const refineError = { ...ui.refineError };
+    delete refineError[path];
+    if (failure.scope === "selection" && ui.selection) return this.setUi({ refineError, popover: "refine" });
+    this.setUi({ refineError, panePopover: "refine", popover: undefined, selection: undefined });
   }
 
   escape() {
@@ -1399,14 +1535,58 @@ export class ReaderStore {
     for (const role of roles) if (ui.versionView[role].confirmRestore) return this.cancelRestore(role);
     for (const role of roles) if (ui.versionView[role].history) return this.setVersionView(role, { history: false });
     for (const role of roles) if (ui.versionView[role].viewing !== undefined) return this.backToCurrent(role);
-    if (ui.popover || ui.panePopover || ui.refineError) return this.closePopover();
-    if (ui.lookup) return this.closeLookup();
+    if (ui.popover || ui.panePopover) return this.closePopover();
+    // A failure card belongs to a page, so this dismisses the one on the page being read.
+    for (const role of roles) {
+      const path = this.panePath(role);
+      if (path && ui.refineError[path]) return this.dismissRefine(path);
+    }
+    const top = this.topLookupId();
+    if (top) return this.closeLookup(top);
     if (ui.find) return this.closeFind();
     if (ui.map) return this.closeMap();
     if (ui.fullscreen) return this.setUi({ fullscreen: false });
   }
 
   // ---------- AI plumbing ----------
+
+  /**
+   * Runs `task` after whatever this page already has in hand, and gives back when it is done. Pages
+   * hold a chain each, so writing one page and refining another run at once while two pieces of work
+   * on the same page take their turn: a refine asked for mid-generation reads the finished body.
+   */
+  private queue(path: string, task: () => Promise<void>): Promise<void> {
+    const prev = this.chains.get(path) ?? Promise.resolve();
+    const next = prev.catch(() => {}).then(task);
+    this.chains.set(path, next);
+    // Nothing behind it: the chain is dropped, so the map does not keep an entry per page ever touched.
+    void next.catch(() => {}).then(() => {
+      if (this.chains.get(path) === next) this.chains.delete(path);
+    });
+    return next;
+  }
+
+  /**
+   * The settle half of a queued stream task: `finish()` when the stream ends, `finish(err)` when it
+   * failed, and the same call is left with `releases` so a cancel lets the page's chain move on.
+   */
+  private settler(key: string, resolve: () => void, reject: (e: unknown) => void) {
+    let settled = false;
+    const finish = (err?: unknown) => {
+      if (settled) return;
+      settled = true;
+      if (this.releases.get(key) === finish) this.releases.delete(key);
+      if (err === undefined) resolve();
+      else reject(err instanceof Error ? err : new Error(String(err)));
+    };
+    return {
+      finish,
+      /** Called once the stream is running; a stream that failed on the spot needs no release. */
+      watch: () => {
+        if (!settled) this.releases.set(key, finish);
+      },
+    };
+  }
 
   private request(system: string, messages: ChatMessage[], maxTokens?: number, kind?: string): AiRequest {
     const s = this.state.settings;
@@ -1452,6 +1632,8 @@ export class ReaderStore {
   private stopStream(key: string) {
     this.streams.get(key)?.cancel();
     this.streams.delete(key);
+    // A cancelled stream sends no last event, so the task waiting on it is let go here.
+    this.releases.get(key)?.();
     if (this.state.working[key]) this.setWorking(key, undefined);
   }
 
@@ -1493,52 +1675,59 @@ export class ReaderStore {
     };
   }
 
-  /** Runs the verb chosen in the ask popover or the inline card. */
-  async ask(question: string, verb: Verb, alt = false) {
+  /**
+   * Runs the verb chosen in the ask popover or the inline card. `from` is the card a follow-up was
+   * typed into, so the answer lands back in that card rather than wherever the highlight has moved on to.
+   */
+  async ask(question: string, verb: Verb, alt = false, from?: string) {
     const ui = this.state.ui;
     const selection = ui.selection;
-    if (verb === "quick") return this.quickAnswer(question, selection, ui.lookup);
+    const card = from ? ui.lookups[from] : undefined;
+    if (verb === "quick") return this.quickAnswer(question, selection, card);
     const mode = verb === "deep" ? "deep-dive" : "new-page";
     const preferred = verb === "deep" ? this.state.settings.deepDiveOpens : this.state.settings.newPageOpens;
     const placement = alt ? flipPlacement(preferred) : preferred;
     // The page grows from the page the highlight (or the answer card) is in, which may be the split pane's.
-    const source = this.panePath(selection?.pane ?? ui.lookup?.pane ?? "main");
-    await this.createPage({ question, mode, placement, source, sourceText: selection?.text, block: selection?.block ?? ui.lookup?.block });
+    const source = this.panePath(selection?.pane ?? card?.pane ?? "main");
+    await this.createPage({ question, mode, placement, source, sourceText: selection?.text, block: selection?.block ?? card?.block });
   }
 
   private async quickAnswer(question: string, selection: Selection | undefined, existing?: Lookup) {
-    const block = selection?.block ?? existing?.block;
-    const pane = selection?.pane ?? existing?.pane;
+    // A follow-up belongs to the card it was typed into; a fresh ask to the highlight it was asked from.
+    const block = existing?.block ?? selection?.block;
+    const pane = existing?.pane ?? selection?.pane;
     if (block === undefined || !pane) return;
+    const id = lookupId(pane, block);
     const thread = existing ? (existing.answer ? [...existing.thread, { question: existing.question, answer: existing.answer }] : existing.thread) : [];
     const q = question || (selection ? `Explain: ${selection.text}` : "");
-    const anchor = selection ? { start: selection.start, end: selection.end, text: selection.text } : existing?.anchor;
+    const anchor = existing ? existing.anchor : selection ? { start: selection.start, end: selection.end, text: selection.text } : undefined;
     const lookup: Lookup = { pane, block, anchor, thread, question: q, answer: "", streaming: true };
-    this.setUi({ lookup, popover: undefined, selection: existing?.block === block ? this.state.ui.selection : selection, panePopover: undefined });
+    this.setUi({ lookups: { ...this.state.ui.lookups, [id]: lookup }, popover: undefined, selection: existing ? this.state.ui.selection : selection, panePopover: undefined });
     try {
       const ctx = await this.askContext(selection ?? this.state.ui.selection, thread, this.panePath(pane));
       if (!ctx) return;
       const { system, messages } = quickAnswerMessages(ctx, q);
-      this.stream("lookup", this.request(system, messages, 400, "quick_answer"), {
-        delta: (t) => {
-          const cur = this.state.ui.lookup;
-          if (cur) this.setUi({ lookup: { ...cur, answer: cur.answer + t } });
-        },
+      // The card's own stream key, so a second ask elsewhere never cancels this one.
+      this.stream(`lookup:${id}`, this.request(system, messages, 400, "quick_answer"), {
+        delta: (t) => this.patchLookup(id, (cur) => ({ ...cur, answer: cur.answer + t })),
         done: () => {
-          const cur = this.state.ui.lookup;
-          if (!cur) return;
-          const finished = { ...cur, streaming: false };
-          this.setUi({ lookup: finished });
-          this.rememberLookup(finished);
+          const finished = this.patchLookup(id, (cur) => ({ ...cur, streaming: false }));
+          if (finished) this.rememberLookup(finished);
         },
-        error: (m) => {
-          const cur = this.state.ui.lookup;
-          if (cur) this.setUi({ lookup: { ...cur, streaming: false, error: m } });
-        },
+        error: (m) => this.patchLookup(id, (cur) => ({ ...cur, streaming: false, error: m })),
       });
     } catch (e) {
       this.fail(e);
     }
+  }
+
+  /** Rewrites one card, if it is still on show; a card closed mid-stream simply stops being updated. */
+  private patchLookup(id: string, patch: (cur: Lookup) => Lookup): Lookup | undefined {
+    const cur = this.state.ui.lookups[id];
+    if (!cur) return undefined;
+    const next = patch(cur);
+    this.setUi({ lookups: { ...this.state.ui.lookups, [id]: next } });
+    return next;
   }
 
   /**
@@ -1573,8 +1762,8 @@ export class ReaderStore {
       // Link the source text to the new page so the file itself remembers the branch.
       if (sourceText && opts.block !== undefined) await this.linkSelection(current, opts.block, sourceText, slug);
       this.setSession({ loading: [...this.state.session.loading, path] });
-      this.dropLookup();
-      this.setUi({ popover: undefined, selection: undefined, lookup: undefined, panePopover: undefined });
+      // The answer cards keep streaming: starting a page no longer cancels the ask it grew out of.
+      this.setUi({ popover: undefined, selection: undefined, panePopover: undefined });
       if (opts.placement === "active") await this.navigate(path);
       else if (opts.placement === "beside" || opts.placement === "below") {
         this.setSession({ split: path, splitDirection: opts.placement, sidebar: false });
@@ -1588,95 +1777,115 @@ export class ReaderStore {
   }
 
   /**
-   * Streams a page's text from the model. On failure the page keeps its heading and the
-   * error is remembered, so the page shows a retry instead of silently staying empty.
+   * Streams a page's text from the model, in that page's turn, and gives back once the stream has
+   * ended: a refine asked for while the page is being written waits here for the finished body.
    */
-  private async generatePage(
+  private generatePage(
     path: string,
     opts: { sourcePath: string; question: string; mode: "new-page" | "deep-dive"; sourceText?: string; block?: number; from?: PageOrigin },
-  ) {
-    const folder = this.state.folder;
-    if (!folder) return;
-    const title = this.state.pages[path]?.title ?? opts.question;
-    const heading = `# ${title}\n\n`;
-    const selection = opts.sourceText
-      ? { block: opts.block ?? 0, start: 0, end: 0, text: opts.sourceText, paragraph: this.paragraphOf(opts.sourcePath, opts.block), caretX: 0 }
-      : undefined;
-    const ctx = await this.askContext(selection, undefined, opts.sourcePath);
-    if (!ctx) return;
-    const deep = opts.mode === "deep-dive";
-    const { system, messages } = opts.from === "session" ? newFileMessages(ctx, opts.question, deep) : newPageMessages(ctx, opts.question, deep);
-    const kind = opts.mode === "deep-dive" ? "deep_dive" : "new_page";
-    let text = "";
-    const flush = (final: boolean) => {
-      const dest = this.livePath(path);
-      const body = text.trim().startsWith("#") ? text : heading + text;
-      this.set({ bodies: { ...this.state.bodies, [dest]: body } });
-      const write = () => {
-        // Hold the disk write until rematch has updated in-memory `source`, then re-read meta.
-        if (this.rematching) {
-          window.clearTimeout(this.writeTimers.get(dest));
-          this.writeTimers.set(
-            dest,
-            window.setTimeout(() => {
-              this.writeTimers.delete(this.livePath(path));
-              write();
-            }, 100),
-          );
-          return;
-        }
-        const at = this.livePath(path);
-        const live = this.state.pages[at];
-        if (!live) return;
-        const t = titleFromBody(body, title);
-        const m: PageMeta = { ...live, title: t };
-        this.set({ pages: { ...this.state.pages, [at]: m } });
-        void this.writePage(at, body, m).catch((e) => this.fail(e));
-      };
-      if (final) {
-        window.clearTimeout(this.writeTimers.get(dest));
-        this.writeTimers.delete(dest);
-        write();
-      } else if (!this.writeTimers.has(dest)) {
-        this.writeTimers.set(
-          dest,
-          window.setTimeout(() => {
-            this.writeTimers.delete(this.livePath(path));
+  ): Promise<void> {
+    return this.queue(path, () => this.runGeneratePage(path, opts));
+  }
+
+  /**
+   * One page's turn at being written. On failure the page keeps its heading and the
+   * error is remembered, so the page shows a retry instead of silently staying empty.
+   */
+  private runGeneratePage(
+    path: string,
+    opts: { sourcePath: string; question: string; mode: "new-page" | "deep-dive"; sourceText?: string; block?: number; from?: PageOrigin },
+  ): Promise<void> {
+    const key = `page:${path}`;
+    return new Promise<void>((resolve, reject) => {
+      const { finish, watch } = this.settler(key, resolve, reject);
+      void (async () => {
+        const folder = this.state.folder;
+        if (!folder) return finish();
+        const title = this.state.pages[path]?.title ?? opts.question;
+        const heading = `# ${title}\n\n`;
+        const selection = opts.sourceText
+          ? { block: opts.block ?? 0, start: 0, end: 0, text: opts.sourceText, paragraph: this.paragraphOf(opts.sourcePath, opts.block), caretX: 0 }
+          : undefined;
+        const ctx = await this.askContext(selection, undefined, opts.sourcePath);
+        if (!ctx) return finish();
+        const deep = opts.mode === "deep-dive";
+        const { system, messages } = opts.from === "session" ? newFileMessages(ctx, opts.question, deep) : newPageMessages(ctx, opts.question, deep);
+        const kind = opts.mode === "deep-dive" ? "deep_dive" : "new_page";
+        let text = "";
+        const flush = (final: boolean) => {
+          const dest = this.livePath(path);
+          const body = text.trim().startsWith("#") ? text : heading + text;
+          this.set({ bodies: { ...this.state.bodies, [dest]: body } });
+          const write = () => {
+            // Hold the disk write until rematch has updated in-memory `source`, then re-read meta.
+            if (this.rematching) {
+              window.clearTimeout(this.writeTimers.get(dest));
+              this.writeTimers.set(
+                dest,
+                window.setTimeout(() => {
+                  this.writeTimers.delete(this.livePath(path));
+                  write();
+                }, 100),
+              );
+              return;
+            }
+            const at = this.livePath(path);
+            const live = this.state.pages[at];
+            if (!live) return;
+            const t = titleFromBody(body, title);
+            const m: PageMeta = { ...live, title: t };
+            this.set({ pages: { ...this.state.pages, [at]: m } });
+            void this.writePage(at, body, m).catch((e) => this.fail(e));
+          };
+          if (final) {
+            window.clearTimeout(this.writeTimers.get(dest));
+            this.writeTimers.delete(dest);
             write();
-          }, 500),
-        );
-      }
-    };
-    const stopLoading = () => {
-      const s = this.state.session;
-      const at = this.livePath(path);
-      this.setSession({ loading: s.loading.filter((p) => p !== at && p !== path) });
-    };
-    this.stream(`page:${path}`, this.request(system, messages, opts.mode === "deep-dive" ? 2400 : 1200, kind), {
-      delta: (t) => {
-        text += t;
-        flush(false);
-      },
-      done: () => {
-        flush(true);
-        const at = this.livePath(path);
-        const s = this.state.session;
-        const visible = s.current === at || s.split === at;
-        this.setSession({ loading: s.loading.filter((p) => p !== at && p !== path), unread: visible || s.unread.includes(at) ? s.unread : [...s.unread, at] });
-        if (this.state.pageErrors[at] || this.state.pageErrors[path]) {
-          const errors = this.withoutPageError(at);
-          delete errors[path];
-          this.set({ pageErrors: errors });
-        }
-      },
-      error: (m) => {
-        flush(true);
-        stopLoading();
-        const at = this.livePath(path);
-        this.set({ pageErrors: { ...this.state.pageErrors, [at]: m } });
-        const s = this.state.session;
-        if (s.current !== at && s.split !== at) this.fail(`Couldn't write "${title}": ${m}`);
-      },
+          } else if (!this.writeTimers.has(dest)) {
+            this.writeTimers.set(
+              dest,
+              window.setTimeout(() => {
+                this.writeTimers.delete(this.livePath(path));
+                write();
+              }, 500),
+            );
+          }
+        };
+        const stopLoading = () => {
+          const s = this.state.session;
+          const at = this.livePath(path);
+          this.setSession({ loading: s.loading.filter((p) => p !== at && p !== path) });
+        };
+        this.stream(key, this.request(system, messages, opts.mode === "deep-dive" ? 2400 : 1200, kind), {
+          delta: (t) => {
+            text += t;
+            flush(false);
+          },
+          done: () => {
+            flush(true);
+            const at = this.livePath(path);
+            const s = this.state.session;
+            const visible = s.current === at || s.split === at;
+            this.setSession({ loading: s.loading.filter((p) => p !== at && p !== path), unread: visible || s.unread.includes(at) ? s.unread : [...s.unread, at] });
+            if (this.state.pageErrors[at] || this.state.pageErrors[path]) {
+              const errors = this.withoutPageError(at);
+              delete errors[path];
+              this.set({ pageErrors: errors });
+            }
+            finish();
+          },
+          error: (m) => {
+            flush(true);
+            stopLoading();
+            const at = this.livePath(path);
+            this.set({ pageErrors: { ...this.state.pageErrors, [at]: m } });
+            const s = this.state.session;
+            if (s.current !== at && s.split !== at) this.fail(`Couldn't write "${title}": ${m}`);
+            finish();
+          },
+        });
+        watch();
+      })().catch(finish);
     });
   }
 
@@ -1736,41 +1945,83 @@ export class ReaderStore {
 
   async refine(instruction: string, scope: RefineScope) {
     const { session, folder } = this.state;
-    const selection = this.state.ui.selection;
+    const highlight = this.state.ui.selection;
     // The box under a highlight acts on the page of the pane the highlight is in; the pane-level box (⌘R) acts on the main page.
-    const current = selection ? this.panePath(selection.pane) : session.current;
+    const current = highlight ? this.panePath(highlight.pane) : session.current;
     if (!folder || !current || !instruction.trim()) return;
-    if (scope === "selection" && !selection) return;
-    this.setUi({ refining: scope, refineText: instruction, refineError: undefined, popover: undefined, panePopover: undefined });
-    let ok = true;
-    try {
-      if (scope === "corpus") {
-        const targets = [current, ...sessionPages(current, this.state.pages).map((p) => p.path)];
-        for (const path of targets) await this.refinePage(path, instruction, undefined);
-      } else {
-        await this.refinePage(current, instruction, scope === "selection" ? selection : undefined);
-      }
-    } catch (e) {
-      // The failure is shown where the refine box was, with the text kept for a retry.
-      ok = false;
-      this.setUi({ refineError: { scope, message: e instanceof Error ? e.message : String(e) } });
-    } finally {
-      this.setUi(ok ? { refining: undefined, selection: undefined, refineText: undefined } : { refining: undefined });
+    if (scope === "selection" && !highlight) return;
+    // A corpus refine touches every page of the session, but reads as the one thing it was asked for,
+    // so it keeps a single status card on the page it was asked from while the pages refine at once.
+    const targets = scope === "corpus" ? [current, ...sessionPages(current, this.state.pages).map((p) => p.path)] : [current];
+    const shown = scope === "corpus" ? [current] : targets;
+    this.startRefineStatus(shown, scope, instruction);
+    const selection = scope === "selection" ? highlight : undefined;
+    const failures = await Promise.all(
+      targets.map((path) => this.refinePage(path, instruction, path === current ? selection : undefined).then(() => undefined, (e) => (e instanceof Error ? e.message : String(e)))),
+    );
+    this.endRefineStatus(shown, scope, failures.find((m) => m));
+    // The highlight the refine ran on goes once it has landed, unless it has moved on since.
+    if (!failures.some((m) => m) && highlight && this.state.ui.selection === highlight) this.setUi({ selection: undefined, popover: undefined });
+  }
+
+  /** Puts up the status card for each page a refine is about to touch, and clears its last failure. */
+  private startRefineStatus(paths: string[], scope: RefineScope, instruction: string) {
+    const ui = this.state.ui;
+    const refining = { ...ui.refining };
+    const refineText = { ...ui.refineText };
+    const refineError = { ...ui.refineError };
+    for (const path of paths) {
+      this.refineRuns.set(path, (this.refineRuns.get(path) ?? 0) + 1);
+      refining[path] = scope;
+      refineText[path] = instruction;
+      delete refineError[path];
     }
+    this.setUi({ refining, refineText, refineError, popover: undefined, panePopover: undefined });
+  }
+
+  /** Takes the status card down, or leaves it up for the refine stacked behind this one. */
+  private endRefineStatus(paths: string[], scope: RefineScope, message: string | undefined) {
+    const ui = this.state.ui;
+    const refining = { ...ui.refining };
+    const refineText = { ...ui.refineText };
+    const refineError = { ...ui.refineError };
+    for (const path of paths) {
+      const left = (this.refineRuns.get(path) ?? 1) - 1;
+      if (left > 0) this.refineRuns.set(path, left);
+      else {
+        this.refineRuns.delete(path);
+        delete refining[path];
+      }
+      // The failure is shown where the refine box was, with the text kept for a retry.
+      if (message) refineError[path] = { scope, message };
+      else if (left <= 0) {
+        delete refineText[path];
+        delete refineError[path];
+      }
+    }
+    this.setUi({ refining, refineText, refineError });
   }
 
   private refinePage(path: string, instruction: string, selection: Selection | undefined): Promise<void> {
-    return new Promise((resolve, reject) => {
+    // In the page's own turn: a refine asked for during a generation, or behind another refine,
+    // waits here and then rewrites the finished body.
+    return this.queue(path, () => this.runRefine(path, instruction, selection));
+  }
+
+  private runRefine(path: string, instruction: string, selection: Selection | undefined): Promise<void> {
+    const key = `refine:${path}`;
+    return new Promise<void>((resolve, reject) => {
+      const { finish, watch } = this.settler(key, resolve, reject);
       void (async () => {
-        if (!this.state.folder) return resolve();
+        if (!this.state.folder) return finish();
         const body = await this.loadBody(path);
         const blocks = lexBlocks(body);
         const target = selection ? selection.text : body;
         const ctx = await this.askContext(selection, undefined, path);
-        if (!ctx) return resolve();
+        if (!ctx) return finish();
         const { system, messages } = refineMessages({ ...ctx, page: { meta: this.state.pages[path], body } }, instruction, selection ? "selection" : "page", target);
         let out = "";
-        this.stream(`refine:${path}`, this.request(system, messages, selection ? 800 : 4000, "refine"), {
+        this.stream(key, this.request(system, messages, selection ? 800 : 4000, "refine"), {
           delta: (t) => {
             out += t;
           },
@@ -1788,25 +2039,29 @@ export class ReaderStore {
                 } else {
                   next = cleaned.endsWith("\n") ? cleaned : cleaned + "\n";
                 }
-                if (next.trim() === body.trim()) return resolve();
+                if (next.trim() === body.trim()) return finish();
                 const { folder: root, rel } = this.loc(path);
                 const n = await platform.snapshotVersion(root, rel);
                 await this.writePage(path, next);
                 this.set({ bodies: { ...this.state.bodies, [path]: next } });
-                this.setSession({ pending: { ...this.state.session.pending, [path]: n } });
+                // Refines stacked on one page read as one set of edits: the review stays pinned to the
+                // snapshot the first of them took, so the strip counts every change since.
+                const pending = this.state.session.pending;
+                if (pending[path] === undefined) this.setSession({ pending: { ...pending, [path]: n } });
                 if (this.isShown(path)) await this.refreshVersions(path);
                 // Every changed page gets its review base, so the split pane and later visits show the tints.
                 await this.refreshReview(path);
               } catch (e) {
-                reject(e);
+                finish(e);
                 return;
               }
-              resolve();
+              finish();
             })();
           },
-          error: (m) => reject(new Error(m)),
+          error: (m) => finish(new Error(m)),
         });
-      })();
+        watch();
+      })().catch(finish);
     });
   }
 
@@ -1867,7 +2122,11 @@ export class ReaderStore {
     try {
       await this.writePage(path, base.body);
       const { folder, rel } = this.loc(path);
-      await platform.deleteVersion(folder, rel, base.n);
+      // The pinned base is what comes back, so every snapshot taken from it on goes with the edits:
+      // refines stacked on one page leave one each, and history would otherwise keep the orphans.
+      const list = await platform.listVersions(folder, rel).catch(() => []);
+      const stale = list.filter((v) => v.n >= base.n).map((v) => v.n);
+      for (const n of stale.length ? stale : [base.n]) await platform.deleteVersion(folder, rel, n);
       const pending = { ...this.state.session.pending };
       delete pending[path];
       this.set({ bodies: { ...this.state.bodies, [path]: base.body }, reviewBases: this.withoutReview(path) });
@@ -1960,9 +2219,9 @@ export class ReaderStore {
         const forPage = { ...(this.state.versionBodies[path] ?? {}), [n]: stripFrontMatter(raw) };
         this.set({ versionBodies: { ...this.state.versionBodies, [path]: forPage } });
       }
-      // Both menus close: the click may have come from the other pane's menu.
-      this.dropLookup();
-      this.setUi({ popover: undefined, selection: undefined, lookup: undefined, versionView: this.closedMenus() });
+      // Both menus close: the click may have come from the other pane's menu. The pane's answer cards
+      // go with them: they hang off the blocks of the page as it reads now, not of an old version.
+      this.setUi({ popover: undefined, selection: undefined, lookups: this.closedLookups(this.lookupIdsIn(role)), versionView: this.closedMenus() });
       this.setVersionView(role, { viewing: n, history: false, confirmRestore: false });
     } catch (e) {
       this.fail(e);

@@ -370,12 +370,15 @@ export function RefineStatus({
 }
 
 export function AnswerCard({
+  id,
   lookup,
   working,
   onFollowUp,
   onEsc,
   onRefine,
 }: {
+  /** Which card this is, so the page can tell the one it is peeking at from the ones streaming beside it. */
+  id: string;
   lookup: Lookup;
   /** What the model is reading with its tools right now, shown while the answer is still on its way. */
   working?: string;
@@ -406,7 +409,7 @@ export function AnswerCard({
     }
   };
   return (
-    <div className="card">
+    <div className="card" data-lookup={id}>
       {lookup.thread.map((t, i) => (
         <div key={i} className="answer" style={{ marginBottom: 12, color: "var(--mute)" }}>
           <div style={{ fontFamily: "var(--sans)", fontSize: 12, marginBottom: 4 }}>{t.question}</div>
