@@ -1013,6 +1013,13 @@ button {
   white-space: nowrap;
   min-width: 0;
 }
+/* The pages a corpus refine has left, beside the instruction: it keeps its width while the instruction ellipsizes. */
+.status-card .working .left {
+  flex: none;
+  margin-left: auto;
+  padding-left: 4px;
+  font-variant-numeric: tabular-nums;
+}
 .status-card .working.tool {
   margin-top: 5px;
   padding-left: 16px;

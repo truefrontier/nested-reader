@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactElement } from "react";
-import { lookupId, refineAtWork, refineToRetry, store, useReader, type PaneRole, type Selection } from "../state/store";
+import { lookupId, refineToRetry, refineWorking, store, useReader, type PaneRole, type Selection } from "../state/store";
 import type { Ask } from "../platform";
 import { flexiblePattern, isStubBody, lexBlocks, resolveWikiTarget, type Block } from "../lib/markdown";
 import { diffBodies, type Change, type PageDiff } from "../lib/diff";
@@ -149,8 +149,8 @@ export function Page({ path, role }: Props) {
       .at(-1);
     if (!held) return undefined;
     const [id, run] = held;
-    return { id, run, atWork: refineAtWork(ui.refines)[path] === id, hotkey: refineToRetry(ui.refines) === id };
-  }, [ui.refines, path]);
+    return { id, run, working: refineWorking(ui.refines, s.working)[id], hotkey: refineToRetry(ui.refines) === id };
+  }, [ui.refines, s.working, path]);
 
   // Remembered asks stay on the page as dotted text; hovering one shows its answer again.
   const asks = s.session.asks?.[path];
@@ -458,13 +458,13 @@ export function Page({ path, role }: Props) {
       );
     }
     if (selection?.block === i && !ui.popover && selectionRefine) {
-      const { id, run, atWork, hotkey } = selectionRefine;
+      const { id, run, working, hotkey } = selectionRefine;
       out.push(
         <RefineStatus
           key="refine-status"
           scope="selection"
           text={run.text}
-          working={atWork ? s.working[`refine:${path}`] : undefined}
+          working={working}
           error={run.error}
           hotkey={hotkey}
           caretLeft={selection.caretX}

@@ -77,12 +77,36 @@ export type VersionView = { history: boolean; viewing?: number; confirmRestore: 
 
 /**
  * The refinement at work on each page, by path: its chain runs them in the order they were asked
- * for, so that is the oldest run on the page that has not failed, whatever its scope. The rest are
- * still queued, and their cards leave the tool line — what the model is reading — to this one.
+ * for, so that is the oldest run still holding the page that has not failed, whatever its scope. The
+ * rest are still queued, and their cards leave the tool line — what the model is reading — to this one.
  */
 export function refineAtWork(refines: Record<string, RefineRun>): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const [id, run] of Object.entries(refines)) if (!run.error && !out[run.path]) out[run.path] = id;
+  for (const [id, run] of Object.entries(refines)) {
+    if (run.error) continue;
+    for (const path of run.pages) if (!out[path]) out[path] = id;
+  }
+  return out;
+}
+
+/**
+ * The tool line each card shows, by run id: what the model is reading on a page that run holds the
+ * turn on. A run waiting its turn shows none, since the line under way is the one ahead of it, and a
+ * corpus refine names only the pages it has still to finish — never another refinement's work.
+ */
+export function refineWorking(refines: Record<string, RefineRun>, working: Record<string, string>): Record<string, string> {
+  const atWork = refineAtWork(refines);
+  const out: Record<string, string> = {};
+  for (const [id, run] of Object.entries(refines)) {
+    // Its own pages in the order it took them, so a corpus refine speaks for the page it was asked from first.
+    for (const path of run.pages) {
+      const line = atWork[path] === id ? working[`refine:${path}`] : undefined;
+      if (line) {
+        out[id] = line;
+        break;
+      }
+    }
+  }
   return out;
 }
 
@@ -99,8 +123,14 @@ export function refineToRetry(refines: Record<string, RefineRun>): string | unde
 
 /** One refinement asked for: what it is rewriting, and the failure it left if it came back with nothing. */
 export type RefineRun = {
-  /** The page it rewrites. A corpus refine names the page it was asked from and covers the session. */
+  /** Where its card belongs: the page it rewrites, or for a corpus refine the page it was asked from. */
   path: string;
+  /**
+   * The pages it still has work on, in the order it took them: one page for a page or selection
+   * refine, every page of the session for a corpus refine, each dropped as its turn settles. A card
+   * speaks only for these, so the tool lines of the pages it has finished belong to whoever has them now.
+   */
+  pages: string[];
   scope: RefineScope;
   /** The instruction it is running, shown while it runs and kept for a retry. */
   text: string;
@@ -916,8 +946,12 @@ export class ReaderStore {
     const pages = without(this.state.pages);
     this.chains.delete(path);
     const ui = this.state.ui;
-    const refines = { ...ui.refines };
-    for (const [id] of this.refinesOn(path)) delete refines[id];
+    const refines: Record<string, RefineRun> = {};
+    for (const [id, run] of Object.entries(ui.refines)) {
+      // A page that is gone takes its own cards with it, and leaves the corpus run that was covering it.
+      if (run.path === path) continue;
+      refines[id] = run.pages.includes(path) ? { ...run, pages: run.pages.filter((p) => p !== path) } : run;
+    }
     this.set({
       pages,
       bodies: without(this.state.bodies),
@@ -1193,8 +1227,8 @@ export class ReaderStore {
       pageErrors: swapKeys(this.state.pageErrors),
       working,
       session,
-      // Each refine card names the page it is rewriting, so it follows the rename with the rest.
-      ui: { ...this.state.ui, refines: mapValues(this.state.ui.refines, (r) => ({ ...r, path: swap(r.path) })) },
+      // Each refine card names the pages it is rewriting, so it follows the rename with the rest.
+      ui: { ...this.state.ui, refines: mapValues(this.state.ui.refines, (r) => ({ ...r, path: swap(r.path), pages: r.pages.map(swap) })) },
     });
     if (remaps.length) this.persistSession();
   }
@@ -1970,12 +2004,20 @@ export class ReaderStore {
     // A corpus refine touches every page of the session, but reads as the one thing it was asked for,
     // so it keeps a single status card on the page it was asked from while the pages refine at once.
     const targets = scope === "corpus" ? [current, ...sessionPages(current, this.state.pages).map((p) => p.path)] : [current];
-    // This refine's own card, so it keeps its scope and its instruction whatever is asked for next.
+    // This refine's own card, so it keeps its scope and its instruction whatever is asked for next. It
+    // registers the pages it is about to take, so its progress and its tool line are its own work.
     const id = `refine#${++this.refineSeq}`;
-    this.setUi({ refines: { ...this.state.ui.refines, [id]: { path: current, scope, text: instruction } }, popover: undefined, panePopover: undefined });
+    this.setUi({ refines: { ...this.state.ui.refines, [id]: { path: current, pages: targets, scope, text: instruction } }, popover: undefined, panePopover: undefined });
     const selection = scope === "selection" ? highlight : undefined;
     const failures = await Promise.all(
-      targets.map((path) => this.refinePage(path, instruction, path === current ? selection : undefined).then(() => undefined, (e) => (e instanceof Error ? e.message : String(e)))),
+      targets.map((path) =>
+        this.refinePage(path, instruction, path === current ? selection : undefined)
+          .then(
+            () => undefined,
+            (e) => (e instanceof Error ? e.message : String(e)),
+          )
+          .finally(() => this.pageRefined(id, path)),
+      ),
     );
     const message = failures.find((m) => m);
     const held = this.state.ui.refines[id];
@@ -1989,7 +2031,21 @@ export class ReaderStore {
     if (!message && highlight && this.state.ui.selection === highlight) this.setUi({ selection: undefined, popover: undefined });
   }
 
-  /** The refines on one page, oldest first: the page's chain runs them in that order. */
+  /**
+   * One page of a refinement has settled, so its card hands that page back: the page's turn now
+   * belongs to whatever queued behind it, and the card counts down the pages it has left.
+   */
+  private pageRefined(id: string, path: string) {
+    const run = this.state.ui.refines[id];
+    if (!run) return;
+    // A Finder rename under the task moved the page, so it is dropped from wherever it now lives.
+    const at = this.livePath(path);
+    const pages = run.pages.filter((p) => p !== path && p !== at);
+    if (pages.length === run.pages.length) return;
+    this.setUi({ refines: { ...this.state.ui.refines, [id]: { ...run, pages } } });
+  }
+
+  /** The refines whose card belongs to one page, oldest first: the page's chain runs them in that order. */
   private refinesOn(path: string): [string, RefineRun][] {
     return Object.entries(this.state.ui.refines).filter(([, r]) => r.path === path);
   }
