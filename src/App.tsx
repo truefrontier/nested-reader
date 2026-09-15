@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { isTauri, platform } from "./platform";
-import { store, useReader } from "./state/store";
+import { refineAtWork, store, useReader } from "./state/store";
 import { Sidebar } from "./reader/Sidebar";
 import { Home } from "./reader/Home";
 import { Page } from "./reader/Page";
@@ -111,13 +111,12 @@ export default function App() {
   const showMainPane = !(s.ui.fullscreen && split);
   // One status card per refinement asked for, so a refine running on a page keeps its card while
   // another on the same page queues behind it. A selection refine shows its card at the highlight
-  // instead, in the page itself. `atWork` is the card whose turn it is: a page's chain runs its
-  // refines in order, so the oldest that has not failed is the one the tool line belongs to.
+  // instead, in the page itself; `refineAtWork` still counts it, since it may hold the page's turn.
   const refineStatus = useMemo(() => {
-    const shown = Object.entries(s.ui.refines).filter(([, r]) => r.scope !== "selection");
-    const atWork = new Map<string, string>();
-    for (const [id, r] of shown) if (!r.error && !atWork.has(r.path)) atWork.set(r.path, id);
-    return shown.map(([id, run]) => ({ id, run, atWork: atWork.get(run.path) === id }));
+    const atWork = refineAtWork(s.ui.refines);
+    return Object.entries(s.ui.refines)
+      .filter(([, r]) => r.scope !== "selection")
+      .map(([id, run]) => ({ id, run, atWork: atWork[run.path] === id }));
   }, [s.ui.refines]);
   const paneBox = s.ui.panePopover;
   const showPaneStack = refineStatus.length > 0 || (!!paneBox && (paneBox === "feedback" || !!current));

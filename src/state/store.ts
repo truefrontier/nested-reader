@@ -75,6 +75,17 @@ export function lookupId(pane: PaneRole, block: number): string {
 /** One pane's version history UI: whether its menu is open, which old version it shows, and whether Restore awaits a yes. */
 export type VersionView = { history: boolean; viewing?: number; confirmRestore: boolean };
 
+/**
+ * The refinement at work on each page, by path: its chain runs them in the order they were asked
+ * for, so that is the oldest run on the page that has not failed, whatever its scope. The rest are
+ * still queued, and their cards leave the tool line — what the model is reading — to this one.
+ */
+export function refineAtWork(refines: Record<string, RefineRun>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [id, run] of Object.entries(refines)) if (!run.error && !out[run.path]) out[run.path] = id;
+  return out;
+}
+
 /** One refinement asked for: what it is rewriting, and the failure it left if it came back with nothing. */
 export type RefineRun = {
   /** The page it rewrites. A corpus refine names the page it was asked from and covers the session. */

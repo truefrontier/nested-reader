@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactElement } from "react";
-import { lookupId, store, useReader, type PaneRole, type Selection } from "../state/store";
+import { lookupId, refineAtWork, store, useReader, type PaneRole, type Selection } from "../state/store";
 import type { Ask } from "../platform";
 import { flexiblePattern, isStubBody, lexBlocks, resolveWikiTarget, type Block } from "../lib/markdown";
 import { diffBodies, type Change, type PageDiff } from "../lib/diff";
@@ -141,8 +141,16 @@ export function Page({ path, role }: Props) {
   const peeked = cards.find(([, l]) => l.peek);
   const selectionCard = selection ? ui.lookups[lookupId(role, selection.block)] : undefined;
   // A selection refine's card sits at the highlight it was asked from, and that highlight is the one
-  // still on screen, so the newest of this page's selection refines owns the spot.
-  const selectionRefine = useMemo(() => Object.entries(ui.refines).filter(([, r]) => r.path === path && r.scope === "selection").at(-1), [ui.refines, path]);
+  // still on screen, so the newest of this page's selection refines owns the spot. It shows the tool
+  // line only when it holds the page's turn, as the pane-level cards do.
+  const selectionRefine = useMemo(() => {
+    const held = Object.entries(ui.refines)
+      .filter(([, r]) => r.path === path && r.scope === "selection")
+      .at(-1);
+    if (!held) return undefined;
+    const [id, run] = held;
+    return { id, run, atWork: refineAtWork(ui.refines)[path] === id };
+  }, [ui.refines, path]);
 
   // Remembered asks stay on the page as dotted text; hovering one shows its answer again.
   const asks = s.session.asks?.[path];
@@ -450,13 +458,13 @@ export function Page({ path, role }: Props) {
       );
     }
     if (selection?.block === i && !ui.popover && selectionRefine) {
-      const [id, run] = selectionRefine;
+      const { id, run, atWork } = selectionRefine;
       out.push(
         <RefineStatus
           key="refine-status"
           scope="selection"
           text={run.text}
-          working={s.working[`refine:${path}`]}
+          working={atWork ? s.working[`refine:${path}`] : undefined}
           error={run.error}
           caretLeft={selection.caretX}
           onRetry={() => store.retryRefine(id)}
