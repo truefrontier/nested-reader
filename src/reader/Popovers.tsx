@@ -315,7 +315,7 @@ export function RefineStatus({
   scope,
   text,
   working,
-  left,
+  pagesLeft,
   error,
   hotkey,
   caretLeft,
@@ -328,7 +328,7 @@ export function RefineStatus({
   /** What the model is reading with its tools right now, if anything. */
   working?: string;
   /** How many pages a refinement over several of them has still to finish; one card counts for the set. */
-  left?: number;
+  pagesLeft?: number;
   error?: string;
   /** Whether ↵ answers this card. Only one failure takes the key, so a press retries one refine. */
   hotkey?: boolean;
@@ -367,7 +367,7 @@ export function RefineStatus({
         <span className="pulse" />
         <span>Refining the {SCOPE_LABEL[scope]}…</span>
         {text && <em title={text}>“{text}”</em>}
-        {!!left && <span className="left">{left === 1 ? "1 page" : `${left} pages`} to go</span>}
+        {!!pagesLeft && <span className="pages-left">{pagesLeft === 1 ? "1 page" : `${pagesLeft} pages`} to go</span>}
       </div>
       {working && <div className="working tool">{working}…</div>}
     </div>

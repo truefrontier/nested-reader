@@ -1014,7 +1014,7 @@ button {
   min-width: 0;
 }
 /* The pages a corpus refine has left, beside the instruction: it keeps its width while the instruction ellipsizes. */
-.status-card .working .left {
+.status-card .working .pages-left {
   flex: none;
   margin-left: auto;
   padding-left: 4px;

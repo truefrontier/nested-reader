@@ -172,7 +172,7 @@ export default function App() {
                     working={working}
                     // A corpus refine holds one card for the session it is rewriting, so it counts down
                     // the pages it has left rather than putting an identical card on every one of them.
-                    left={run.scope === "corpus" ? run.pages.length : undefined}
+                    pagesLeft={run.scope === "corpus" ? run.pages.length : undefined}
                     error={run.error}
                     hotkey={hotkey}
                     onRetry={() => store.retryRefine(id)}
