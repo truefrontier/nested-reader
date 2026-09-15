@@ -771,6 +771,7 @@ mod ollama_live {
             max_tokens: Some(40),
             folder: None,
             roots: vec![],
+            kind: None,
         };
         tauri::async_runtime::block_on(stream(req, channel, CancelToken::default())).unwrap();
         let events = events.lock().unwrap();
@@ -872,6 +873,7 @@ mod tool_loops {
             max_tokens: Some(200),
             folder: Some(folder.into()),
             roots: vec![],
+            kind: None,
         }
     }
 

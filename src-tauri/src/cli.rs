@@ -382,6 +382,7 @@ mod live {
             max_tokens: Some(60),
             folder: None,
             roots: vec![],
+            kind: None,
         };
         tauri::async_runtime::block_on(crate::ai::stream(req, channel, CancelToken::default())).unwrap();
         let events = events.lock().unwrap();
@@ -412,6 +413,7 @@ mod live {
             max_tokens: Some(60),
             folder: None,
             roots: vec![],
+            kind: None,
         };
         tauri::async_runtime::block_on(crate::ai::stream(req, channel, CancelToken::default())).unwrap();
         let events = events.lock().unwrap();

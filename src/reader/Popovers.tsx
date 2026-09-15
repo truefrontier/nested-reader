@@ -316,6 +316,7 @@ export function RefineStatus({
   text,
   working,
   error,
+  hotkey,
   caretLeft,
   pane,
   onRetry,
@@ -326,13 +327,15 @@ export function RefineStatus({
   /** What the model is reading with its tools right now, if anything. */
   working?: string;
   error?: string;
+  /** Whether ↵ answers this card. Only one failure takes the key, so a press retries one refine. */
+  hotkey?: boolean;
   caretLeft?: number;
   pane?: boolean;
   onRetry: () => void;
   onDismiss: () => void;
 }) {
   useEffect(() => {
-    if (!error) return;
+    if (!error || !hotkey) return;
     const onKey = (e: globalThis.KeyboardEvent) => {
       if (e.key === "Enter" && !(e.target as HTMLElement)?.closest("input, textarea")) {
         e.preventDefault();
@@ -341,7 +344,7 @@ export function RefineStatus({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [error, onRetry]);
+  }, [error, hotkey, onRetry]);
   const body = error ? (
     <div className="pop small-card status-card failed">
       <div className="lab">Couldn't refine the {SCOPE_LABEL[scope]}</div>
@@ -370,12 +373,15 @@ export function RefineStatus({
 }
 
 export function AnswerCard({
+  id,
   lookup,
   working,
   onFollowUp,
   onEsc,
   onRefine,
 }: {
+  /** Which card this is, so the page can tell the one it is peeking at from the ones streaming beside it. */
+  id: string;
   lookup: Lookup;
   /** What the model is reading with its tools right now, shown while the answer is still on its way. */
   working?: string;
@@ -406,7 +412,7 @@ export function AnswerCard({
     }
   };
   return (
-    <div className="card">
+    <div className="card" data-lookup={id}>
       {lookup.thread.map((t, i) => (
         <div key={i} className="answer" style={{ marginBottom: 12, color: "var(--mute)" }}>
           <div style={{ fontFamily: "var(--sans)", fontSize: 12, marginBottom: 4 }}>{t.question}</div>

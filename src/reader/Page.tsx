@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactElement } from "react";
-import { store, useReader, type PaneRole, type Selection } from "../state/store";
+import { lookupId, refineAtWork, refineToRetry, store, useReader, type PaneRole, type Selection } from "../state/store";
 import type { Ask } from "../platform";
 import { flexiblePattern, isStubBody, lexBlocks, resolveWikiTarget, type Block } from "../lib/markdown";
 import { diffBodies, type Change, type PageDiff } from "../lib/diff";
@@ -134,6 +134,23 @@ export function Page({ path, role }: Props) {
   }, [viewDiff, reviewDiff, shownBody]);
 
   const selection = ui.selection?.pane === role && !viewDiff ? ui.selection : undefined;
+
+  // Every answer card in this pane draws at its own block, so several asks can stream side by side.
+  const cards = useMemo(() => Object.entries(ui.lookups).filter(([, l]) => l.pane === role), [ui.lookups, role]);
+  // Only one card is peeked at from hover at a time, and only that one closes when the pointer leaves.
+  const peeked = cards.find(([, l]) => l.peek);
+  const selectionCard = selection ? ui.lookups[lookupId(role, selection.block)] : undefined;
+  // A selection refine's card sits at the highlight it was asked from, and that highlight is the one
+  // still on screen, so the newest of this page's selection refines owns the spot. It shows the tool
+  // line only when it holds the page's turn, as the pane-level cards do.
+  const selectionRefine = useMemo(() => {
+    const held = Object.entries(ui.refines)
+      .filter(([, r]) => r.path === path && r.scope === "selection")
+      .at(-1);
+    if (!held) return undefined;
+    const [id, run] = held;
+    return { id, run, atWork: refineAtWork(ui.refines)[path] === id, hotkey: refineToRetry(ui.refines) === id };
+  }, [ui.refines, path]);
 
   // Remembered asks stay on the page as dotted text; hovering one shows its answer again.
   const asks = s.session.asks?.[path];
@@ -312,11 +329,14 @@ export function Page({ path, role }: Props) {
 
   // Esc usually leaves the pointer on the text it was asked about; that text does not peek again until the pointer has left it.
   const suppressed = useRef<{ block: number; text: string } | undefined>(undefined);
-  const lastLookup = useRef(ui.lookup);
-  if (lastLookup.current !== ui.lookup) {
-    const prev = lastLookup.current;
-    lastLookup.current = ui.lookup;
-    if (!ui.lookup && prev && !prev.peek && prev.pane === role && prev.anchor) suppressed.current = { block: prev.block, text: prev.anchor.text };
+  const lastLookups = useRef(ui.lookups);
+  if (lastLookups.current !== ui.lookups) {
+    const prev = lastLookups.current;
+    lastLookups.current = ui.lookups;
+    for (const [id, l] of Object.entries(prev)) {
+      if (ui.lookups[id] || l.peek || l.pane !== role || !l.anchor) continue;
+      suppressed.current = { block: l.block, text: l.anchor.text };
+    }
   }
   const peekTimer = useRef<number | undefined>(undefined);
   const cancelPeekClose = () => {
@@ -329,21 +349,24 @@ export function Page({ path, role }: Props) {
     if (!span) return undefined;
     return placedAsks.find((p) => String(p.index) === span.dataset.asked);
   };
-  /** True when the element is the dotted text of the ask on show, or the card showing it. */
+  /** True when the element is the dotted text of the ask being peeked at, or the card showing it. */
   const keepsPeek = (el: HTMLElement | null): boolean => {
-    if (!el || !ui.lookup?.peek) return false;
-    if (el.closest(".card")) return true;
+    if (!el || !peeked) return false;
+    const card = el.closest<HTMLElement>(".card");
+    if (card) return card.dataset.lookup === peeked[0];
     const p = placedAskFor(el);
-    return !!p && p.block === ui.lookup.block && p.ask.text === ui.lookup.anchor?.text;
+    return !!p && p.block === peeked[1].block && p.ask.text === peeked[1].anchor?.text;
   };
 
   const onMouseDown = (e: ReactMouseEvent) => {
     const t = e.target as HTMLElement;
-    if (t.closest(".card") && ui.lookup?.peek) store.pinAsk();
+    const card = t.closest<HTMLElement>(".card");
+    if (card?.dataset.lookup) store.pinAsk(card.dataset.lookup);
     if (t.closest(".pop-wrap, .card, .top")) return;
     if (t.closest(".chg, .oldchg")) return;
     setActiveChange(undefined);
-    if ((ui.popover || ui.selection) && !ui.lookup) store.closePopover();
+    // The card standing on this highlight is the ask box's continuation, so a click elsewhere leaves both.
+    if ((ui.popover || ui.selection) && !selectionCard) store.closePopover();
   };
 
   const onClick = (e: ReactMouseEvent) => {
@@ -357,7 +380,8 @@ export function Page({ path, role }: Props) {
     const asked = placedAskFor(t);
     if (asked) {
       cancelPeekClose();
-      if (ui.lookup?.peek) store.pinAsk();
+      const id = lookupId(role, asked.block);
+      if (ui.lookups[id]?.peek) store.pinAsk(id);
       else store.showAsk(role, asked.ask, asked, false);
       return;
     }
@@ -372,7 +396,7 @@ export function Page({ path, role }: Props) {
       return;
     }
     const asked = placedAskFor(t);
-    if (asked && !ui.lookup) {
+    if (asked && !ui.lookups[lookupId(role, asked.block)]) {
       const held = suppressed.current;
       if (held && held.block === asked.block && held.text === asked.ask.text) return;
       cancelPeekClose();
@@ -387,7 +411,7 @@ export function Page({ path, role }: Props) {
     const from = placedAskFor(e.target as HTMLElement);
     const to = placedAskFor(e.relatedTarget as HTMLElement | null);
     if (from && from.index !== to?.index) suppressed.current = undefined;
-    if (!ui.lookup?.peek || !keepsPeek(e.target as HTMLElement)) return;
+    if (!peeked || !keepsPeek(e.target as HTMLElement)) return;
     if (keepsPeek(e.relatedTarget as HTMLElement | null)) return;
     cancelPeekClose();
     peekTimer.current = window.setTimeout(() => {
@@ -433,28 +457,32 @@ export function Page({ path, role }: Props) {
         />,
       );
     }
-    if (selection?.block === i && !ui.popover && (ui.refining === "selection" || ui.refineError?.scope === "selection")) {
+    if (selection?.block === i && !ui.popover && selectionRefine) {
+      const { id, run, atWork, hotkey } = selectionRefine;
       out.push(
         <RefineStatus
           key="refine-status"
           scope="selection"
-          text={ui.refineText}
-          working={s.working[`refine:${path}`]}
-          error={ui.refineError?.message}
+          text={run.text}
+          working={atWork ? s.working[`refine:${path}`] : undefined}
+          error={run.error}
+          hotkey={hotkey}
           caretLeft={selection.caretX}
-          onRetry={() => store.retryRefine()}
-          onDismiss={() => store.closePopover()}
+          onRetry={() => store.retryRefine(id)}
+          onDismiss={() => store.dismissRefine(id)}
         />,
       );
     }
-    if (ui.lookup?.pane === role && ui.lookup.block === i) {
+    for (const [id, lookup] of cards) {
+      if (lookup.block !== i) continue;
       out.push(
         <AnswerCard
-          key="lookup"
-          lookup={ui.lookup}
-          working={s.working.lookup}
-          onFollowUp={(q, verb, alt) => void store.ask(q, verb, alt)}
-          onEsc={() => store.closeLookup()}
+          key={`lookup-${id}`}
+          id={id}
+          lookup={lookup}
+          working={s.working[`lookup:${id}`]}
+          onFollowUp={(q, verb, alt) => void store.ask(q, verb, alt, id)}
+          onEsc={() => store.closeLookup(id)}
           onRefine={() => store.toggleRefine()}
         />,
       );
@@ -535,7 +563,8 @@ export function Page({ path, role }: Props) {
           <FailedCard
             title={pageError ? "This page couldn't be written" : "This page hasn't been written yet"}
             error={pageError}
-            hotkey={isMain && !ui.popover && !ui.lookup}
+            // A failed refine's card is answered by ↵ first, so the two never take one press together.
+            hotkey={isMain && !ui.popover && !Object.keys(ui.lookups).length && !refineToRetry(ui.refines)}
             onRetry={() => void store.retryPage(path)}
           />
         )}

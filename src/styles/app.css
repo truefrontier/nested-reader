@@ -1137,17 +1137,22 @@ button {
 
 /* ---------- pane popover (bottom) ---------- */
 
-.pane-pop {
+/* The boxes at the foot of the panes, in a column: a refine running on one page, a second page's
+   status and the box a further refine is being typed into all stand, one above the other. */
+.pane-stack {
   position: absolute;
   left: 50%;
   bottom: 28px;
   transform: translateX(-50%);
   width: 470px;
   max-width: calc(100% - 40px);
-  /* Its own keyframes, not `rise`: that one animates `transform` too, and would drop the translateX(-50%)
-     centering for its first frames, so the box flashed at the bottom right before snapping to the middle. */
-  animation: rise-centered 0.22s ease-out;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   z-index: 3;
+}
+.pane-pop {
+  animation: rise 0.22s ease-out;
   font-family: var(--sans);
   user-select: none;
   -webkit-user-select: none;
