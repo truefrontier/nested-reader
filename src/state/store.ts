@@ -80,7 +80,7 @@ export type VersionView = { history: boolean; viewing?: number; confirmRestore: 
  * for, so that is the oldest run still holding the page that has not failed, whatever its scope. The
  * rest are still queued, and their cards leave the tool line — what the model is reading — to this one.
  */
-export function refineAtWork(refines: Record<string, RefineRun>): Record<string, string> {
+function refineAtWork(refines: Record<string, RefineRun>): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [id, run] of Object.entries(refines)) {
     if (run.error) continue;
