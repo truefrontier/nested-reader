@@ -26,6 +26,14 @@ on:
 permissions:
   contents: write
 
+# One build per tag. A tag push that reaches Actions twice would otherwise start two builds, and
+# each signs its own bundle: whichever finishes last leaves the release holding one build's
+# .app.tar.gz beside the other's latest.json, so every updater rejects the signature. v0.2.3 shipped
+# that way once. Cancelling the older run leaves a single build to attach all of the assets.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: macos-latest
