@@ -87,6 +87,40 @@ function AnchoredLayer({
   );
 }
 
+/**
+ * A single-item menu that opens at the cursor, for the tree's empty area. Unlike `AnchoredLayer`,
+ * which right-aligns under a row, this one just clamps to the viewport around the click point.
+ */
+function PointMenu({ at, children }: { at: { x: number; y: number } | null; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [box, setBox] = useState<{ top: number; left: number } | null>(null);
+
+  useLayoutEffect(() => {
+    setBox(null);
+    const menu = ref.current;
+    if (!menu || !at) return;
+    const left = Math.max(EDGE, Math.min(at.x, window.innerWidth - menu.offsetWidth - EDGE));
+    const top = Math.max(EDGE, Math.min(at.y, window.innerHeight - menu.offsetHeight - EDGE));
+    setBox({ top, left });
+  }, [at]);
+
+  if (!at) return null;
+
+  return createPortal(
+    <div
+      ref={ref}
+      className={`row-menu${box ? " placed" : ""}`}
+      style={{ position: "fixed", top: box?.top ?? at.y, left: box?.left ?? at.x, visibility: box ? "visible" : "hidden" }}
+      onMouseDown={stop}
+      onClick={stop}
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      {children}
+    </div>,
+    document.body,
+  );
+}
+
 export function Sidebar() {
   const s = useReader();
   // The roots added with ⌘⇧O are top folders of their own, named after their last segment.
@@ -169,13 +203,17 @@ export function Sidebar() {
   const [layerAnchor, setLayerAnchor] = useState<HTMLElement | null>(null);
   // The confirmation's checkbox, cleared each time it opens so a tick never carries over unseen.
   const [dontAsk, setDontAsk] = useState(false);
+  // Right-clicking empty space in the tree (not a row or a root header, which have their own menus)
+  // opens this instead, offering the same "Add to Session…" flow as ⌘⇧O.
+  const [treeMenuAt, setTreeMenuAt] = useState<{ x: number; y: number } | null>(null);
   const closeMenus = () => {
     setMenuFor(null);
     setDeleting(null);
     setLayerAnchor(null);
+    setTreeMenuAt(null);
   };
   useEffect(() => {
-    if (!menuFor && !deleting) return;
+    if (!menuFor && !deleting && !treeMenuAt) return;
     const close = () => closeMenus();
     const onKey = (e: globalThis.KeyboardEvent) => {
       if (e.key === "Escape") close();
@@ -186,7 +224,14 @@ export function Sidebar() {
       window.removeEventListener("mousedown", close);
       window.removeEventListener("keydown", onKey);
     };
-  }, [menuFor, deleting]);
+  }, [menuFor, deleting, treeMenuAt]);
+  const onTreeContextMenu = (e: MouseEvent) => {
+    e.preventDefault();
+    setMenuFor(null);
+    setDeleting(null);
+    setLayerAnchor(null);
+    setTreeMenuAt({ x: e.clientX, y: e.clientY });
+  };
   // A row whose page has left the session (deleted here or elsewhere) takes its menu and boxes with it.
   useEffect(() => {
     const gone = (key: string | null) => !!key && (key.startsWith("root:") ? !roots.includes(key.slice(5)) : !s.pages[key]);
@@ -418,9 +463,20 @@ export function Sidebar() {
           </span>
         )}
       </div>
-      <div className="tree" onScroll={() => (menuFor || deleting) && closeMenus()}>
+      <div className="tree" onScroll={() => (menuFor || deleting) && closeMenus()} onContextMenu={onTreeContextMenu}>
         <div className="tree-inner">{folder(root)}</div>
       </div>
+      <PointMenu at={treeMenuAt}>
+        <div
+          className="item"
+          onClick={() => {
+            setTreeMenuAt(null);
+            void store.addRoot();
+          }}
+        >
+          Add to Session…
+        </div>
+      </PointMenu>
       <div className="side-foot">
         <span className={`link${s.ui.panePopover === "feedback" ? " on" : ""}`} onClick={() => store.toggleFeedback()} title="A bug, an idea, anything">
           Send feedback
