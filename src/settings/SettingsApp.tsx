@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { DragBand } from "../reader/DragBand";
 import { DEFAULT_SETTINGS, READING_WIDTH_RANGE, isTauri, platform, type Auth, type DefaultApp, type OpenAtLaunch, type UpdateCheck, type Placement, type Provider, type ReadingWidthUnit, type Settings } from "../platform";
 import { authFor, chatModels, modelSlot, pickDefaultModel } from "../lib/models";
 import { AiIcon, AppearanceIcon, CheckIcon, GeneralIcon, UpDownIcon } from "../reader/Icons";
@@ -114,7 +115,7 @@ export function SettingsApp({ embedded, onClose }: { embedded?: boolean; onClose
             <span style={{ background: "#28c840" }} />
           </div>
         )}
-        {!embedded && <div className="titlebar" data-tauri-drag-region />}
+        {!embedded && <DragBand />}
         Settings
       </div>
       <div className="tabs">

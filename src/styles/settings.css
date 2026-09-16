@@ -28,7 +28,7 @@ body.settings-body {
   position: relative;
   font-weight: 500;
 }
-.settings-title .titlebar {
+.settings-title .dragband {
   height: 52px;
 }
 .tabs {

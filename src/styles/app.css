@@ -134,9 +134,6 @@ button {
   color: var(--fg);
   overflow: hidden;
 }
-.app.drag {
-  -webkit-app-region: drag;
-}
 .tl {
   position: absolute;
   top: 16px;
@@ -159,7 +156,6 @@ button {
   justify-content: center;
   color: var(--mute);
   cursor: pointer;
-  -webkit-app-region: no-drag;
 }
 .tbtn:hover {
   color: var(--fg);
@@ -175,14 +171,27 @@ button {
   left: 84px;
   z-index: 6;
 }
-.titlebar {
+/* The band along the top of the window that behaves like a title bar: dragging empty space there
+   moves the window (see `DragBand.tsx`). It is rendered *behind* each region's own chrome, because
+   Tauri only starts a drag when the mousedown lands on the band element itself — so the tree
+   toggle, the review strip and the pane tools keep their clicks while the space around them drags.
+   `.main`, `.side`, `.pane` and `.home` each trap their own stacking context, which is why this is
+   one band per region rather than a single overlay across the window. */
+.dragband {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
   height: 44px;
+  z-index: 0;
+}
+/* Inside a pane the band scrolls with the page, so it sticks to the top of the scrollport with the
+   same zero-footprint trick the fade and the review strip use. It sits above the fade (z-index 1)
+   but below the pane tools (2) and the review strip (3). */
+.pane > .dragband {
+  position: sticky;
+  margin-bottom: -44px;
   z-index: 1;
-  -webkit-app-region: drag;
 }
 
 /* ---------- sidebar ---------- */
@@ -209,7 +218,6 @@ button {
   width: 7px;
   cursor: col-resize;
   z-index: 5;
-  -webkit-app-region: no-drag;
   touch-action: none;
 }
 .side-grip::after {
@@ -666,7 +674,7 @@ button {
    `.pane` traps its own stacking, so an overlay hung off `.main` can never out-rank content inside `.pane`
    no matter its z-index, which used to let this fade paint over the review strip / version pill. The negative
    margin cancels the height it would otherwise add to the flow. Pointer events pass through, so the scrollbar
-   and the drag region underneath keep working. */
+   and the `.dragband` underneath keep working. */
 .pane::before {
   content: "";
   display: block;
@@ -1241,10 +1249,6 @@ button {
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  /* The strip, pill, menu, etc. sit inside the 44px `.titlebar` drag band (App.tsx `.titlebar`,
-     above), so without this they swallow clicks as a window-drag gesture instead of hitting
-     "Done"/"Undo all"/the version pill/the find controls. */
-  -webkit-app-region: no-drag;
 }
 .strip {
   display: inline-flex;

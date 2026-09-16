@@ -5,6 +5,7 @@ import { buildFolders, dotState, rootDirs, type FolderNode, type TreeItem } from
 import { ChevronLeft, ChevronRight, MoreIcon } from "./Icons";
 import { RenameInput } from "./RenameInput";
 import { DEFAULT_SETTINGS } from "../platform";
+import { DragBand } from "./DragBand";
 
 const stop = (e: MouseEvent) => e.stopPropagation();
 
@@ -453,6 +454,7 @@ export function Sidebar() {
   };
   return (
     <aside className="side">
+      <DragBand />
       <div className="side-head">
         <span className="home-btn" title="Home ⌘⇧H" onClick={() => store.goHome()}>
           <ChevronLeft />

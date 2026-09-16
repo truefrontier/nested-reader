@@ -3,6 +3,7 @@ import { store, useReader } from "../state/store";
 import type { RecentSession } from "../platform";
 import { MoreIcon } from "./Icons";
 import { RenameInput } from "./RenameInput";
+import { DragBand } from "./DragBand";
 
 const stop = (e: MouseEvent | KeyboardEvent) => e.stopPropagation();
 
@@ -42,6 +43,7 @@ export function Home() {
 
   return (
     <div className="home">
+      <DragBand />
       <aside className="home-side">
         <div className="home-head">Recent Sessions</div>
         <div className="home-list">

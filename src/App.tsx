@@ -8,6 +8,7 @@ import { SplitPane } from "./reader/SplitPane";
 import { MapOverlay } from "./reader/MapOverlay";
 import { FeedbackPopover, NewFilePopover, RefinePopover, RefineStatus } from "./reader/Popovers";
 import { SidebarIcon } from "./reader/Icons";
+import { DragBand } from "./reader/DragBand";
 import { UpdateBar } from "./reader/UpdateBar";
 import { useSyncScroll } from "./reader/useSyncScroll";
 import { SettingsApp } from "./settings/SettingsApp";
@@ -136,7 +137,6 @@ export default function App() {
           <span style={{ background: "#28c840" }} />
         </div>
       )}
-      {isTauri && <div className="titlebar" data-tauri-drag-region />}
       {showHome ? (
         <Home />
       ) : (
@@ -146,6 +146,7 @@ export default function App() {
           </button>
           {s.session.sidebar && <Sidebar />}
           <div className={`main ${s.session.splitDirection}`} ref={mainRef}>
+            <DragBand />
             {current && s.pages[current] ? (
               <div className={`pane${showMainPane ? "" : " hidden"}`}>
                 <Page path={current} role="main" />
