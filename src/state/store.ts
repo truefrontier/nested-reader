@@ -578,6 +578,13 @@ export class ReaderStore {
     await this.dropRoots((r) => r.folder !== folder);
   }
 
+  /** Takes one added file's root out of the session (the file itself is untouched) and reloads. */
+  async removeRootFile(path: string) {
+    const root = (this.state.session.roots ?? []).find((r) => this.rootKey(r) === path);
+    if (!root) return;
+    await this.dropRoots((r) => r !== root);
+  }
+
   /** Saves the session with only the roots `keep` accepts, then reloads it so the tree matches. */
   private async dropRoots(keep: (r: SessionRoot) => boolean) {
     const { folder: primary, rootFile, session } = this.state;
