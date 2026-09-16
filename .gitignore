@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Installers built by hand; the release workflow builds and attaches the real ones
+dist-release/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
