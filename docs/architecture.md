@@ -43,6 +43,8 @@ Everything about a session stays inside the folder you opened.
 | `*.md` | Pages. New pages carry front matter: `title`, `source`, `question`, `created`, `mode`. |
 | `.reader/session.json` | Current page, read/unread state, trail, split, pending reviews, a display name if the session was renamed, and `ids` (Unix `dev:ino` per page path) so a Finder rename can be remapped after quit. |
 | `.reader/session-<page>.json` | The same, for a session opened from a single file in this folder. |
+| `.reader/map.json` | The session map's one-line page summaries and the fingerprint of the text each was written for. |
+| `.reader/map.md` | The same map rendered, so it can be read without the app. |
 | `.reader/versions/<page>/vN.md` | Snapshots taken before each refine. The live file is always the newest version. |
 | `.reader/trash/<page>.md` | Pages deleted from the tree, with their snapshots beside them in `<page>-versions/`. Hidden folders are skipped when the folder is listed, so a trashed page stays out of the session until it is put back by hand. |
 
@@ -127,6 +129,16 @@ Every ping returns the provider's model list (`PingResult.models`). Settings sho
 Prompts are built in `src/lib/prompts.ts`. What gets sent is controlled by the Context toggles in Settings: the highlight and its paragraph, the other pages in this session, or every page in the folder.
 
 A prompt holds 60,000 characters: the current page up to 12,000, each session page up to 6,000, each folder page up to 3,000. Twelve session pages at that limit come to more than the whole budget, so 15,000 characters are held back for the folder tier — otherwise the session could take everything and the tier that is actually chosen for relevance would never be reached.
+
+### The session map
+
+The context block can only carry so many page bodies, and past that the model has no idea the rest of the folder exists — it cannot ask for a page it has never heard of. The session map (`src/lib/sessionmap.ts`, the Context toggle "Session map", on by default) is a page-by-page index that rides along in every prompt: every page named, the ones nearest the question described, and a line telling the model it can read any of the rest with the tools. It takes at most 6,000 characters and sits ahead of the other pages' bodies, because knowing what exists is worth more than one more body.
+
+Most of it costs nothing, being what the front matter already says: title, the `asks:` question the page was made to answer, the `from:` parent, when it changed and how many snapshots it has. Only the one-line `about:` is written by a model, one small call per page, and only for a page whose text has changed — `fingerprint()` (FNV-1a over the body) records the text each line was written for.
+
+Those lines live in `.reader/map.json`, rendered beside it as `.reader/map.md` so the map can be read without the app (`load_map` / `save_map` in `files.rs`). A page being written streams in, so every flush would ask for a new line; `scheduleSummary` in the store pushes the job back instead, and only writes once the page has sat still for four seconds. The jobs run one at a time, because a corpus refine settles many pages at once and nobody is waiting on the map. A failure leaves the old line, or none.
+
+There is no bulk backfill: an existing folder's pages gain their `about:` line the next time each is written or refined, so opening a big folder never runs up a bill nobody asked for. The rest of the map is there from the first prompt regardless.
 
 Folder pages are ranked against what the reader asked for — the question, the instruction or the brief, plus the highlight when there is one — and the ones sharing no word with it are left out. The scoring is BM25 in `src/lib/rank.ts`: term frequency saturates, rarer words count for more, a word in the title counts for what it is rare, and plurals fold onto their singulars so "ripple" finds a page about ripples. Pages are scored on the part that would actually be sent, so none can win on a passage past its own limit. Session pages keep their nearest-first order instead, because how the session was built says something no word count does.
 

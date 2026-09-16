@@ -1,5 +1,6 @@
 import type { ChatMessage, PageMeta, Settings } from "../platform/types";
 import { queryTerms, rankByRelevance } from "./rank";
+import { sessionMapForPrompt, type SummaryCache } from "./sessionmap";
 
 export type ContextPage = { meta: PageMeta; body: string };
 
@@ -11,6 +12,9 @@ export type AskContext = {
   session: ContextPage[];
   /** Every other page in the folder. */
   folder: ContextPage[];
+  /** Every page in the session, for the map; empty when the Context toggle is off. */
+  mapPages?: PageMeta[];
+  summaries?: SummaryCache;
   settings: Settings;
   /** Prior question/answer pairs in an inline card. */
   thread?: { question: string; answer: string }[];
@@ -26,6 +30,11 @@ const FOLDER_MAX = 3_000;
  * is actually picked for relevance — would never be reached.
  */
 const FOLDER_RESERVE = 15_000;
+/**
+ * What the session map may take. Small on purpose: it is a page-by-page index, not the pages, and
+ * its job is to say what the model could go and read rather than to read it for them.
+ */
+const MAP_MAX = 6_000;
 
 function clip(s: string, max: number): string {
   return s.length <= max ? s : s.slice(0, max) + "\n…";
@@ -49,9 +58,14 @@ function contextBlock(ctx: AskContext, query = ""): string {
     if (!t) return;
     if (used + t.length > ceiling) return;
     used += t.length;
-    parts.push(`${label}\n${t}`);
+    // The map brings its own heading, so an empty label means "as written".
+    parts.push(label ? `${label}\n${t}` : t);
   };
   push(`Current page: ${ctx.page.meta.title}`, ctx.page.body, PAGE_MAX);
+  // Ahead of the other pages' bodies: knowing what exists is worth more than one more body.
+  if (ctx.mapPages?.length) {
+    push("", sessionMapForPrompt(ctx.mapPages, ctx.summaries ?? {}, query, MAP_MAX, ctx.page.meta.path), MAP_MAX);
+  }
   if (ctx.settings.context.highlight && ctx.paragraph) push("Paragraph containing the highlight:", ctx.paragraph, 4_000);
   if (ctx.settings.context.highlight && ctx.selection) push("Highlighted text:", ctx.selection, 2_000);
 
@@ -133,4 +147,14 @@ export function refineMessages(
   const context = scope === "selection" ? contextBlock(ctx, query) : ctx.settings.context.session ? contextBlock({ ...ctx, page: { ...ctx.page, body: "" } }, query) : "";
   const user = `${context ? context + "\n\n" : ""}Instruction: ${instruction}\n\nText to rewrite:\n${text}`;
   return { system, messages: [{ role: "user", content: user }] };
+}
+
+/**
+ * The one line the session map keeps for a page. Short, concrete, and about what the page says:
+ * its only job is helping the model decide whether this is the page it wants.
+ */
+export function summaryMessages(title: string, body: string): { system: string; messages: ChatMessage[] } {
+  const system =
+    "You are indexing a folder of markdown notes. Reply with one sentence saying what this page argues or records \u2014 what someone would want to know before deciding whether to open it. Name the specifics rather than the topic: \u201cSharp-wave ripples replay waking sequences to cortex during sleep\u201d, not \u201cdiscusses memory\u201d. No preamble, no title, no quotation marks, one sentence.";
+  return { system, messages: [{ role: "user", content: `Page: ${title}\n\n${body.slice(0, 4_000)}` }] };
 }

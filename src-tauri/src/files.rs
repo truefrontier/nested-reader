@@ -195,6 +195,25 @@ pub fn save_session(folder: &str, session: &Value, file: Option<&str>) -> Result
     write_atomic(&path, &serde_json::to_string_pretty(&session)?)
 }
 
+/// The session map: a page-by-page index of the folder that goes into every prompt, so the model
+/// knows what else is in the session even when the pages themselves did not fit the budget.
+/// `map.json` holds the one-line summaries and the fingerprint of the text each was written for;
+/// `map.md` is the same thing rendered, kept beside it so it can be read without the app.
+pub fn load_map(folder: &str) -> Result<Option<Value>> {
+    let path = reader_dir(folder).join("map.json");
+    if !path.exists() {
+        return Ok(None);
+    }
+    let text = fs::read_to_string(path)?;
+    Ok(Some(serde_json::from_str(&text)?))
+}
+
+pub fn save_map(folder: &str, cache: &Value, rendered: &str) -> Result<()> {
+    let dir = reader_dir(folder);
+    write_atomic(&dir.join("map.json"), &serde_json::to_string_pretty(cache)?)?;
+    write_atomic(&dir.join("map.md"), rendered)
+}
+
 fn versions_dir(folder: &str, rel: &str) -> Result<PathBuf> {
     safe_join(folder, rel)?;
     Ok(reader_dir(folder).join("versions").join(page_key(rel)))

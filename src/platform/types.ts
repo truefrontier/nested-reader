@@ -136,7 +136,8 @@ export type Settings = {
   auth: { openai: Auth; anthropic: Auth };
   /** Chosen model per slot; "" means "not chosen yet", and Settings picks the cheapest on first contact. */
   models: Record<ModelSlot, string>;
-  context: { highlight: boolean; session: boolean; folder: boolean };
+  /** `map` is the session map: every page named, the nearest described. See `src/lib/sessionmap.ts`. */
+  context: { highlight: boolean; session: boolean; folder: boolean; map: boolean };
   /** Let the model list, read and search the session folder's pages itself while it answers. */
   tools: boolean;
   /** Ask before deleting a page from the tree; "Do not ask again" in that confirmation turns it off. */
@@ -189,7 +190,7 @@ export const DEFAULT_SETTINGS: Settings = {
     "openai-subscription": "",
     "anthropic-subscription": "",
   },
-  context: { highlight: true, session: true, folder: false },
+  context: { highlight: true, session: true, folder: false, map: true },
   tools: true,
   confirmDelete: true,
   offerDefaultApp: true,
@@ -284,6 +285,9 @@ export interface Platform {
   /** A folder's session, or with `file`, the separate session kept for a single-file session in that folder. */
   loadSession(folder: string, file?: string): Promise<Session | null>;
   saveSession(folder: string, session: Session, file?: string): Promise<void>;
+  /** The session map's one-line summaries, kept in `.reader/map.json`. */
+  loadMap(folder: string): Promise<Record<string, { about: string; for: string }> | null>;
+  saveMap(folder: string, cache: Record<string, { about: string; for: string }>, rendered: string): Promise<void>;
   /**
    * If a stored path is missing, match Markdown in the folder by `dev:ino` (and on Mac, the
    * folder bookmark first). Remaps session keys and `.reader` files in the same pass.

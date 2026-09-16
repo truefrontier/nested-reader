@@ -26,6 +26,7 @@ const files = new Map<string, { raw: string; modified: string; created: string }
 const versions = new Map<string, { n: number; at: string; content: string }[]>();
 /** One saved session per folder path, like `.reader/session.json` on disk. */
 const sessions = new Map<string, Session>();
+const maps = new Map<string, Record<string, { about: string; for: string }>>();
 let recents: RecentSession[] = [];
 let settings: Settings = { ...DEFAULT_SETTINGS, folder: SAMPLE_FOLDER };
 /** The browser has no Finder; a pretend default app lets the Settings row and the Home offer be tried. */
@@ -175,6 +176,14 @@ export const mockPlatform: Platform = {
 
   async loadSession(folder, file) {
     return sessions.get(`${folder}#${file ?? ""}`) ?? null;
+  },
+
+  async loadMap(folder) {
+    return maps.get(folder) ?? null;
+  },
+
+  async saveMap(folder, cache) {
+    maps.set(folder, cache);
   },
 
   async saveSession(folder, s, file) {

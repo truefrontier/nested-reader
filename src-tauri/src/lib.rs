@@ -170,6 +170,16 @@ fn delete_page(folder: String, path: String) -> Result<()> {
 }
 
 #[tauri::command]
+fn load_map(folder: String) -> Result<Option<Value>> {
+    files::load_map(&folder)
+}
+
+#[tauri::command]
+fn save_map(folder: String, cache: Value, rendered: String) -> Result<()> {
+    files::save_map(&folder, &cache, &rendered)
+}
+
+#[tauri::command]
 fn load_session(folder: String, file: Option<String>) -> Result<Option<Value>> {
     files::load_session(&folder, file.as_deref())
 }
@@ -541,6 +551,8 @@ pub fn run() {
             read_page,
             write_page,
             delete_page,
+            load_map,
+            save_map,
             load_session,
             save_session,
             resolve_session,

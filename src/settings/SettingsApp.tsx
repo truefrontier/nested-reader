@@ -778,6 +778,7 @@ function Ai({ settings, save }: SectionProps) {
           <Check on={settings.context.highlight} label="Highlight and its paragraph" onChange={(v) => save({ context: { ...settings.context, highlight: v } })} />
           <Check on={settings.context.session} label="Pages in this session" onChange={(v) => save({ context: { ...settings.context, session: v } })} />
           <Check on={settings.context.folder} label="Whole folder" onChange={(v) => save({ context: { ...settings.context, folder: v } })} />
+          <Check on={settings.context.map} label="Session map (an index of every page)" onChange={(v) => save({ context: { ...settings.context, map: v } })} />
         </div>
       </Row>
       <Row label="Tools" top>

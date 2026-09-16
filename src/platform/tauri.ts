@@ -62,6 +62,8 @@ export const tauriPlatform: Platform = {
 
   loadSession: (folder, file) => invoke<Session | null>("load_session", { folder, file }),
   saveSession: (folder, session, file) => invoke("save_session", { folder, session, file }),
+  loadMap: (folder) => invoke("load_map", { folder }),
+  saveMap: (folder, cache, rendered) => invoke("save_map", { folder, cache, rendered }),
   resolveSession: (folder, file, ids, bookmark) =>
     invoke<ResolvedSession>("resolve_session", { folder, file: file ?? null, ids: ids ?? null, bookmark: bookmark ?? null }),
 

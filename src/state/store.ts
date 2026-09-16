@@ -24,7 +24,8 @@ import { authFor, modelSlot } from "../lib/models";
 import { serializePage, titleFromBody } from "../lib/frontmatter";
 import { slugify, titleFromQuestion, uniquePath } from "../lib/slug";
 import { nowIso } from "../lib/time";
-import { newFileMessages, newPageMessages, quickAnswerMessages, refineMessages, type AskContext, type RefineScope } from "../lib/prompts";
+import { newFileMessages, newPageMessages, quickAnswerMessages, refineMessages, summaryMessages, type AskContext, type RefineScope } from "../lib/prompts";
+import { fingerprint, sessionMap, summaryIsCurrent, type SummaryCache } from "../lib/sessionmap";
 import { dirOf, folderChain, growsFrom, rootDirs, sessionPages } from "../lib/tree";
 
 export type Selection = {
@@ -200,6 +201,8 @@ export type ReaderState = {
   versionBodies: Record<string, Record<number, string>>;
   /** The snapshot each pending page is being reviewed against, by path. */
   reviewBases: Record<string, ReviewBase>;
+  /** One line per page saying what it holds, for the session map. See `src/lib/sessionmap.ts`. */
+  summaries: SummaryCache;
   /** Pages the model failed to write, by path, with the error; they keep their heading and can be retried. */
   pageErrors: Record<string, string>;
   /** What the model is looking at right now, by stream key ("lookup:<id>", "page:<path>", "refine:<path>"), while it uses a tool. */
@@ -262,7 +265,18 @@ function prettyFolderName(folder: string): string {
   return base.replace(/[-_]+/g, " ").replace(/^\w/, (c) => c.toUpperCase());
 }
 
+/** How long a page must sit still before its map line is written again. */
+const SUMMARY_SETTLE_MS = 4000;
+
 export class ReaderStore {
+  /** Pending map-line jobs by page path, so a page still streaming keeps pushing its own back. */
+  private summaryTimers = new Map<string, number>();
+  /**
+   * Map lines are written one at a time. A corpus refine settles fifty pages at once, and fifty
+   * requests arriving together would be rate-limited for something nobody is waiting on.
+   */
+  private summaryChain: Promise<void> = Promise.resolve();
+
   state: ReaderState = {
     ready: false,
     home: false,
@@ -275,6 +289,7 @@ export class ReaderStore {
     versions: {},
     versionBodies: {},
     reviewBases: {},
+    summaries: {},
     pageErrors: {},
     working: {},
     update: { phase: "idle" },
@@ -584,6 +599,73 @@ export class ReaderStore {
     const { folder, rel } = this.loc(path);
     const source = base.source?.startsWith(folder + "/") ? base.source.slice(folder.length + 1) : base.source;
     await platform.writePage(folder, rel, serializePage({ ...base, source }, body));
+    this.scheduleSummary(path);
+  }
+
+  /**
+   * A page being written streams in, so every flush lands here. The line is only worth rewriting
+   * once the page has stopped changing, so each write pushes the job back rather than starting one.
+   */
+  private scheduleSummary(path: string) {
+    if (!this.state.settings.context.map) return;
+    const running = this.summaryTimers.get(path);
+    if (running) window.clearTimeout(running);
+    this.summaryTimers.set(
+      path,
+      window.setTimeout(() => {
+        this.summaryTimers.delete(path);
+        this.summaryChain = this.summaryChain.then(() => this.refreshSummary(path)).catch(() => {});
+      }, SUMMARY_SETTLE_MS),
+    );
+  }
+
+  /**
+   * Writes the one-line `about:` for a page whose text has changed. Fire and forget: the map is a
+   * convenience, so a failure here leaves the old line (or none) rather than troubling the reader.
+   */
+  private async refreshSummary(path: string) {
+    const folder = this.state.folder;
+    const meta = this.state.pages[path];
+    if (!folder || !meta || !this.state.settings.context.map) return;
+    let body: string;
+    try {
+      body = await this.loadBody(path);
+    } catch {
+      return;
+    }
+    if (!body.trim() || summaryIsCurrent(this.state.summaries, path, body)) return;
+    const stamp = fingerprint(body);
+
+    const { system, messages } = summaryMessages(meta.title, body);
+    // No folder on the request: a one-line summary has no business calling tools.
+    const req = { ...this.request(system, messages, 80, "summary"), folder: undefined, roots: undefined };
+    const about = await new Promise<string>((resolve) => {
+      let out = "";
+      this.stream(`summary:${path}`, req, {
+        delta: (t) => {
+          out += t;
+        },
+        done: (truncated) => resolve(truncated ? "" : out.trim()),
+        error: () => resolve(""),
+      });
+    });
+    const line = about.replace(/\s+/g, " ").trim();
+    if (!line) return;
+    // The page may have been written again while the line was being made; that write schedules its own.
+    this.set({ summaries: { ...this.state.summaries, [path]: { about: line, for: stamp } } });
+    await this.persistMap();
+  }
+
+  /** `.reader/map.json` holds the lines; `.reader/map.md` is the same thing rendered to read. */
+  private async persistMap() {
+    const folder = this.state.folder;
+    if (!folder) return;
+    const pages = Object.values(this.state.pages);
+    try {
+      await platform.saveMap(folder, this.state.summaries, sessionMap(pages, this.state.summaries));
+    } catch {
+      /* the map is a convenience; losing it must not break a write */
+    }
   }
 
   /** Follow Finder remaps so a stream started under the old path still writes the live page. */
@@ -627,6 +709,10 @@ export class ReaderStore {
       for (const p of list) if (!file || growsFrom(p.path, file, all)) pages[p.path] = p;
       const stored = await platform.loadSession(folder, file);
       if (this.opening !== target) return;
+      // The map's summaries outlive the session; a folder with none simply has no `about:` lines yet.
+      const summaries = (await platform.loadMap(folder).catch(() => null)) ?? {};
+      if (this.opening !== target) return;
+      this.set({ summaries });
       const session: Session = { ...emptySession(), ...(stored ?? {}) };
       // The roots added with ⌘⇧O bring their pages along; one that cannot be read any more is dropped from the session.
       const roots: SessionRoot[] = [];
@@ -1718,6 +1804,8 @@ export class ReaderStore {
     }
     return {
       page: { meta: this.state.pages[current], body },
+      mapPages: settings.context.map ? Object.values(this.state.pages) : [],
+      summaries: this.state.summaries,
       selection: selection?.text,
       paragraph: selection?.paragraph,
       session,
