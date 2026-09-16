@@ -38,9 +38,6 @@ export function UpdateBar() {
         <span className="what">
           Downloading {name}… {pct !== undefined ? `${pct}%` : `${mb(u.downloaded ?? 0)} MB`}
         </span>
-        <span className="acts">
-          <button disabled>Update and relaunch</button>
-        </span>
         <span className={`meter${pct === undefined ? " busy" : ""}`}>
           <i style={{ width: `${pct ?? 0}%` }} />
         </span>
