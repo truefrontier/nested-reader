@@ -362,12 +362,23 @@ export function Page({ path, role }: Props) {
     const t = e.target as HTMLElement;
     const card = t.closest<HTMLElement>(".card");
     if (card?.dataset.lookup) store.pinAsk(card.dataset.lookup);
-    if (t.closest(".pop-wrap, .card, .top")) return;
-    if (t.closest(".chg, .oldchg")) return;
-    setActiveChange(undefined);
-    // The card standing on this highlight is the ask box's continuation, so a click elsewhere leaves both.
-    if ((ui.popover || ui.selection) && !selectionCard) store.closePopover();
   };
+
+  // A change's "Before"/"Now" card, and the ask/refine popover, close on a click anywhere else on the
+  // page — not just inside the article — so clicks in the margins or the sidebar dismiss them too.
+  useEffect(() => {
+    if (activeChange === undefined && !ui.popover && !ui.selection) return;
+    const close = (e: globalThis.MouseEvent) => {
+      const t = e.target as HTMLElement;
+      if (t.closest(".pop-wrap, .card, .top")) return;
+      if (t.closest(".chg, .oldchg")) return;
+      setActiveChange(undefined);
+      // The card standing on this highlight is the ask box's continuation, so a click elsewhere leaves both.
+      if ((ui.popover || ui.selection) && !selectionCard) store.closePopover();
+    };
+    window.addEventListener("mousedown", close);
+    return () => window.removeEventListener("mousedown", close);
+  }, [activeChange, ui.popover, ui.selection, selectionCard]);
 
   const onClick = (e: ReactMouseEvent) => {
     const t = e.target as HTMLElement;
