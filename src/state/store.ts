@@ -505,34 +505,45 @@ export class ReaderStore {
     if (!this.state.folder || this.state.home) return;
     try {
       const paths = await platform.pickPath("add");
+      // One panel can bring several folders in, so the pages they add are gathered and the
+      // indexer is offered them once. Asking per folder would stack a sheet for each.
+      const added: string[] = [];
       for (const path of paths) {
         const kind = await platform.pathKind(path);
         if (kind === "other") {
           this.fail("Add a folder or a .md file.");
           continue;
         }
-        await this.includeRoot(kind === "folder" ? { folder: path } : splitFilePath(path));
+        added.push(...(await this.includeRoot(kind === "folder" ? { folder: path } : splitFilePath(path))));
       }
+      if (added.length) void this.offerToIndex(added);
     } catch (e) {
       this.fail(e);
     }
   }
 
-  private async includeRoot(root: SessionRoot) {
+  /** The keys of the pages this root brought in, so the caller can offer the lot to the indexer. */
+  private async includeRoot(root: SessionRoot): Promise<string[]> {
     const primary = this.state.folder;
-    if (!primary) return;
+    if (!primary) return [];
     const roots = this.state.session.roots ?? [];
-    if (roots.some((r) => r.folder === root.folder && (r.file ?? "") === (root.file ?? ""))) return this.fail("That is already part of this session.");
+    if (roots.some((r) => r.folder === root.folder && (r.file ?? "") === (root.file ?? ""))) {
+      this.fail("That is already part of this session.");
+      return [];
+    }
     const fresh = await this.rootPages(root, primary, takenPaths(this.state.pages, primary, this.rootDirs()));
-    if (!this.state.folder || this.state.folder !== primary) return;
+    if (!this.state.folder || this.state.folder !== primary) return [];
     const keys = Object.keys(fresh);
-    if (!keys.length) return this.fail(root.file ? "That page is already in this session." : "No new pages there: the folder has none, or they are already in this session.");
+    if (!keys.length) {
+      this.fail(root.file ? "That page is already in this session." : "No new pages there: the folder has none, or they are already in this session.");
+      return [];
+    }
     this.set({ pages: { ...this.state.pages, ...fresh } });
     this.setSession({ roots: [...roots, root] });
     const dir = root.folder === primary ? "" : root.folder;
     if (this.state.session.collapsed?.includes(dir)) this.toggleFolder(dir);
     if (!this.state.session.current) await this.navigate(root.file ? keys[0] : keys.sort()[0]);
-    void this.offerToIndex(keys);
+    return keys;
   }
 
   /**
