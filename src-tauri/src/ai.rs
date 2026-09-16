@@ -47,7 +47,9 @@ pub enum StreamEvent {
     Delta { text: String },
     /// The model is using a tool; `detail` is a short line for the UI ("Reading replay.md").
     Tool { name: String, detail: String },
-    Done,
+    /// The stream ended. `truncated` means the model hit its token ceiling mid-answer, so the
+    /// text is cut off: whoever asked must not save it as if it were the whole answer.
+    Done { truncated: bool },
     Error { message: String },
 }
 
@@ -108,6 +110,12 @@ fn ollama_client() -> Result<reqwest::Client> {
         .build()?)
 }
 
+/// Whether a stream ended because the model hit its token ceiling rather than finishing.
+/// Anthropic says `max_tokens`, OpenAI and Ollama say `length`.
+fn hit_token_ceiling(reason: Option<&str>) -> bool {
+    matches!(reason, Some("max_tokens") | Some("length"))
+}
+
 fn ollama_error(base: &str, e: reqwest::Error) -> AppError {
     if e.is_connect() {
         AppError::Message(format!("Ollama isn't running at {base}. Start it with `ollama serve`."))
@@ -131,8 +139,8 @@ pub async fn stream(req: AiRequest, channel: Channel<StreamEvent>, cancel: Cance
         (other, _) => Err(AppError::Message(format!("Unknown provider: {other}"))),
     };
     match result {
-        Ok(()) => {
-            let _ = channel.send(StreamEvent::Done);
+        Ok(truncated) => {
+            let _ = channel.send(StreamEvent::Done { truncated });
         }
         Err(e) => {
             if !cancel.is_cancelled() {
@@ -235,7 +243,7 @@ fn rejects_tools(error: &str) -> bool {
     e.contains("tool") && (e.contains("support") || e.contains("unknown") || e.contains("unexpected") || e.contains("invalid"))
 }
 
-async fn stream_ollama(req: &AiRequest, channel: &Channel<StreamEvent>, cancel: &CancelToken) -> Result<()> {
+async fn stream_ollama(req: &AiRequest, channel: &Channel<StreamEvent>, cancel: &CancelToken) -> Result<bool> {
     let base = ollama_base(req.base_url.as_deref());
     let mut messages: Vec<Value> = Vec::new();
     if let Some(sys) = &req.system {
@@ -272,6 +280,7 @@ async fn stream_ollama(req: &AiRequest, channel: &Channel<StreamEvent>, cancel: 
         }
         let mut text = String::new();
         let mut calls: Vec<ToolCall> = Vec::new();
+        let mut done_reason: Option<String> = None;
         read_ndjson(resp, cancel, |line| {
             let v: Value = match serde_json::from_str(line) {
                 Ok(v) => v,
@@ -299,12 +308,18 @@ async fn stream_ollama(req: &AiRequest, channel: &Channel<StreamEvent>, cancel: 
                     calls.push(ToolCall { id, name, input });
                 }
             }
+            if let Some(r) = v.get("done_reason").and_then(|r| r.as_str()) {
+                done_reason = Some(r.to_string());
+            }
             Ok(!v.get("done").and_then(|d| d.as_bool()).unwrap_or(false))
         })
         .await?;
+        if hit_token_ceiling(done_reason.as_deref()) {
+            return Ok(true);
+        }
         let folder = match (&req.folder, calls.is_empty(), cancel.is_cancelled()) {
             (Some(f), false, false) => f,
-            _ => return Ok(()),
+            _ => return Ok(false),
         };
         let tool_calls: Vec<Value> = calls
             .iter()
@@ -316,10 +331,10 @@ async fn stream_ollama(req: &AiRequest, channel: &Channel<StreamEvent>, cancel: 
             messages.push(json!({ "role": "tool", "tool_name": c.name, "tool_call_id": c.id, "content": out.text }));
         }
     }
-    Ok(())
+    Ok(false)
 }
 
-async fn stream_openai(req: &AiRequest, channel: &Channel<StreamEvent>, cancel: &CancelToken) -> Result<()> {
+async fn stream_openai(req: &AiRequest, channel: &Channel<StreamEvent>, cancel: &CancelToken) -> Result<bool> {
     let key = api_key(&req.provider).ok();
     if req.provider == "openai" && key.is_none() {
         return Err(AppError::Message("No API key for OpenAI. Add one in Settings › AI.".into()));
@@ -403,6 +418,9 @@ async fn stream_openai(req: &AiRequest, channel: &Channel<StreamEvent>, cancel: 
             Ok(true)
         })
         .await?;
+        if hit_token_ceiling(finish.as_deref()) {
+            return Ok(true);
+        }
         let calls: Vec<ToolCall> = partial
             .into_iter()
             .enumerate()
@@ -411,9 +429,8 @@ async fn stream_openai(req: &AiRequest, channel: &Channel<StreamEvent>, cancel: 
             .collect();
         let folder = match (&req.folder, calls.is_empty(), cancel.is_cancelled()) {
             (Some(f), false, false) => f,
-            _ => return Ok(()),
+            _ => return Ok(false),
         };
-        let _ = finish;
         let tool_calls: Vec<Value> = calls
             .iter()
             .map(|c| json!({ "id": c.id, "type": "function", "function": { "name": c.name, "arguments": c.input.to_string() } }))
@@ -424,7 +441,7 @@ async fn stream_openai(req: &AiRequest, channel: &Channel<StreamEvent>, cancel: 
             messages.push(json!({ "role": "tool", "tool_call_id": c.id, "content": out.text }));
         }
     }
-    Ok(())
+    Ok(false)
 }
 
 /// Anthropic's own host, or an Anthropic-compatible proxy named on the request (the tests use one).
@@ -435,7 +452,7 @@ fn anthropic_base(req: &AiRequest) -> String {
     }
 }
 
-async fn stream_anthropic(req: &AiRequest, channel: &Channel<StreamEvent>, cancel: &CancelToken) -> Result<()> {
+async fn stream_anthropic(req: &AiRequest, channel: &Channel<StreamEvent>, cancel: &CancelToken) -> Result<bool> {
     // A proxy at its own base URL may hold the key itself.
     let key = match api_key("anthropic") {
         Ok(k) => k,
@@ -554,9 +571,12 @@ async fn stream_anthropic(req: &AiRequest, channel: &Channel<StreamEvent>, cance
                 });
             }
         }
+        if hit_token_ceiling(stop_reason.as_deref()) {
+            return Ok(true);
+        }
         let folder = match (&req.folder, stop_reason.as_deref(), calls.is_empty(), cancel.is_cancelled()) {
             (Some(f), Some("tool_use"), false, false) => f,
-            _ => return Ok(()),
+            _ => return Ok(false),
         };
         // The API refuses an empty text block, which a turn that goes straight to a tool can leave behind.
         let content: Vec<Value> = blocks.into_iter().filter(|b| !(b["type"] == "text" && b["text"].as_str().unwrap_or("").is_empty())).collect();
@@ -570,7 +590,7 @@ async fn stream_anthropic(req: &AiRequest, channel: &Channel<StreamEvent>, cance
             .collect();
         messages.push(json!({ "role": "user", "content": results }));
     }
-    Ok(())
+    Ok(false)
 }
 
 /// Ids from an OpenAI- or Anthropic-style `{ "data": [{ "id": … }] }` listing.
@@ -754,7 +774,7 @@ mod ollama_live {
                 let ev = match v["type"].as_str() {
                     Some("delta") => StreamEvent::Delta { text: v["text"].as_str().unwrap().to_string() },
                     Some("tool") => StreamEvent::Tool { name: v["name"].as_str().unwrap_or("").to_string(), detail: v["detail"].as_str().unwrap_or("").to_string() },
-                    Some("done") => StreamEvent::Done,
+                    Some("done") => StreamEvent::Done { truncated: v["truncated"].as_bool().unwrap_or(false) },
                     _ => StreamEvent::Error { message: v["message"].as_str().unwrap_or("").to_string() },
                 };
                 sink.lock().unwrap().push(ev);
@@ -783,7 +803,7 @@ mod ollama_live {
             })
             .collect();
         assert!(text.to_lowercase().contains("blue"), "got: {text:?}");
-        assert!(matches!(events.last(), Some(StreamEvent::Done)), "last event should be Done");
+        assert!(matches!(events.last(), Some(StreamEvent::Done { .. })), "last event should be Done");
         assert!(!events.iter().any(|e| matches!(e, StreamEvent::Error { .. })));
     }
 }
@@ -1009,6 +1029,59 @@ data: [DONE]\n\n";
         let events = events.lock().unwrap();
         assert_eq!(texts(&events, "delta", "text").join(""), "One page.");
         assert_eq!(events.last().unwrap()["type"], "done");
+    }
+
+    // A model that runs out of room stops mid-sentence. Refine writes the answer straight over
+    // the page, so `done` has to say the text is cut off or half a page silently replaces a whole one.
+
+    const ANTHROPIC_CUT_OFF: &str = "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n\
+data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Ripples carry\"}}\n\n\
+data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"max_tokens\"}}\n\n\
+data: {\"type\":\"message_stop\"}\n\n";
+
+    const OPENAI_CUT_OFF: &str = "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Ripples carry\"}}]}\n\n\
+data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"length\"}]}\n\n\
+data: [DONE]\n\n";
+
+    const OLLAMA_CUT_OFF: &str = "{\"model\":\"m\",\"message\":{\"role\":\"assistant\",\"content\":\"Ripples carry\"},\"done\":false}\n\
+{\"model\":\"m\",\"message\":{\"role\":\"assistant\",\"content\":\"\"},\"done\":true,\"done_reason\":\"length\"}\n";
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_cut_off_answer_is_reported_as_truncated() {
+        for (provider, body) in [
+            ("anthropic", ANTHROPIC_CUT_OFF),
+            ("custom", OPENAI_CUT_OFF),
+            ("ollama", OLLAMA_CUT_OFF),
+        ] {
+            let dir = folder();
+            let (base, _seen) = serve(vec![(200, body)]).await;
+            let (channel, events) = collect();
+            stream(request(provider, &base, dir.path().to_str().unwrap()), channel, CancelToken::default()).await.unwrap();
+
+            let events = events.lock().unwrap();
+            // The part that arrived still streams, so the reader sees what the model managed.
+            assert_eq!(texts(&events, "delta", "text").join(""), "Ripples carry", "{provider} deltas");
+            let last = events.last().unwrap();
+            assert_eq!(last["type"], "done", "{provider} ends with done");
+            assert_eq!(last["truncated"], true, "{provider} must flag the cut-off answer");
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_finished_answer_is_not_truncated() {
+        for (provider, body) in [
+            ("anthropic", ANTHROPIC_ANSWER),
+            ("custom", OPENAI_ANSWER),
+            ("ollama", OLLAMA_ANSWER),
+        ] {
+            let dir = folder();
+            let (base, _seen) = serve(vec![(200, body)]).await;
+            let (channel, events) = collect();
+            stream(request(provider, &base, dir.path().to_str().unwrap()), channel, CancelToken::default()).await.unwrap();
+
+            let events = events.lock().unwrap();
+            assert_eq!(events.last().unwrap()["truncated"], false, "{provider} finished cleanly");
+        }
     }
 
     #[tokio::test(flavor = "multi_thread")]

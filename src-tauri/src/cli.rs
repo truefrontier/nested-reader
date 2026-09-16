@@ -148,7 +148,7 @@ fn last_line(text: &str) -> Option<String> {
 
 // ---------- Claude Code ----------
 
-pub async fn stream_claude(req: &AiRequest, channel: &Channel<StreamEvent>, cancel: &CancelToken) -> Result<()> {
+pub async fn stream_claude(req: &AiRequest, channel: &Channel<StreamEvent>, cancel: &CancelToken) -> Result<bool> {
     let mut cmd = Command::new(find_bin("claude")?);
     // Print mode, streamed; no session file, and none of the user's hooks, settings or MCP
     // servers, which would otherwise be loaded on every question.
@@ -238,7 +238,7 @@ pub async fn stream_claude(req: &AiRequest, channel: &Channel<StreamEvent>, canc
     if !ok && !streamed {
         return Err(AppError::Message(last_line(&stderr).unwrap_or_else(|| "Claude Code exited with an error".into())));
     }
-    Ok(())
+    Ok(false)
 }
 
 /// Proves `claude` is installed and signed in; returns the model aliases it accepts.
@@ -261,7 +261,7 @@ pub async fn ping_claude() -> Result<Vec<String>> {
 
 // ---------- Codex ----------
 
-pub async fn stream_codex(req: &AiRequest, channel: &Channel<StreamEvent>, cancel: &CancelToken) -> Result<()> {
+pub async fn stream_codex(req: &AiRequest, channel: &Channel<StreamEvent>, cancel: &CancelToken) -> Result<bool> {
     let mut cmd = Command::new(find_bin("codex")?);
     cmd.args(["exec", "--json", "--skip-git-repo-check", "--ephemeral", "--sandbox", "read-only"]);
     if !req.model.is_empty() {
@@ -313,7 +313,7 @@ pub async fn stream_codex(req: &AiRequest, channel: &Channel<StreamEvent>, cance
     if !ok && !sent {
         return Err(AppError::Message(last_line(&stderr).unwrap_or_else(|| "Codex exited with an error".into())));
     }
-    Ok(())
+    Ok(false)
 }
 
 /// Proves `codex` is installed and signed in; returns the models a ChatGPT plan offers.
@@ -351,7 +351,7 @@ mod live {
                 let ev = match v["type"].as_str() {
                     Some("delta") => StreamEvent::Delta { text: v["text"].as_str().unwrap().to_string() },
                     Some("tool") => StreamEvent::Tool { name: v["name"].as_str().unwrap_or("").to_string(), detail: v["detail"].as_str().unwrap_or("").to_string() },
-                    Some("done") => StreamEvent::Done,
+                    Some("done") => StreamEvent::Done { truncated: v["truncated"].as_bool().unwrap_or(false) },
                     _ => StreamEvent::Error { message: v["message"].as_str().unwrap_or("").to_string() },
                 };
                 sink.lock().unwrap().push(ev);
@@ -394,7 +394,7 @@ mod live {
             })
             .collect();
         assert!(text.to_lowercase().contains("blue"), "got: {text:?}");
-        assert!(matches!(events.last(), Some(StreamEvent::Done)), "events: {}", events.len());
+        assert!(matches!(events.last(), Some(StreamEvent::Done { .. })), "events: {}", events.len());
     }
 
     /// Uses the model configured in ~/.codex/config.toml (no `-m`), so it runs on whatever
@@ -433,7 +433,7 @@ mod live {
             .collect();
         assert!(errors.is_empty(), "errors: {errors:?}");
         assert!(text.to_lowercase().contains("blue"), "got: {text:?}");
-        assert!(matches!(events.last(), Some(StreamEvent::Done)));
+        assert!(matches!(events.last(), Some(StreamEvent::Done { .. })));
     }
 
     #[test]

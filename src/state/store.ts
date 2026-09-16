@@ -1651,7 +1651,7 @@ export class ReaderStore {
     return { provider: s.provider, auth, model: s.models[modelSlot(s.provider, auth)], baseUrl: baseUrl || undefined, system, messages, maxTokens, folder, roots: roots?.length ? roots : undefined, kind };
   }
 
-  private stream(key: string, req: AiRequest, on: { delta: (t: string) => void; done: () => void; error: (m: string) => void }) {
+  private stream(key: string, req: AiRequest, on: { delta: (t: string) => void; done: (truncated: boolean) => void; error: (m: string) => void }) {
     this.stopStream(key);
     if (req.provider === "builtin") {
       on.error("The built-in plan is not available in this build. Choose a provider in Settings › AI.");
@@ -1671,7 +1671,7 @@ export class ReaderStore {
       } else if (e.type === "done") {
         this.streams.delete(key);
         this.setWorking(key, undefined);
-        on.done();
+        on.done(e.truncated ?? false);
       } else {
         this.streams.delete(key);
         this.setWorking(key, undefined);
@@ -1762,9 +1762,10 @@ export class ReaderStore {
       // The card's own stream key, so a second ask elsewhere never cancels this one.
       this.stream(`lookup:${id}`, this.request(system, messages, 400, "quick_answer"), {
         delta: (t) => this.patchLookup(id, (cur) => ({ ...cur, answer: cur.answer + t })),
-        done: () => {
-          const finished = this.patchLookup(id, (cur) => ({ ...cur, streaming: false }));
-          if (finished) this.rememberLookup(finished);
+        done: (truncated) => {
+          const finished = this.patchLookup(id, (cur) => ({ ...cur, streaming: false, error: truncated ? "The answer was cut off — the model ran out of room." : cur.error }));
+          // A cut-off answer stays on show but is not remembered against the highlight.
+          if (finished && !truncated) this.rememberLookup(finished);
         },
         error: (m) => this.patchLookup(id, (cur) => ({ ...cur, streaming: false, error: m })),
       });
@@ -1913,12 +1914,18 @@ export class ReaderStore {
             text += t;
             flush(false);
           },
-          done: () => {
+          done: (truncated) => {
             flush(true);
             const at = this.livePath(path);
             const s = this.state.session;
             const visible = s.current === at || s.split === at;
             this.setSession({ loading: s.loading.filter((p) => p !== at && p !== path), unread: visible || s.unread.includes(at) ? s.unread : [...s.unread, at] });
+            // The page keeps what arrived — saying so beats letting it look finished.
+            if (truncated) {
+              this.set({ pageErrors: { ...this.state.pageErrors, [at]: "The model ran out of room, so this page stops before the end." } });
+              finish();
+              return;
+            }
             if (this.state.pageErrors[at] || this.state.pageErrors[path]) {
               const errors = this.withoutPageError(at);
               delete errors[path];
@@ -2074,7 +2081,10 @@ export class ReaderStore {
           delta: (t) => {
             out += t;
           },
-          done: () => {
+          done: (truncated) => {
+            // A cut-off answer is half a page. Writing it would overwrite the real one with the
+            // part that arrived, so the page is left alone and the reader is told why.
+            if (truncated) return finish(new Error("The model ran out of room before it finished, so the rewrite was cut off. The page is unchanged — try refining a smaller selection."));
             void (async () => {
               try {
                 let next: string;

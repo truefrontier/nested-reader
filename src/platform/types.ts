@@ -254,7 +254,8 @@ export type ToolEvent = { type: "tool"; name: string; detail: string };
 export type StreamEvent =
   | { type: "delta"; text: string }
   | ToolEvent
-  | { type: "done" }
+  /** `truncated` means the model hit its token ceiling mid-answer, so the text is cut off. */
+  | { type: "done"; truncated?: boolean }
   | { type: "error"; message: string };
 
 /** `models` lists what the provider offers (installed models for Ollama, cheapest first). */
