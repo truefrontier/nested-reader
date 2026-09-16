@@ -882,6 +882,13 @@ export class ReaderStore {
     }
   }
 
+  /** Re-reads the open folder from disk, picking up pages added, changed, or removed outside the app. */
+  async reload() {
+    const { folder, rootFile } = this.state;
+    if (!folder) return;
+    await this.openFolder(folder, { file: rootFile });
+  }
+
   // ---------- home & recent sessions ----------
 
   private sameSession(r: RecentSession, folder: string | undefined, file: string | undefined): boolean {

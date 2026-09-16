@@ -204,7 +204,7 @@ export function Sidebar() {
   // The confirmation's checkbox, cleared each time it opens so a tick never carries over unseen.
   const [dontAsk, setDontAsk] = useState(false);
   // Right-clicking empty space in the tree (not a row or a root header, which have their own menus)
-  // opens this instead, offering the same "Add to Session…" flow as ⌘⇧O.
+  // opens this instead, offering "Reload" and the same "Add to Session…" flow as ⌘⇧O.
   const [treeMenuAt, setTreeMenuAt] = useState<{ x: number; y: number } | null>(null);
   const closeMenus = () => {
     setMenuFor(null);
@@ -467,6 +467,16 @@ export function Sidebar() {
         <div className="tree-inner">{folder(root)}</div>
       </div>
       <PointMenu at={treeMenuAt}>
+        <div
+          className="item"
+          onClick={() => {
+            setTreeMenuAt(null);
+            void store.reload();
+          }}
+        >
+          Reload
+        </div>
+        <div className="sep" />
         <div
           className="item"
           onClick={() => {
