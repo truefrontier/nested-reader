@@ -116,7 +116,7 @@ export const mockPlatform: Platform = {
 
   /** The browser has no Open panel, so ⌘O opens the sample folder and ⌘⇧O adds the second one. */
   async pickPath(purpose) {
-    return purpose === "add" ? EXTRA_FOLDER : SAMPLE_FOLDER;
+    return purpose === "add" ? [EXTRA_FOLDER] : [SAMPLE_FOLDER];
   },
 
   async pickFolder() {

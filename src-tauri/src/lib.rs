@@ -66,28 +66,30 @@ async fn confirm(app: AppHandle, message: String, detail: Option<String>, ok_lab
     Ok(rx.await.map_err(|_| AppError::Message("dialog closed".into()))?)
 }
 
-/// ⌘O and ⌘⇧O: one Open panel for a folder or a single Markdown file, worded for starting a
-/// session (`purpose` "open") or for adding to the open one ("add").
+/// ⌘O and ⌘⇧O: one Open panel for folders or Markdown files, worded for starting a session
+/// (`purpose` "open", single selection) or for adding to the open one ("add", multiple allowed).
 #[tauri::command]
-async fn pick_path(app: AppHandle, purpose: Option<String>) -> Result<Option<String>> {
-    let message = match purpose.as_deref() {
-        Some("add") => "Add a folder of Markdown notes, or a single .md file, to this session.",
-        _ => "Open a folder of Markdown notes, or a single .md file.",
+async fn pick_path(app: AppHandle, purpose: Option<String>) -> Result<Vec<String>> {
+    let add = purpose.as_deref() == Some("add");
+    let message = if add {
+        "Add folders of Markdown notes, or .md files, to this session."
+    } else {
+        "Open a folder of Markdown notes, or a single .md file."
     };
     #[cfg(target_os = "macos")]
     {
         let (tx, rx) = tokio::sync::oneshot::channel();
         app.run_on_main_thread(move || {
-            let _ = tx.send(open_panel::folder_or_markdown(message));
+            let _ = tx.send(open_panel::folder_or_markdown(message, add));
         })
         .map_err(|e| AppError::Message(e.to_string()))?;
         Ok(rx.await.map_err(|_| AppError::Message("dialog closed".into()))?)
     }
-    // Other platforms have no panel that takes both, so they get the folder picker.
+    // Other platforms have no panel that takes both, so they get the (single-selection) folder picker.
     #[cfg(not(target_os = "macos"))]
     {
         let _ = message;
-        pick_folder(app).await
+        Ok(pick_folder(app).await?.into_iter().collect())
     }
 }
 

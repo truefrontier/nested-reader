@@ -266,8 +266,12 @@ export type StreamHandle = { cancel(): void };
 
 export interface Platform {
   isTauri: boolean;
-  /** Shows the Open panel; resolves to the chosen folder or Markdown file, or null when cancelled. "add" words the panel for ⌘⇧O. */
-  pickPath(purpose?: PickPurpose): Promise<string | null>;
+  /**
+   * Shows the Open panel; resolves to the chosen folders and/or Markdown files, empty when
+   * cancelled. "add" words the panel for ⌘⇧O and allows picking more than one at once; "open"
+   * (the default) is single-selection, since a session starts from one folder or file.
+   */
+  pickPath(purpose?: PickPurpose): Promise<string[]>;
   /** Picks a folder only; Settings uses it for the default folder. */
   pickFolder(): Promise<string | null>;
   /** Whether a dropped path is a folder, a Markdown file, or something else. */
