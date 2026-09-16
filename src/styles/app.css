@@ -1241,6 +1241,10 @@ button {
   flex-direction: column;
   align-items: center;
   gap: 8px;
+  /* The strip, pill, menu, etc. sit inside the 44px `.titlebar` drag band (App.tsx `.titlebar`,
+     above), so without this they swallow clicks as a window-drag gesture instead of hitting
+     "Done"/"Undo all"/the version pill/the find controls. */
+  -webkit-app-region: no-drag;
 }
 .strip {
   display: inline-flex;
