@@ -285,6 +285,8 @@ export interface Platform {
   /** A folder's session, or with `file`, the separate session kept for a single-file session in that folder. */
   loadSession(folder: string, file?: string): Promise<Session | null>;
   saveSession(folder: string, session: Session, file?: string): Promise<void>;
+  /** A yes/no before something costly. `detail` is the smaller line under the question. */
+  confirm(message: string, detail?: string, okLabel?: string): Promise<boolean>;
   /** The session map's one-line summaries, kept in `.reader/map.json`. */
   loadMap(folder: string): Promise<Record<string, { about: string; for: string }> | null>;
   saveMap(folder: string, cache: Record<string, { about: string; for: string }>, rendered: string): Promise<void>;

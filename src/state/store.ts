@@ -24,7 +24,7 @@ import { authFor, modelSlot } from "../lib/models";
 import { serializePage, titleFromBody } from "../lib/frontmatter";
 import { slugify, titleFromQuestion, uniquePath } from "../lib/slug";
 import { nowIso } from "../lib/time";
-import { newFileMessages, newPageMessages, quickAnswerMessages, refineMessages, summaryMessages, type AskContext, type RefineScope } from "../lib/prompts";
+import { newFileMessages, newPageMessages, parseSummaries, quickAnswerMessages, refineMessages, summaryMessages, SUMMARY_BATCH_CHARS, SUMMARY_PAGE_CHARS, type AskContext, type RefineScope } from "../lib/prompts";
 import { fingerprint, sessionMap, summaryIsCurrent, type SummaryCache } from "../lib/sessionmap";
 import { dirOf, folderChain, growsFrom, rootDirs, sessionPages } from "../lib/tree";
 
@@ -264,6 +264,9 @@ function prettyFolderName(folder: string): string {
   const base = folder.replace(/[/\\]+$/, "").split(/[/\\]/).pop() ?? folder;
   return base.replace(/[-_]+/g, " ").replace(/^\w/, (c) => c.toUpperCase());
 }
+
+/** Roughly how many pages one indexing call takes, for telling the reader what they are agreeing to. */
+const PAGES_PER_SUMMARY_CALL = Math.floor(SUMMARY_BATCH_CHARS / SUMMARY_PAGE_CHARS);
 
 /** How long a page must sit still before its map line is written again. */
 const SUMMARY_SETTLE_MS = 4000;
@@ -525,6 +528,49 @@ export class ReaderStore {
     const dir = root.folder === primary ? "" : root.folder;
     if (this.state.session.collapsed?.includes(dir)) this.toggleFolder(dir);
     if (!this.state.session.current) await this.navigate(root.file ? keys[0] : keys.sort()[0]);
+    void this.offerToIndex(keys);
+  }
+
+  /**
+   * Pages added to the session are the ones the reader knows least about, and the only ones the map
+   * cannot describe for free: nothing writes them, so nothing indexes them. Reading them costs, so
+   * it is asked for rather than assumed — and asked once for the lot, not once per page.
+   *
+   * The pages themselves are never touched. What comes back goes in the session folder's map.
+   */
+  private async offerToIndex(paths: string[]) {
+    if (!this.state.settings.context.map) return;
+    const folder = this.state.folder;
+    const todo: string[] = [];
+    for (const path of paths) {
+      try {
+        const body = await this.loadBody(path);
+        if (body.trim() && !summaryIsCurrent(this.state.summaries, path, body)) todo.push(path);
+      } catch {
+        /* a page that will not open needs no line */
+      }
+    }
+    if (!todo.length || this.state.folder !== folder) return;
+    const calls = Math.max(1, Math.ceil(todo.length / PAGES_PER_SUMMARY_CALL));
+    const ok = await platform.confirm(
+      `Describe ${todo.length} added page${todo.length === 1 ? "" : "s"}?`,
+      `The session map keeps one line per page saying what it holds, so the model knows what is there without reading everything. Reading these takes ${calls} request${calls === 1 ? "" : "s"}. The pages themselves are not changed.`,
+      "Describe",
+    );
+    if (!ok || this.state.folder !== folder) return;
+    // Behind whatever the map is already doing, so an add during a refine does not race it.
+    this.summaryChain = this.summaryChain
+      .then(async () => {
+        const n = await this.summarizePages(todo);
+        if (this.state.folder !== folder) return;
+        // Work the reader agreed to and then stopped watching, so it says when it is done.
+        this.notify(
+          n < todo.length
+            ? `Described ${n} of ${todo.length} added pages; the rest keep their titles in the map.`
+            : `Described ${n} added page${n === 1 ? "" : "s"}.`,
+        );
+      })
+      .catch(() => {});
   }
 
   /** Takes a root's folder (every root in it) out of the session and reloads, so its pages leave the tree. */
@@ -619,60 +665,108 @@ export class ReaderStore {
       path,
       window.setTimeout(() => {
         this.summaryTimers.delete(path);
-        this.summaryChain = this.summaryChain.then(() => this.refreshSummary(path)).catch(() => {});
+        this.summaryChain = this.summaryChain.then(async () => void (await this.refreshSummary(path))).catch(() => {});
       }, SUMMARY_SETTLE_MS),
     );
   }
 
   /**
-   * Writes the one-line `about:` for a page whose text has changed. Fire and forget: the map is a
-   * convenience, so a failure here leaves the old line (or none) rather than troubling the reader.
+   * Writes the map's `about:` lines for the pages given, in as few calls as they fit into. Fire and
+   * forget: the map is a convenience, so a failure leaves the old lines (or none) rather than
+   * troubling the reader. Returns how many lines it managed, for the caller that reports back.
+   *
+   * Nothing here touches the pages themselves. The lines live in the session folder's
+   * `.reader/map.json`, so a folder added to the session is only ever read.
    */
-  private async refreshSummary(path: string) {
+  private async summarizePages(paths: string[]): Promise<number> {
     const folder = this.state.folder;
-    const meta = this.state.pages[path];
-    if (!folder || !meta || !this.state.settings.context.map) return;
-    let body: string;
-    try {
-      body = await this.loadBody(path);
-    } catch {
-      return;
-    }
-    if (!body.trim() || summaryIsCurrent(this.state.summaries, path, body)) return;
-    const stamp = fingerprint(body);
+    if (!folder || !this.state.settings.context.map) return 0;
 
-    const { system, messages } = summaryMessages(meta.title, body);
-    // No folder on the request: a one-line summary has no business calling tools.
-    const req = { ...this.request(system, messages, 80, "summary"), folder: undefined, roots: undefined };
-    const key = `summary:${path}`;
-    const about = await new Promise<string>((resolve) => {
-      let out = "";
-      let settled = false;
-      const finish = (v: string) => {
-        if (settled) return;
-        settled = true;
-        window.clearTimeout(guard);
-        resolve(v);
-      };
-      const guard = window.setTimeout(() => {
-        this.stopStream(key);
-        finish("");
-      }, SUMMARY_TIMEOUT_MS);
-      this.stream(key, req, {
-        delta: (t) => {
-          out += t;
-        },
-        done: (truncated) => finish(truncated ? "" : out.trim()),
-        error: () => finish(""),
+    // Only pages whose text has no current line: the rest already say what they hold.
+    const todo: { path: string; title: string; body: string; stamp: string }[] = [];
+    for (const path of paths) {
+      const meta = this.state.pages[path];
+      if (!meta) continue;
+      let body: string;
+      try {
+        body = await this.loadBody(path);
+      } catch {
+        continue;
+      }
+      if (!body.trim() || summaryIsCurrent(this.state.summaries, path, body)) continue;
+      todo.push({ path, title: meta.title, body, stamp: fingerprint(body) });
+    }
+    if (!todo.length) return 0;
+
+    let written = 0;
+    for (let i = 0; i < todo.length; ) {
+      // As many pages as one call carries, and never fewer than one however long that page is.
+      const batch: typeof todo = [];
+      let chars = 0;
+      while (i < todo.length && (!batch.length || chars + SUMMARY_PAGE_CHARS <= SUMMARY_BATCH_CHARS)) {
+        chars += Math.min(todo[i].body.length, SUMMARY_PAGE_CHARS);
+        batch.push(todo[i]);
+        i++;
+      }
+
+      const { system, messages } = summaryMessages(batch.map((b) => ({ title: b.title, body: b.body })));
+      // No folder on the request: indexing has no business calling tools.
+      const req = { ...this.request(system, messages, 60 * batch.length + 60, "summary"), folder: undefined, roots: undefined };
+      const key = `summary:${batch[0].path}`;
+      let cutOff = false;
+      const text = await new Promise<string>((resolve) => {
+        let out = "";
+        let settled = false;
+        const finish = (v: string) => {
+          if (settled) return;
+          settled = true;
+          window.clearTimeout(guard);
+          resolve(v);
+        };
+        const guard = window.setTimeout(() => {
+          this.stopStream(key);
+          finish("");
+        }, SUMMARY_TIMEOUT_MS);
+        this.stream(key, req, {
+          delta: (t) => {
+            out += t;
+          },
+          // A cut-off reply still holds whole lines for the pages it reached; the rest go unwritten.
+          done: (truncated) => {
+            cutOff = truncated;
+            finish(out);
+          },
+          error: () => finish(""),
+        });
       });
-    });
-    const line = about.replace(/\s+/g, " ").trim();
-    // The session may have moved on while the line was being written; it belongs to the old folder.
-    if (!line || this.state.folder !== folder || !this.state.pages[path]) return;
-    // The page may have been written again since; that write scheduled a job of its own, and the
-    // line and the fingerprint here describe the same text either way.
-    this.set({ summaries: { ...this.state.summaries, [path]: { about: line, for: stamp } } });
-    await this.persistMap();
+
+      // The session may have moved on while the call was out; those lines belong to the old folder.
+      if (this.state.folder !== folder) return written;
+      const lines = parseSummaries(text, batch.length);
+      // The line the reply stopped in the middle of parses like any other, and would read as a
+      // finished sentence. Whichever came last is the one that was cut, so it is dropped.
+      if (cutOff) {
+        const last = lines.reduce((at, line, i) => (line ? i : at), -1);
+        if (last >= 0) lines[last] = undefined;
+      }
+      const summaries = { ...this.state.summaries };
+      batch.forEach((b, at) => {
+        const line = lines[at];
+        // The page may have been written again since; that write scheduled a job of its own, and the
+        // line and the fingerprint here describe the same text either way.
+        if (!line || !this.state.pages[b.path]) return;
+        summaries[b.path] = { about: line, for: b.stamp };
+        written++;
+      });
+      this.set({ summaries });
+      await this.persistMap();
+    }
+    return written;
+  }
+
+  /** One page that has just stopped changing, indexed on its own. */
+  private refreshSummary(path: string): Promise<number> {
+    return this.summarizePages([path]);
   }
 
   /** `.reader/map.json` holds the lines; `.reader/map.md` is the same thing rendered to read. */

@@ -50,6 +50,22 @@ async fn pick_folder(app: AppHandle) -> Result<Option<String>> {
     Ok(rx.await.map_err(|_| AppError::Message("dialog closed".into()))?)
 }
 
+/// A yes/no the reader has to answer before something costly happens, asked the way the Open panel
+/// asks: a native sheet, so it needs nothing of the reader UI and follows straight on from one.
+#[tauri::command]
+async fn confirm(app: AppHandle, message: String, detail: Option<String>, ok_label: Option<String>) -> Result<bool> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let mut dialog = app.dialog().message(detail.unwrap_or_default()).title(message);
+    dialog = dialog.buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+        ok_label.unwrap_or_else(|| "OK".into()),
+        "Cancel".into(),
+    ));
+    dialog.show(move |ok| {
+        let _ = tx.send(ok);
+    });
+    Ok(rx.await.map_err(|_| AppError::Message("dialog closed".into()))?)
+}
+
 /// ⌘O and ⌘⇧O: one Open panel for a folder or a single Markdown file, worded for starting a
 /// session (`purpose` "open") or for adding to the open one ("add").
 #[tauri::command]
@@ -551,6 +567,7 @@ pub fn run() {
             read_page,
             write_page,
             delete_page,
+            confirm,
             load_map,
             save_map,
             load_session,

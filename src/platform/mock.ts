@@ -178,6 +178,10 @@ export const mockPlatform: Platform = {
     return sessions.get(`${folder}#${file ?? ""}`) ?? null;
   },
 
+  async confirm(message, detail) {
+    return window.confirm(detail ? `${message}\n\n${detail}` : message);
+  },
+
   async loadMap(folder) {
     return maps.get(folder) ?? null;
   },

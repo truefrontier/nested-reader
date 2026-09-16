@@ -150,11 +150,45 @@ export function refineMessages(
 }
 
 /**
- * The one line the session map keeps for a page. Short, concrete, and about what the page says:
- * its only job is helping the model decide whether this is the page it wants.
+ * The lines the session map keeps, for a batch of pages in one call. Pages are numbered rather
+ * than named: a number survives the round trip, where a long path invites the model to tidy it,
+ * and it costs a token instead of thirty.
  */
-export function summaryMessages(title: string, body: string): { system: string; messages: ChatMessage[] } {
+export function summaryMessages(pages: { title: string; body: string }[]): { system: string; messages: ChatMessage[] } {
+  const one = pages.length === 1;
   const system =
-    "You are indexing a folder of markdown notes. Reply with one sentence saying what this page argues or records \u2014 what someone would want to know before deciding whether to open it. Name the specifics rather than the topic: \u201cSharp-wave ripples replay waking sequences to cortex during sleep\u201d, not \u201cdiscusses memory\u201d. No preamble, no title, no quotation marks, one sentence.";
-  return { system, messages: [{ role: "user", content: `Page: ${title}\n\n${body.slice(0, 4_000)}` }] };
+    "You are indexing a folder of markdown notes. For each page, give one sentence saying what it argues or records \u2014 what someone would want to know before deciding whether to open it. Name the specifics rather than the topic: \u201cSharp-wave ripples replay waking sequences to cortex during sleep\u201d, not \u201cdiscusses memory\u201d. " +
+    (one
+      ? "Reply with that one sentence and nothing else: no preamble, no title, no quotation marks."
+      : "Reply with one numbered line per page, in the order given, as \u201c1. sentence\u201d. Nothing else: no preamble, no titles, no quotation marks, no blank lines.");
+  const content = pages
+    .map((p, i) => `Page ${i + 1}: ${p.title}\n${p.body.slice(0, SUMMARY_PAGE_CHARS)}`)
+    .join("\n\n---\n\n");
+  return { system, messages: [{ role: "user", content }] };
+}
+
+/** How much of each page the indexer reads. The opening is what says what a note is for. */
+export const SUMMARY_PAGE_CHARS = 1_500;
+/** How much page text one indexing call carries, which sets how many pages it can take. */
+export const SUMMARY_BATCH_CHARS = 24_000;
+
+/**
+ * Reads the numbered lines back. Anything that does not parse is simply left out, so a page keeps
+ * no line rather than a wrong one, and the next run will try it again.
+ */
+export function parseSummaries(text: string, count: number): (string | undefined)[] {
+  const out: (string | undefined)[] = new Array(count).fill(undefined);
+  if (count === 1) {
+    const only = text.trim().replace(/^\s*1[.)]\s*/, "").replace(/\s+/g, " ").trim();
+    if (only) out[0] = only;
+    return out;
+  }
+  for (const line of text.split("\n")) {
+    const m = /^\s*(\d+)\s*[.)]\s*(.+?)\s*$/.exec(line);
+    if (!m) continue;
+    const at = Number(m[1]) - 1;
+    if (at < 0 || at >= count || out[at]) continue;
+    out[at] = m[2].replace(/\s+/g, " ").trim();
+  }
+  return out;
 }
