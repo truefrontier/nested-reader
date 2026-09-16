@@ -125,6 +125,16 @@ export function Sidebar() {
   const s = useReader();
   // The roots added with ⌘⇧O are top folders of their own, named after their last segment.
   const roots = useMemo(() => rootDirs(s.session.roots, s.folder), [s.session.roots, s.folder]);
+  // The path of each added file's own page (⌘⇧O on a .md, not a folder), so its row can offer
+  // "Remove from session" directly — the only way to drop it when it has no root folder header
+  // of its own (added from the session folder itself, or the lone file of a root folder elsewhere).
+  const rootFilePaths = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of s.session.roots ?? []) {
+      if (r.file) set.add(r.folder === s.folder ? r.file : `${r.folder}/${r.file}`);
+    }
+    return set;
+  }, [s.session.roots, s.folder]);
   const root = useMemo(() => buildFolders(s.pages, roots), [s.pages, roots]);
   const filterRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
@@ -282,6 +292,7 @@ export function Sidebar() {
           const confirming = deleting === it.path;
           if (open || confirming) cls.push("open");
           const showTick = it.branch && !filtering;
+          const isRootFile = rootFilePaths.has(it.path);
           return (
             <div key={it.path} className={cls.join(" ")} onClick={onRow(it.path)} onContextMenu={openMenu(it.path)} title={p.title}>
               {showTick && <span className="tick" />}
@@ -335,6 +346,17 @@ export function Sidebar() {
                   >
                     Reveal in Finder
                   </div>
+                  {isRootFile && (
+                    <div
+                      className="item"
+                      onClick={() => {
+                        setMenuFor(null);
+                        void store.removeRootFile(it.path);
+                      }}
+                    >
+                      Remove from session
+                    </div>
+                  )}
                   <div className="sep" />
                   <div
                     className="item warn"
