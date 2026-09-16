@@ -649,20 +649,6 @@ button {
 .main.below {
   flex-direction: column;
 }
-/* The window chrome sits over the panes: traffic lights, the tree toggle, the pane tools and the review strip.
-   Scrolled text fades out under it instead of running through it. Pointer events pass through, so the
-   scrollbar and the drag region underneath keep working. */
-.main::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 64px;
-  background: linear-gradient(var(--bg) 0, var(--bg) 40px, transparent);
-  pointer-events: none;
-  z-index: 1;
-}
 .pane {
   flex: 1;
   min-width: 0;
@@ -673,6 +659,24 @@ button {
   z-index: 0;
   user-select: text;
   -webkit-user-select: text;
+}
+/* The window chrome sits over the panes: traffic lights, the tree toggle, the pane tools and the review strip.
+   Scrolled text fades out under it instead of running through it. This lives on `.pane` itself (sticky, not
+   `.main`-relative) rather than on `.main`, so it stays inside the same stacking context as `.top` (z-index 3):
+   `.pane` traps its own stacking, so an overlay hung off `.main` can never out-rank content inside `.pane`
+   no matter its z-index, which used to let this fade paint over the review strip / version pill. The negative
+   margin cancels the height it would otherwise add to the flow. Pointer events pass through, so the scrollbar
+   and the drag region underneath keep working. */
+.pane::before {
+  content: "";
+  display: block;
+  position: sticky;
+  top: 0;
+  height: 64px;
+  margin-bottom: -64px;
+  background: linear-gradient(var(--bg) 0, var(--bg) 40px, transparent);
+  pointer-events: none;
+  z-index: 1;
 }
 .pane.split {
   border-left: 1px solid var(--hair);
