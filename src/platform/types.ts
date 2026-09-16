@@ -46,6 +46,12 @@ export type Session = {
   asks?: Record<string, Ask[]>;
   /** Folders and files added to the session with ⌘⇧O, beyond the folder it was opened from. */
   roots?: SessionRoot[];
+  /**
+   * Pages, or whole subfolders, dropped from an added root's session view with "Remove from
+   * session"; keyed the same way `roots` pages are (absolute inside that root's folder). Their
+   * files stay on disk untouched.
+   */
+  excluded?: string[];
   /** Unix `dev:ino` for each page path, written on save so a Finder rename can be remapped. */
   ids?: Record<string, string>;
 };
