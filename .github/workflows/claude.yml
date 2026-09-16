@@ -42,5 +42,10 @@ jobs:
           # Lets Claude read CI results when a PR check fails.
           additional_permissions: |
             actions: read
+          # WebFetch is pinned to the two GitHub hosts so Claude can read a linked
+          # repo's README/source when an issue points at one. Kept narrow on purpose:
+          # this job runs with contents:write on a private checkout, so an open fetch
+          # tool (or Bash curl / gh api) would give injected text in an issue body a
+          # way to send code back out. Add a host here only when something needs it.
           claude_args: |
-            --allowedTools "Bash(pnpm install),Bash(pnpm build),Bash(pnpm dev),Bash(npx tsc:*),Bash(cargo check:*),Bash(cargo test:*),Bash(git:*)"
+            --allowedTools "Bash(pnpm install),Bash(pnpm build),Bash(pnpm dev),Bash(npx tsc:*),Bash(cargo check:*),Bash(cargo test:*),Bash(git:*),WebFetch(domain:github.com),WebFetch(domain:raw.githubusercontent.com)"
