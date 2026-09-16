@@ -1613,7 +1613,9 @@ button {
   transform: translateX(-50%);
   z-index: 8;
   isolation: isolate;
-  max-width: min(560px, 90%);
+  /* Fixed, not max: a width that changes with the phase's content (e.g. the offer's two buttons vs.
+     the download's plain text) would shift the whole centered card sideways when it's recomputed. */
+  width: min(460px, 90%);
   padding: 10px 14px;
   border-radius: 10px;
   border: 1px solid var(--hair);
