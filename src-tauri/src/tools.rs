@@ -197,11 +197,11 @@ pub fn describe(name: &str, input: &Value) -> String {
 }
 
 /// Runs one tool against the session folder and the added `roots`. Failures come back as text for the model, not as errors.
-pub fn run(folder: &str, roots: &[String], name: &str, input: &Value) -> Outcome {
+pub fn run(folder: &str, roots: &[String], excluded: &[String], name: &str, input: &Value) -> Outcome {
     let result = match name {
-        "list_pages" => list_pages(folder, roots),
-        "read_page" => read_page(folder, roots, input["path"].as_str().unwrap_or("")),
-        "search_pages" => search_pages(folder, roots, input["query"].as_str().unwrap_or("")),
+        "list_pages" => list_pages(folder, roots, excluded),
+        "read_page" => read_page(folder, roots, excluded, input["path"].as_str().unwrap_or("")),
+        "search_pages" => search_pages(folder, roots, excluded, input["query"].as_str().unwrap_or("")),
         other => Err(format!("Unknown tool: {other}")),
     };
     match result {
@@ -210,14 +210,23 @@ pub fn run(folder: &str, roots: &[String], name: &str, input: &Value) -> Outcome
     }
 }
 
+/// Whether a page key was dropped from the session with "Remove from session": either that exact
+/// key, or a whole subfolder one was taken from. Keyed the same way `excluded` itself is.
+fn is_excluded(path: &str, excluded: &[String]) -> bool {
+    excluded.iter().any(|e| path == e || path.starts_with(&format!("{e}/")))
+}
+
 /// Every page of the session: the folder's by their path inside it, each added root's by full path.
-fn all_pages(folder: &str, roots: &[String]) -> Result<Vec<files::RawPage>, String> {
+/// Pages dropped from an added root with "Remove from session" (`excluded`) are left out, the same
+/// as removing the whole root would leave them out.
+fn all_pages(folder: &str, roots: &[String], excluded: &[String]) -> Result<Vec<files::RawPage>, String> {
     let mut out = files::list_pages(folder).map_err(|e| e.to_string())?;
     for root in roots {
         // A root that cannot be read any more just contributes nothing.
         let Ok(pages) = files::list_pages(root) else { continue };
         out.extend(pages.into_iter().map(|p| files::RawPage { path: format!("{root}/{}", p.path), ..p }));
     }
+    out.retain(|p| !is_excluded(&p.path, excluded));
     Ok(out)
 }
 
@@ -236,8 +245,8 @@ fn locate<'a>(folder: &'a str, roots: &'a [String], path: &'a str) -> (&'a str, 
     }
 }
 
-fn list_pages(folder: &str, roots: &[String]) -> Result<String, String> {
-    let pages = all_pages(folder, roots)?;
+fn list_pages(folder: &str, roots: &[String], excluded: &[String]) -> Result<String, String> {
+    let pages = all_pages(folder, roots, excluded)?;
     if pages.is_empty() {
         return Ok("The session has no pages.".to_string());
     }
@@ -246,12 +255,15 @@ fn list_pages(folder: &str, roots: &[String]) -> Result<String, String> {
     Ok(lines.join("\n"))
 }
 
-fn read_page(folder: &str, roots: &[String], path: &str) -> Result<String, String> {
+fn read_page(folder: &str, roots: &[String], excluded: &[String], path: &str) -> Result<String, String> {
     if path.trim().is_empty() {
         return Err("Give the page's path, as listed by list_pages.".to_string());
     }
     if !path.ends_with(".md") {
         return Err(format!("Only Markdown pages can be read; {path} is not one."));
+    }
+    if is_excluded(path, excluded) {
+        return Err(format!("{path} is not a page of the session."));
     }
     let (root, rel) = locate(folder, roots, path);
     // Hidden directories hold the reader's own state (old versions, session files), not pages.
@@ -266,12 +278,12 @@ fn read_page(folder: &str, roots: &[String], path: &str) -> Result<String, Strin
     Ok(page.raw)
 }
 
-fn search_pages(folder: &str, roots: &[String], query: &str) -> Result<String, String> {
+fn search_pages(folder: &str, roots: &[String], excluded: &[String], query: &str) -> Result<String, String> {
     let q = query.trim().to_lowercase();
     if q.is_empty() {
         return Err("Give some words to search for.".to_string());
     }
-    let pages = all_pages(folder, roots)?;
+    let pages = all_pages(folder, roots, excluded)?;
     let stop: HashSet<&str> = STOP.iter().copied().collect();
     let mut terms: Vec<String> = Vec::new();
     for w in words(&q, &stop) {
@@ -416,7 +428,7 @@ mod tests {
     #[test]
     fn lists_pages_with_titles() {
         let dir = folder();
-        let out = run(dir.path().to_str().unwrap(), &[], "list_pages", &json!({}));
+        let out = run(dir.path().to_str().unwrap(), &[], &[], "list_pages", &json!({}));
         assert!(!out.is_error);
         assert_eq!(out.text, "notes/sleep.md — Sleep stages\nreplay.md — Replay into cortex");
     }
@@ -429,44 +441,70 @@ mod tests {
         let f = dir.path().to_str().unwrap();
         let roots = vec![extra.path().to_str().unwrap().to_string()];
         let cues = format!("{}/cues.md", roots[0]);
-        let out = run(f, &roots, "list_pages", &json!({}));
+        let out = run(f, &roots, &[], "list_pages", &json!({}));
         assert!(out.text.contains(&format!("{cues} — Odour cues")), "{}", out.text);
         assert!(out.text.contains("replay.md — Replay into cortex"), "{}", out.text);
-        let out = run(f, &roots, "read_page", &json!({ "path": cues }));
+        let out = run(f, &roots, &[], "read_page", &json!({ "path": cues }));
         assert!(!out.is_error, "{}", out.text);
         assert!(out.text.starts_with("# Odour cues"));
-        let out = run(f, &roots, "search_pages", &json!({ "query": "rose" }));
+        let out = run(f, &roots, &[], "search_pages", &json!({ "query": "rose" }));
         assert!(out.text.contains(&format!("{cues}:3: A rose scent during sleep.")), "{}", out.text);
         // A root's own hidden state stays out of reach, and a path outside every root is refused.
-        let out = run(f, &roots, "read_page", &json!({ "path": format!("{}/.reader/session.json", roots[0]) }));
+        let out = run(f, &roots, &[], "read_page", &json!({ "path": format!("{}/.reader/session.json", roots[0]) }));
         assert!(out.is_error);
-        let out = run(f, &roots, "read_page", &json!({ "path": format!("{}/../outside.md", roots[0]) }));
+        let out = run(f, &roots, &[], "read_page", &json!({ "path": format!("{}/../outside.md", roots[0]) }));
         assert!(out.is_error);
+    }
+
+    #[test]
+    fn excluded_pages_are_kept_out_of_the_tools() {
+        let dir = folder();
+        let extra = tempfile::tempdir().unwrap();
+        std::fs::create_dir(extra.path().join("odd")).unwrap();
+        std::fs::write(extra.path().join("odd/cues.md"), "# Odour cues\n\nA rose scent during sleep.\n").unwrap();
+        std::fs::write(extra.path().join("keep.md"), "# Keep\n\nStays in reach.\n").unwrap();
+        let f = dir.path().to_str().unwrap();
+        let roots = vec![extra.path().to_str().unwrap().to_string()];
+        let cues = format!("{}/odd/cues.md", roots[0]);
+        // "Remove from session" on a nested file (notes/sleep.md) and on a whole subfolder of an
+        // added root (its "odd" folder), the same as `excluded` is keyed in the session.
+        let excluded = vec!["notes/sleep.md".to_string(), format!("{}/odd", roots[0])];
+        let out = run(f, &roots, &excluded, "list_pages", &json!({}));
+        assert!(!out.text.contains("notes/sleep.md"), "{}", out.text);
+        assert!(!out.text.contains("cues.md"), "{}", out.text);
+        assert!(out.text.contains("replay.md"), "{}", out.text);
+        assert!(out.text.contains(&format!("{}/keep.md", roots[0])), "{}", out.text);
+        let out = run(f, &roots, &excluded, "read_page", &json!({ "path": "notes/sleep.md" }));
+        assert!(out.is_error, "{}", out.text);
+        let out = run(f, &roots, &excluded, "read_page", &json!({ "path": cues }));
+        assert!(out.is_error, "{}", out.text);
+        let out = run(f, &roots, &excluded, "search_pages", &json!({ "query": "rose" }));
+        assert!(!out.text.contains("cues.md"), "{}", out.text);
     }
 
     #[test]
     fn reads_a_page_and_refuses_to_leave_the_folder() {
         let dir = folder();
         let f = dir.path().to_str().unwrap();
-        let out = run(f, &[], "read_page", &json!({ "path": "notes/sleep.md" }));
+        let out = run(f, &[], &[], "read_page", &json!({ "path": "notes/sleep.md" }));
         assert!(!out.is_error);
         assert!(out.text.starts_with("# Sleep stages"));
-        let out = run(f, &[], "read_page", &json!({ "path": "../secret.md" }));
+        let out = run(f, &[], &[], "read_page", &json!({ "path": "../secret.md" }));
         assert!(out.is_error);
-        let out = run(f, &[], "read_page", &json!({ "path": ".reader/session.json" }));
+        let out = run(f, &[], &[], "read_page", &json!({ "path": ".reader/session.json" }));
         assert!(out.is_error);
-        let out = run(f, &[], "read_page", &json!({ "path": ".reader/versions/replay/v1.md" }));
+        let out = run(f, &[], &[], "read_page", &json!({ "path": ".reader/versions/replay/v1.md" }));
         assert!(out.is_error);
     }
 
     #[test]
     fn searches_case_insensitively() {
         let dir = folder();
-        let out = run(dir.path().to_str().unwrap(), &[], "search_pages", &json!({ "query": "RIPPLE" }));
+        let out = run(dir.path().to_str().unwrap(), &[], &[], "search_pages", &json!({ "query": "RIPPLE" }));
         assert!(!out.is_error);
         assert!(out.text.contains("replay.md:7: Ripples carry the sequence."), "{}", out.text);
         assert!(out.text.contains("notes/sleep.md:3: A ripple happens in slow-wave sleep."), "{}", out.text);
-        let out = run(dir.path().to_str().unwrap(), &[], "search_pages", &json!({ "query": "giraffe" }));
+        let out = run(dir.path().to_str().unwrap(), &[], &[], "search_pages", &json!({ "query": "giraffe" }));
         assert_eq!(out.text, "No page mentions “giraffe”.");
     }
 
@@ -485,7 +523,7 @@ mod tests {
     #[test]
     fn search_leads_with_the_page_that_discusses_the_query() {
         let dir = ranked_folder();
-        let out = run(dir.path().to_str().unwrap(), &[], "search_pages", &json!({ "query": "ripple" }));
+        let out = run(dir.path().to_str().unwrap(), &[], &[], "search_pages", &json!({ "query": "ripple" }));
         assert!(!out.is_error, "{}", out.text);
         let ripples = out.text.find("zripples.md").expect("the page about ripples");
         let aside = out.text.find("aside.md").expect("the page mentioning one");
@@ -503,7 +541,7 @@ mod tests {
         std::fs::write(dir.path().join("achatty.md"), chatty).unwrap();
         std::fs::write(dir.path().join("quiet.md"), "# Quiet\n\nOne ripple here.\n").unwrap();
 
-        let out = run(dir.path().to_str().unwrap(), &[], "search_pages", &json!({ "query": "ripple" }));
+        let out = run(dir.path().to_str().unwrap(), &[], &[], "search_pages", &json!({ "query": "ripple" }));
         let lines: Vec<&str> = out.text.lines().collect();
         let quiet_at = lines.iter().position(|l| l.contains("quiet.md")).expect("the quiet page is shown at all");
         // The chatty page gives up its turn after PER_PAGE_HITS, so the quiet one is not buried.
@@ -513,12 +551,12 @@ mod tests {
     #[test]
     fn a_phrase_nobody_wrote_falls_back_to_its_words() {
         let dir = ranked_folder();
-        let out = run(dir.path().to_str().unwrap(), &[], "search_pages", &json!({ "query": "ripple giraffe" }));
+        let out = run(dir.path().to_str().unwrap(), &[], &[], "search_pages", &json!({ "query": "ripple giraffe" }));
         assert!(!out.is_error, "{}", out.text);
         assert!(out.text.contains("word for word"), "the looser match should say so:\n{}", out.text);
         assert!(out.text.contains("zripples.md:3: Ripples carry the sequence."), "{}", out.text);
         // A single word that genuinely appears nowhere still comes back empty rather than guessing.
-        let out = run(dir.path().to_str().unwrap(), &[], "search_pages", &json!({ "query": "giraffe" }));
+        let out = run(dir.path().to_str().unwrap(), &[], &[], "search_pages", &json!({ "query": "giraffe" }));
         assert_eq!(out.text, "No page mentions \u{201c}giraffe\u{201d}.");
     }
 

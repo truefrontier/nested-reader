@@ -251,6 +251,12 @@ export type AiRequest = {
   folder?: string;
   /** The folders of the session's other roots, which the tools may read too. */
   roots?: string[];
+  /**
+   * Pages, or whole subfolders, dropped from an added root with "Remove from session"; kept out
+   * of the tools' reach, and out of what a CLI is told is fair to read. Keyed the same way
+   * `Session.excluded` is.
+   */
+  excluded?: string[];
   /** The kind of AI ask for analytics: "quick_answer", "new_page", "deep_dive", or "refine". */
   kind?: string;
 };

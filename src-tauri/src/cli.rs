@@ -67,7 +67,7 @@ const CLAUDE_TOOLS: &str = "Read,Grep,Glob";
 /// The line added to the instructions when the CLI may read the session folder (and the folders added to the session).
 fn folder_note(req: &AiRequest) -> Option<String> {
     let folder = req.folder.as_deref()?;
-    let note = if req.roots.is_empty() {
+    let mut note = if req.roots.is_empty() {
         format!("The session folder is {folder}. Its Markdown files are the pages; read only inside it, and ignore its .reader directory.")
     } else {
         format!(
@@ -75,6 +75,15 @@ fn folder_note(req: &AiRequest) -> Option<String> {
             req.roots.join(", ")
         )
     };
+    // The CLI's own tools reach the whole folder (there is no per-file grant to hand them
+    // instead), so a page "removed from session" can only be kept out of the answer by asking
+    // the model not to touch it, the same way its own .reader directory is asked to be skipped.
+    if !req.excluded.is_empty() {
+        note.push_str(&format!(
+            " These have been removed from the session and are not pages of it, even though they sit inside a folder above: {}.",
+            req.excluded.join(", ")
+        ));
+    }
     Some(match &req.system {
         Some(s) if !s.trim().is_empty() => format!("{s}\n\n{note}"),
         _ => note,
@@ -382,6 +391,7 @@ mod live {
             max_tokens: Some(60),
             folder: None,
             roots: vec![],
+            excluded: vec![],
             kind: None,
         };
         tauri::async_runtime::block_on(crate::ai::stream(req, channel, CancelToken::default())).unwrap();
@@ -413,6 +423,7 @@ mod live {
             max_tokens: Some(60),
             folder: None,
             roots: vec![],
+            excluded: vec![],
             kind: None,
         };
         tauri::async_runtime::block_on(crate::ai::stream(req, channel, CancelToken::default())).unwrap();

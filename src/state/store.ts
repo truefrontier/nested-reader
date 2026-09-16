@@ -1907,7 +1907,20 @@ export class ReaderStore {
     // With tools on, the request names the session folder so the model can read its pages itself.
     const folder = s.tools ? this.state.folder : undefined;
     const roots = folder ? this.rootDirs() : undefined;
-    return { provider: s.provider, auth, model: s.models[modelSlot(s.provider, auth)], baseUrl: baseUrl || undefined, system, messages, maxTokens, folder, roots: roots?.length ? roots : undefined, kind };
+    const excluded = folder ? this.state.session.excluded : undefined;
+    return {
+      provider: s.provider,
+      auth,
+      model: s.models[modelSlot(s.provider, auth)],
+      baseUrl: baseUrl || undefined,
+      system,
+      messages,
+      maxTokens,
+      folder,
+      roots: roots?.length ? roots : undefined,
+      excluded: excluded?.length ? excluded : undefined,
+      kind,
+    };
   }
 
   private stream(key: string, req: AiRequest, on: { delta: (t: string) => void; done: (truncated: boolean) => void; error: (m: string) => void }) {
