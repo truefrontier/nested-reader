@@ -1369,9 +1369,10 @@ export class ReaderStore {
       return;
     }
     // The cards keep streaming; only the one peeked at from hover gives way to a fresh highlight.
+    // Sticky like selectMatch: a fresh highlight keeps the refine box open if that is what was open.
     this.setUi({
       selection,
-      popover: "ask",
+      popover: this.state.ui.popover === "refine" ? "refine" : "ask",
       panePopover: undefined,
       lookups: this.withoutPeek(),
       versionView: this.closedMenus(),
