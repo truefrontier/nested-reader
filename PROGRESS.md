@@ -767,3 +767,21 @@
 - Route the mock through the same channel wrapper, so the browser mock exercises the real stream lifecycle.
 - The CLI path in `cli.rs` has no stall timeout: a `claude -p` that never writes and never exits leaves the stream open with nothing to clear it. The HTTP paths cap a request at 180 s.
 - A plan opened from `~/.claude/plans` only reaches that folder — `--add-dir` covers the session folder and its added roots, so the project the plan is about stays invisible unless it is added with ⌘⇧O.
+
+## Session: 2026-09-16 — Add to Session… takes more than one path at once
+
+### Leading assumptions
+- Issue #35: "The 'Add to session' feature should allow me to add multiple files at once." Read as multi-select in the one Open panel (⌘⇧O), not drag-and-drop of several files — the feedback text only names the picker.
+- ⌘O (starting a session) stays single-selection: a session is one folder or file, so a second pick there has nowhere to go. Only the "add" panel gets `setAllowsMultipleSelection(true)`.
+
+### World facts
+- `open_panel::folder_or_markdown(message, multiple)` now takes the multi-select flag and reads `panel.URLs()` (plural, works for one or many) instead of `panel.URL()`, returning `Vec<String>` (empty when cancelled) instead of `Option<String>`.
+- The `pick_path` command passes `purpose == "add"` through as that flag and returns `Vec<String>`; the non-macOS fallback (`pick_folder`, still single-selection) is wrapped in `Option::into_iter().collect()`.
+- `Platform.pickPath` now resolves to `string[]` (empty when cancelled) for both purposes. `store.pickPath()` (⌘O) and the launch-time "ask" branch destructure just the first path; `addRoot()` (⌘⇧O) loops `includeRoot()` over every path returned, reporting "Add a folder or a .md file." per bad pick without stopping the rest. The mock backend wraps its single sample paths in one-element arrays (only one `EXTRA_FOLDER` exists to hand back for "add").
+
+### Verification
+- The container cannot install JS deps or run cargo here (no network / npm and cargo require approval this session, `objc2` code is macOS-only and this box is Linux), so this went in unverified by build or test — reviewed by hand instead. Needs `tsc`/`pnpm build` and a macOS `cargo build` before release, plus a manual check that ⌘⇧O's panel now allows a multi-selection and every chosen item lands as a root.
+
+### Possible next steps
+- Batch the "Describe N added pages?" confirmation (`offerToIndex`) across one multi-path add instead of asking once per root.
+- Multi-select for drops (`onDragDrop`) is a separate, still-open half of the ask if that turns out to be what was meant.

@@ -427,7 +427,7 @@ export class ReaderStore {
           ids: last?.folder === settings.folder ? idsFromRecent(last) : undefined,
         });
       } else if (settings.openAtLaunch === "ask") {
-        const path = await platform.pickPath();
+        const [path] = await platform.pickPath();
         if (path) await this.openPath(path, "Open a folder or a .md file.");
       } else if (settings.openAtLaunch === "last-session") {
         if (last) await this.openFolder(last.folder, { file: last.file, bookmark: last.bookmark, ids: idsFromRecent(last) });
@@ -454,7 +454,7 @@ export class ReaderStore {
   /** ⌘O: one Open panel for a folder or a single .md, then the session that path starts. */
   async pickPath() {
     try {
-      const path = await platform.pickPath();
+      const [path] = await platform.pickPath();
       if (path) await this.openPath(path, "Open a folder or a .md file.");
     } catch (e) {
       this.fail(e);
@@ -500,15 +500,19 @@ export class ReaderStore {
 
   // ---------- roots added to the session ----------
 
-  /** ⌘⇧O: adds a folder or a .md file to the open session, so its pages join the tree, the context and the model's tools. */
+  /** ⌘⇧O: adds one or more folders or .md files to the open session, so their pages join the tree, the context and the model's tools. */
   async addRoot() {
     if (!this.state.folder || this.state.home) return;
     try {
-      const path = await platform.pickPath("add");
-      if (!path) return;
-      const kind = await platform.pathKind(path);
-      if (kind === "other") return this.fail("Add a folder or a .md file.");
-      await this.includeRoot(kind === "folder" ? { folder: path } : splitFilePath(path));
+      const paths = await platform.pickPath("add");
+      for (const path of paths) {
+        const kind = await platform.pathKind(path);
+        if (kind === "other") {
+          this.fail("Add a folder or a .md file.");
+          continue;
+        }
+        await this.includeRoot(kind === "folder" ? { folder: path } : splitFilePath(path));
+      }
     } catch (e) {
       this.fail(e);
     }

@@ -36,7 +36,7 @@ function toMeta(p: RawPage): PageMeta {
 export const tauriPlatform: Platform = {
   isTauri: true,
 
-  pickPath: (purpose) => invoke<string | null>("pick_path", { purpose: purpose ?? "open" }),
+  pickPath: (purpose) => invoke<string[]>("pick_path", { purpose: purpose ?? "open" }),
   pickFolder: () => invoke<string | null>("pick_folder"),
   pathKind: (path) => invoke<PathKind>("path_kind", { path }),
   revealInFinder: (path) => invoke("reveal_in_finder", { path }),
