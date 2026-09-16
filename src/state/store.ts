@@ -267,6 +267,11 @@ function prettyFolderName(folder: string): string {
 
 /** How long a page must sit still before its map line is written again. */
 const SUMMARY_SETTLE_MS = 4000;
+/**
+ * How long one map line may take. A cancelled stream sends no last event, so without this a single
+ * stalled request would leave the queue behind it waiting for something that never arrives.
+ */
+const SUMMARY_TIMEOUT_MS = 20_000;
 
 export class ReaderStore {
   /** Pending map-line jobs by page path, so a page still streaming keeps pushing its own back. */
@@ -639,19 +644,33 @@ export class ReaderStore {
     const { system, messages } = summaryMessages(meta.title, body);
     // No folder on the request: a one-line summary has no business calling tools.
     const req = { ...this.request(system, messages, 80, "summary"), folder: undefined, roots: undefined };
+    const key = `summary:${path}`;
     const about = await new Promise<string>((resolve) => {
       let out = "";
-      this.stream(`summary:${path}`, req, {
+      let settled = false;
+      const finish = (v: string) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(guard);
+        resolve(v);
+      };
+      const guard = window.setTimeout(() => {
+        this.stopStream(key);
+        finish("");
+      }, SUMMARY_TIMEOUT_MS);
+      this.stream(key, req, {
         delta: (t) => {
           out += t;
         },
-        done: (truncated) => resolve(truncated ? "" : out.trim()),
-        error: () => resolve(""),
+        done: (truncated) => finish(truncated ? "" : out.trim()),
+        error: () => finish(""),
       });
     });
     const line = about.replace(/\s+/g, " ").trim();
-    if (!line) return;
-    // The page may have been written again while the line was being made; that write schedules its own.
+    // The session may have moved on while the line was being written; it belongs to the old folder.
+    if (!line || this.state.folder !== folder || !this.state.pages[path]) return;
+    // The page may have been written again since; that write scheduled a job of its own, and the
+    // line and the fingerprint here describe the same text either way.
     this.set({ summaries: { ...this.state.summaries, [path]: { about: line, for: stamp } } });
     await this.persistMap();
   }
@@ -709,6 +728,9 @@ export class ReaderStore {
       for (const p of list) if (!file || growsFrom(p.path, file, all)) pages[p.path] = p;
       const stored = await platform.loadSession(folder, file);
       if (this.opening !== target) return;
+      // Jobs queued against the folder being left would write a line into the wrong `.reader`.
+      for (const t of this.summaryTimers.values()) window.clearTimeout(t);
+      this.summaryTimers.clear();
       // The map's summaries outlive the session; a folder with none simply has no `about:` lines yet.
       const summaries = (await platform.loadMap(folder).catch(() => null)) ?? {};
       if (this.opening !== target) return;

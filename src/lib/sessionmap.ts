@@ -60,6 +60,9 @@ function entry(p: PageMeta, cache: SummaryCache, revisions?: number): string {
   return lines.join("\n");
 }
 
+/** The most the map may spend describing pages, leaving the rest to name as many as it can. */
+const DETAIL_SHARE = 0.6;
+
 /** Pages in a stable order, so the file on disk only changes when the session does. */
 function ordered(pages: PageMeta[]): PageMeta[] {
   return [...pages].sort((a, b) => a.path.localeCompare(b.path));
@@ -89,6 +92,7 @@ export function sessionMapForPrompt(
   const list = ordered(pages).filter((p) => p.path !== except);
   if (!list.length) return "";
 
+  const name = (p: PageMeta) => `${p.path} — ${p.title}`;
   const ranked = rankByRelevance(
     queryTerms(query),
     list,
@@ -96,22 +100,41 @@ export function sessionMapForPrompt(
     (p) => p.title,
   );
 
-  const parts: string[] = [];
-  const detailed = new Set<string>();
-  let used = 0;
+  // Both halves of the map earn their keep, so neither is allowed to crowd the other out. Describing
+  // the nearest pages takes at most this share; whatever is left names as many of the rest as it can.
+  const head = `# Session map\n${list.length} other page${list.length === 1 ? "" : "s"} in the session.`;
+  const detailCeiling = head.length + Math.floor(budget * DETAIL_SHARE);
+  const detailed = new Map<string, string>();
+  let used = head.length;
   for (const p of ranked) {
     const text = entry(p, cache, revisions[p.path]);
-    if (used + text.length > budget) break;
-    used += text.length;
-    detailed.add(p.path);
-    parts.push(text);
+    // `continue`, not `break`: a shorter entry further down the ranking may still fit.
+    if (used + 2 + text.length > Math.min(budget, detailCeiling)) continue;
+    used += 2 + text.length;
+    detailed.set(p.path, text);
   }
 
-  // Everything else still gets named, so the model knows it can go and read it.
   const rest = list.filter((p) => !detailed.has(p.path));
-  const head = `# Session map\n${list.length} other page${list.length === 1 ? "" : "s"} in the session.${
-    rest.length ? " The ones below the line are named only; read any of them with the tools if it would help." : ""
-  }`;
-  const tail = rest.length ? `## Also in the session\n${rest.map((p) => `${p.path} — ${p.title}`).join("\n")}` : "";
-  return [head, ...parts, tail].filter(Boolean).join("\n\n");
+  const assemble = (shown: number): string => {
+    const named = rest.slice(0, shown).map(name);
+    const dropped = rest.length - named.length;
+    const tail = named.length
+      ? `## Also in the session\n${named.join("\n")}${dropped ? `\n…and ${dropped} more; the tools can list them all.` : ""}`
+      : dropped
+        ? `Another ${dropped} page${dropped === 1 ? "" : "s"} are in the session; the tools can list them.`
+        : "";
+    const note = named.length ? " The ones below the line are named only; read any of them with the tools if it would help." : "";
+    return [head + note, ...detailed.values(), tail].filter(Boolean).join("\n\n");
+  };
+
+  // Start from what the remaining room roughly allows, then step back until it genuinely fits.
+  // Measuring the assembled string is the only honest test, since the tail's own wording changes with it.
+  const average = rest.reduce((n, p) => n + name(p).length + 1, 0) / (rest.length || 1);
+  let shown = Math.max(0, Math.min(rest.length, Math.floor((budget - used - 120) / (average || 1))));
+  let out = assemble(shown);
+  while (out.length > budget && shown > 0) {
+    shown--;
+    out = assemble(shown);
+  }
+  return out;
 }
