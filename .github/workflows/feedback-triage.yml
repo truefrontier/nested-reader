@@ -5,27 +5,50 @@
 # Needs: the Claude GitHub App and a CLAUDE_CODE_OAUTH_TOKEN secret (see claude.yml).
 name: Feedback Triage
 
+# Only "labeled". Creating an issue with labels attached (which is what the relay does) fires
+# an "opened" webhook *and* a "labeled" one, so listening for both ran triage twice per issue.
+# "labeled" alone covers the relay and someone adding the label to an older issue by hand.
 on:
   issues:
-    types: [opened, labeled]
+    types: [labeled]
 
 jobs:
   triage:
-    # Runs once per issue: on open when the relay set the label, or when someone adds it by hand.
-    if: |
-      (github.event.action == 'opened' && contains(github.event.issue.labels.*.name, 'feedback')) ||
-      (github.event.action == 'labeled' && github.event.label.name == 'feedback')
+    if: github.event.label.name == 'feedback'
     runs-on: ubuntu-latest
+    # One triage at a time per issue, so a second run can see the first one's comment.
+    concurrency:
+      group: feedback-triage-${{ github.event.issue.number }}
+      cancel-in-progress: false
     permissions:
       contents: read
       issues: write
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      # Removing and re-adding the label fires "labeled" again. Triage leaves a marker in its
+      # comment; if it is already there, stop before spending anything on a second pass.
+      - id: triaged
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: |
+          if ! comments=$(gh issue view "$ISSUE" --json comments --jq '.comments[].body'); then
+            echo "::warning::Could not read the comments on #$ISSUE; triaging anyway."
+            exit 0
+          fi
+          if [[ $comments == *'<!-- feedback-triage -->'* ]]; then
+            echo "already=true" >> "$GITHUB_OUTPUT"
+            echo "Issue #$ISSUE has already been triaged; skipping."
+          fi
+
+      - if: steps.triaged.outputs.already != 'true'
+        uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
-      - uses: anthropics/claude-code-action@v1
+      - if: steps.triaged.outputs.already != 'true'
+        uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: |
@@ -45,7 +68,9 @@ jobs:
             4. Post one comment with `gh issue comment`: what the feedback is asking for in a
                sentence, where in the code it lands (file paths), a likely cause or a way to
                do it, and what is still unknown. Keep it under 200 words. Do not address the
-               reporter; they do not see this repository.
+               reporter; they do not see this repository. End the comment with the line
+               `<!-- feedback-triage -->` on its own line, flush left and with no code fence
+               around it, so a later run can tell that triage already happened.
 
             Do not change any code and do not close the issue.
           claude_args: |
