@@ -1,1 +1,1 @@
-Nested-arm64.zip is produced by npm run package:mac on Apple silicon.
+Mac zip hosted on nestedreader.app/downloads/
