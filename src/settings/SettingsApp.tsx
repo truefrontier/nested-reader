@@ -551,8 +551,18 @@ function Appearance({ settings, save }: SectionProps) {
           <Seg value={width.unit} options={WIDTH_UNITS} onChange={(unit) => save({ readingWidth: { ...width, unit } })} />
         </div>
       </Row>
+      <Row label="Page position">
+        <Seg
+          value={settings.pageAlign}
+          options={[
+            { value: "left", label: "Left" },
+            { value: "center", label: "Centred" },
+          ]}
+          onChange={(v) => save({ pageAlign: v })}
+        />
+      </Row>
       <div className="hint lines">
-        <div>The page starts at the left of the pane; this sets how far it reaches to the right.</div>
+        <div>Width is how far the page reaches across the pane. Position puts it against the left edge or in the middle.</div>
         <div>em follows the text size, so a line keeps about the same number of characters. % follows the width of the pane.</div>
       </div>
     </div>
