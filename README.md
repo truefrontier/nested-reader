@@ -1,5 +1,7 @@
 # Nested
 
+> **Note:** The earlier Electron/Astra experiment is archived under the [`astra-archived`](https://github.com/truefrontier/nested-reader/tree/astra-archived) branch and is no longer maintained.
+
 A calm research reader for a folder of Markdown notes. Built with Tauri 2, React and Rust for macOS.
 
 Read a page. Select text to ask about it. **Quick Answer** puts a short answer inline; after it closes, the text keeps a dotted line and hovering it shows the answer again. **New Page** writes a new `.md` beside the source and opens it in a split pane. **Deep Dive** writes a longer page in the background and marks it unread. **Refine** (⌘R) rewrites a selection, a page, or the whole session; changes are tinted so you can undo any one of them, and every refine keeps the previous text as a version. **New page** (⌘N) is the same reach with a blank file: type what the page should cover and it is written from the whole session, with no highlight behind it.
