@@ -1,23 +1,21 @@
 import type { ReactNode } from "react";
 import { useReader, type ReaderState } from "../state/store";
 import { DragBand } from "./DragBand";
-import { CheckIcon } from "./Icons";
 
-type StatusMark = "check" | "pulse" | "warn";
+type TopStatus = "writing" | "refining" | "failed";
 
-type TopStatus = "saved" | "writing" | "refining" | "failed";
-
-const STATUS: Record<TopStatus, { label: string; mark: StatusMark }> = {
-  saved: { label: "Saved locally", mark: "check" },
+/** `mark` is the class of the dot drawn before the label. */
+const STATUS: Record<TopStatus, { label: string; mark: "pulse" | "fdot" }> = {
   writing: { label: "Writing…", mark: "pulse" },
   refining: { label: "Refining…", mark: "pulse" },
-  failed: { label: "Couldn't be written", mark: "warn" },
+  failed: { label: "Couldn't be written", mark: "fdot" },
 };
 
 /**
  * What the bar says about the pages on show — the current page and the split, since the split is
  * what a new page streams into. First match wins, so a page that failed reads as failed even while
- * it is still being taken out of `session.loading`.
+ * it is still being taken out of `session.loading`. At rest it says nothing: a page that is simply
+ * saved is the usual case, and the bar only earns its space by reporting the unusual one.
  */
 export function topStatus(s: ReaderState): TopStatus | undefined {
   const { current, split, loading } = s.session;
@@ -27,18 +25,7 @@ export function topStatus(s: ReaderState): TopStatus | undefined {
   if (shown.some((p) => loading.includes(p))) return "writing";
   // A finished refine is deleted and a failed one keeps its error, so membership without one is still running.
   if (Object.values(s.ui.refines).some((r) => !r.error && r.pages.some((p) => shown.includes(p)))) return "refining";
-  return "saved";
-}
-
-function Mark({ mark }: { mark: StatusMark }) {
-  if (mark === "check") {
-    return (
-      <span className="tb-check">
-        <CheckIcon />
-      </span>
-    );
-  }
-  return <span className={mark === "pulse" ? "pulse" : "fdot"} />;
+  return undefined;
 }
 
 /** The title bar: the session's name in the middle, what the session is doing on the right. */
@@ -53,7 +40,7 @@ export function TopBar({ children }: { children?: ReactNode }) {
       <div className="tb-status">
         {status && (
           <>
-            <Mark mark={STATUS[status].mark} />
+            <span className={STATUS[status].mark} />
             {STATUS[status].label}
           </>
         )}
