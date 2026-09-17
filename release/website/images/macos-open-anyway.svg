@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400" role="img" aria-label="Illustrative macOS Privacy and Security panel with Open Anyway for Nested">
+  <rect width="640" height="400" rx="18" fill="#f5f2fa"/>
+  <rect x="24" y="24" width="592" height="352" rx="14" fill="#fff" stroke="#d9d1e6"/>
+  <text x="48" y="64" font-family="system-ui,sans-serif" font-size="18" font-weight="700" fill="#2a2438">Privacy &amp; Security</text>
+  <text x="48" y="92" font-family="system-ui,sans-serif" font-size="12" fill="#6d657c">Illustrative placeholder — not a live screenshot</text>
+  <rect x="48" y="120" width="544" height="1" fill="#e7e0f0"/>
+  <text x="48" y="160" font-family="system-ui,sans-serif" font-size="13" fill="#3a3348">Nested.app was blocked from use because it is not from an identified developer.</text>
+  <rect x="48" y="188" width="140" height="36" rx="8" fill="#6b4ea8"/>
+  <text x="118" y="211" text-anchor="middle" font-family="system-ui,sans-serif" font-size="13" font-weight="650" fill="#fff">Open Anyway</text>
+  <text x="48" y="260" font-family="system-ui,sans-serif" font-size="12" fill="#6d657c">System Settings → Privacy &amp; Security</text>
+  <text x="48" y="286" font-family="system-ui,sans-serif" font-size="12" fill="#6d657c">After moving Nested.app into Applications</text>
+  <rect x="400" y="300" width="180" height="48" rx="10" fill="#efe8f8" stroke="#cbbde0"/>
+  <text x="490" y="328" text-anchor="middle" font-family="system-ui,sans-serif" font-size="12" font-weight="650" fill="#6b4ea8">Nested</text>
+</svg>

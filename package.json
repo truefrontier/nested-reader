@@ -75,7 +75,7 @@
     "electron": "44.4.1",
     "electron-builder": "26.15.3",
     "jpeg-js": "0.4.4",
-    "jsdom": "30.1.0",
+    "jsdom": "^26.1.0",
     "paper": "0.12.18",
     "pngjs": "7.0.0",
     "tsx": "4.23.13",

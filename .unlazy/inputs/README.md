@@ -1,0 +1,1 @@
+Bug screenshots (`bug-app-page-local-service.png`, `bug-apptranslocation-mkdir.png`) live on the Codefi plate inputs. This agent host could not read `/Users/kk/...`; illustrative Gatekeeper asset is `public/images/macos-open-anyway.svg`.

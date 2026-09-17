@@ -30,3 +30,12 @@ test('cancel aborts the provider call and leaves no generated pages',async t=>{l
 test('concurrent AI requests are rejected and the lock releases after failure',async t=>{let release,started;const wait=new Promise(resolve=>release=resolve),entered=new Promise(resolve=>started=resolve);const r=await fixture(t,{key:'fixture',request:async args=>{started();await wait;throw new Error('Provider unavailable');}});const pending=r.call('/generate','POST',job(r));await entered;assert.equal((await r.call('/generate','POST',job(r))).status,409);release();assert.equal((await events(await pending)).at(-1).type,'error');assert.equal((await r.call('/generate','POST',job(r))).status,200);});
 
 test('unknown API routes and unavailable download return honest 404s rather than HTML success',async t=>{const r=await fixture(t);assert.equal((await r.call('/missing')).status,404);const download=await fetch(`${r.url}/downloads/Nested-arm64.zip`);assert.equal(download.status,404);assert.match(await download.text(),/not been packaged/);});
+
+test('codex import refuses ChatGPT-only sessions without exposing secrets', async (t) => {
+  const r = await fixture(t, { key: '' });
+  const missing = await r.call('/settings/codex', 'POST');
+  assert.equal(missing.status, 400);
+  const body = await missing.json();
+  assert.match(body.error || body.message || JSON.stringify(body), /API key|Codex|ChatGPT/i);
+  assert.ok(!JSON.stringify(body).includes('sk-'));
+});

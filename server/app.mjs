@@ -5,6 +5,7 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import { Store, hash } from './store.mjs';
 import { generate, MODEL, MODEL_SOURCE } from './ai.mjs';
+import { importCodexApiKey, probeCodex } from './codex.mjs';
 const text=z.string().trim().min(1).max(200);
 const content=z.string().min(1).max(500000);
 const doc=z.object({title:text,content,filename:z.string().max(300).optional()});
@@ -51,6 +52,14 @@ export function createApp({dataDir,examplesDir,distDir,key=process.env.OPENAI_AP
     res.status(201).json(store.restore(book));
   });
   app.post('/api/settings/key',(req,res)=>{apiKey=z.object({key:z.string().trim().max(300)}).parse(req.body).key;res.json({connected:Boolean(apiKey)});});
+  app.get('/api/settings/auth-options',(_req,res)=>res.json(probeCodex()));
+  app.post('/api/settings/codex',(req,res,next)=>{
+    try{
+      const imported=importCodexApiKey();
+      apiKey=imported.key;
+      res.json({connected:true,message:imported.message,probe:probeCodex()});
+    }catch(e){if(e&&e.status)return res.status(e.status).json({error:e.message});next(e);}
+  });
   app.post('/api/settings/check',async(req,res,next)=>{
     try{if(!apiKey)return res.status(400).json({error:'Connect your OpenAI API key first.'});const check=await fetch(`https://api.openai.com/v1/models/${MODEL}`,{headers:{Authorization:`Bearer ${apiKey}`},signal:AbortSignal.timeout(20000)});if(!check.ok)return res.status(400).json({error:`GPT-6 Astra access could not be confirmed (${check.status}). Check your API key, project access, and billing.`});res.json({ok:true,model:MODEL});}catch(e){next(e);}
   });
