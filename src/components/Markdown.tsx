@@ -1,0 +1,3 @@
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+export function Markdown({content,onPage}:{content:string;onPage?:(id:string)=>void}){return <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml components={{a:({href,children})=>{const id=href?.match(/(?:^|\/)([a-f0-9-]{36})\.md(?:#.*)?$/)?.[1];return id&&onPage?<button className="inline-link" onClick={()=>onPage(id)}>{children}</button>:<a href={href} target="_blank" rel="noreferrer">{children}</a>},img:({alt})=><span className="image-placeholder">[Image: {alt||'external image'}; remote images are not loaded]</span>}}>{content}</ReactMarkdown>}

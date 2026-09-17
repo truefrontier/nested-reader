@@ -1,0 +1,85 @@
+{
+  "name": "nested-reader-astra",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Understand what your AI wrote. A local Markdown reader powered by GPT-6 Astra.",
+  "main": "desktop/main.cjs",
+  "author": "Nested",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "tsc --noEmit && vite build && tsx scripts/prerender.tsx",
+    "start": "node server/index.mjs",
+    "desktop": "electron .",
+    "package:mac": "node scripts/package.mjs",
+    "test": "node --import tsx --test tests/*.test.mjs tests/*.test.tsx",
+    "test:e2e": "node --test tests/api.test.mjs",
+    "check": "npm run build && npm test && npm run smoke",
+    "smoke": "node scripts/smoke.mjs",
+    "smoke:desktop": "node scripts/desktop-smoke.mjs"
+  },
+  "build": {
+    "appId": "app.nestedreader.astra",
+    "productName": "Nested",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "server/**/*",
+      "examples/**/*",
+      "package.json",
+      "!dist/**/*.map",
+      "desktop/*.cjs",
+      "desktop/Nested.icns"
+    ],
+    "mac": {
+      "target": [
+        {
+          "target": "dir",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.productivity",
+      "identity": null,
+      "icon": "desktop/Nested.icns"
+    },
+    "asar": true
+  },
+  "dependencies": {
+    "@fontsource-variable/manrope": "5.3.0",
+    "diff": "9.0.0",
+    "express": "5.2.1",
+    "fflate": "0.8.3",
+    "gray-matter": "4.0.3",
+    "lucide-react": "1.46.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "react-markdown": "10.1.0",
+    "remark-gfm": "4.0.1",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@playwright/test": "1.63.0",
+    "@resvg/resvg-js": "2.6.2",
+    "@testing-library/react": "16.3.3",
+    "@testing-library/user-event": "14.6.7",
+    "@types/diff": "7.0.2",
+    "@types/node": "24.13.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "electron": "44.4.1",
+    "electron-builder": "26.15.3",
+    "jpeg-js": "0.4.4",
+    "jsdom": "30.1.0",
+    "paper": "0.12.18",
+    "pngjs": "7.0.0",
+    "tsx": "4.23.13",
+    "typescript": "7.0.2",
+    "vite": "8.3.0"
+  }
+}

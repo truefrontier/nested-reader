@@ -1,0 +1,98 @@
+{
+  "mode": "icon-spec-authoring",
+  "layout": "delivery",
+  "spec": "/Users/kk/Projects/PROJ-nested-reader/astra-version/desktop/icon/tmp/work/spec.json",
+  "work_spec": "tmp/work/spec.json",
+  "name": "Nested",
+  "canvas": 1024,
+  "target_platforms": [],
+  "deliverable_type": null,
+  "source_reference": "public/mark.svg, authored in this project",
+  "brief": "Convert the mark authored for this fresh Nested reader into reusable app-icon artwork.",
+  "renderer": "@resvg/resvg-js",
+  "generated_files": [
+    "icon.preview.svg",
+    "icon.preview.png",
+    "icon.svg",
+    "icon.png",
+    "layers/01-background.svg",
+    "layers/02-mark.svg",
+    "tmp/README.md",
+    "tmp/reports/style-report.json",
+    "tmp/reports/package-verification.json",
+    "tmp/reports/reference-diff.png",
+    "tmp/reports/reference-overlay.png",
+    "tmp/reports/reference-side-by-side.png",
+    "tmp/reports/visual-review.json"
+  ],
+  "generated_directories": [
+    "tmp/reports",
+    "layers",
+    "tmp"
+  ],
+  "preview_svg": "icon.preview.svg",
+  "preview_png": "icon.preview.png",
+  "app_svg": "icon.svg",
+  "app_png": "icon.png",
+  "layers": [
+    "layers/01-background.svg",
+    "layers/02-mark.svg"
+  ],
+  "apple_adapter": null,
+  "preview_background_layers": [
+    {
+      "layer": "background",
+      "source_layer": "layers/01-background.svg",
+      "role": "preview-only-simple-fill"
+    }
+  ],
+  "icon_composer_layer_decisions": [],
+  "background_mode": "spec",
+  "semantic_review": {
+    "status": "exact-enough",
+    "identity_risk": "low",
+    "basis": "Project-local vector authored for this implementation",
+    "route": "semantic-svg",
+    "notes": "Two offset open page brackets in a single stroke family; no external brand source."
+  },
+  "source_analysis": {
+    "fidelity_target": "Preserve the project-local mark silhouette and palette",
+    "identity_risk": "low",
+    "route": "semantic-svg",
+    "must_preserve": [
+      "two offset open brackets",
+      "lavender background",
+      "light foreground"
+    ],
+    "must_not_add": [
+      "bevel",
+      "glow",
+      "text",
+      "external symbolism"
+    ],
+    "components": [
+      {
+        "id": "mark",
+        "layer": "mark",
+        "format": "svg",
+        "spec_constraints": [
+          "same stroke family and offset"
+        ],
+        "source_vector": "public/mark.svg",
+        "source_provenance": "project-local",
+        "alignment_basis": "40-unit source uniformly scaled to a 1024-unit canvas"
+      }
+    ],
+    "acceptance_checks": [
+      "Foreground remains legible at small sizes",
+      "No material effects"
+    ]
+  },
+  "warnings": [],
+  "claims": [
+    "spec-driven reusable cross-platform icon source package",
+    "semantic source layers retained",
+    "rounded preview PNG rendered by @resvg/resvg-js",
+    "unrounded app/source canvas outputs retained separately from preview masking"
+  ]
+}

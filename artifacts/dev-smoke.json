@@ -1,0 +1,49 @@
+{
+  "date": "2026-09-17T02:19:06.015Z",
+  "base": "http://127.0.0.1:5173",
+  "checks": [
+    {
+      "route": "/",
+      "status": 200
+    },
+    {
+      "route": "/app",
+      "status": 200
+    },
+    {
+      "route": "/mark.svg",
+      "status": 200
+    },
+    {
+      "route": "/robots.txt",
+      "status": 200
+    },
+    {
+      "route": "/sitemap.xml",
+      "status": 200
+    },
+    {
+      "route": "/api/bootstrap",
+      "model": "gpt-6-astra",
+      "connected": false
+    },
+    {
+      "route": "/api/books/:id",
+      "pages": 3
+    },
+    {
+      "route": "/api/books/:id/export",
+      "status": 200
+    },
+    {
+      "route": "/api/generate",
+      "status": 428,
+      "note": "Missing-key setup path verified; no live AI call made."
+    },
+    {
+      "route": "/downloads/Nested-arm64.zip",
+      "status": 200
+    }
+  ],
+  "status": "passed"
+}

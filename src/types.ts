@@ -1,0 +1,11 @@
+export type Mode='quick'|'page'|'deep'|'research'|'refine'|'practice'|'feedback'|'brief';
+export type Trace={kind:string;text:string;time:string};
+export type Source={pageId:string;title:string;quote:string;reason:string;hash:string;status:'matched'};
+export type Note={id:string;text:string;status:'question'|'understood'|'change';date:string};
+export type Revision={id:string;content:string;title:string;date:string};
+export type Page={id:string;title:string;content:string;kind:'source'|'generated';parentId:string|null;question:string;selection:string;mode:Mode|null;model:string|null;filename:string|null;sources:Source[];uncertainties:string[];trace:Trace[];revisions:Revision[];notes:Note[];stale:boolean;unread:boolean;createdAt:string;updatedAt:string;fileMissing?:boolean;refinement?:{model:string;sources:Source[];uncertainties:string[];trace:Trace[]}};
+export type Book={id:string;title:string;createdAt:string;pages:Page[]};
+export type BookSummary=Omit<Book,'pages'>&{pageCount:number};
+export type Bootstrap={token:string;model:string;modelSource:string;connected:boolean;desktop:boolean;books:BookSummary[];dataDir:string};
+export type DocumentInput={title:string;content:string;filename?:string};
+declare global {interface Window {nestedDesktop?:{revealLibrary:()=>Promise<void>}}}

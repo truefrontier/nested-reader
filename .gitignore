@@ -1,0 +1,12 @@
+node_modules/
+.cache/
+dist/
+release/mac-arm64/
+release/Nested-arm64.zip
+release/builder-debug.yml
+release/website/downloads/*.zip
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store

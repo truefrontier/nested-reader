@@ -1,0 +1,11 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { once } from 'node:events';
+import { createApp } from '../server/app.mjs';
+export const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+export function scratch(t){const parent=path.join(root,'.cache','tests');fs.mkdirSync(parent,{recursive:true});const dir=fs.mkdtempSync(path.join(parent,'run-'));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));return dir;}
+export async function fixture(t,options={}){const dir=scratch(t);const runtime=createApp({dataDir:dir,examplesDir:path.join(root,'examples'),distDir:path.join(root,'dist'),key:'',...options});const server=runtime.app.listen(0,'127.0.0.1');await once(server,'listening');t.after(()=>{server.closeAllConnections();server.close();});const url=`http://127.0.0.1:${server.address().port}`;const boot=await (await fetch(`${url}/api/bootstrap`)).json();const call=(route,method='GET',body,headers={})=>fetch(`${url}/api${route}`,{method,headers:{'Content-Type':'application/json','X-Nested-Token':boot.token,...headers},body:body===undefined?undefined:JSON.stringify(body)});return {...runtime,dir,url,boot,call};}
+export function generated(input,count=1){const doc=input.documents[0];return {data:{summary:'Test response from an injected fixture.',pages:Array.from({length:count},(_,i)=>({title:`Explanation ${i+1}`,content:`## Mechanism\n\nA test explanation grounded in [the source](${doc.id}.md).`,sources:[{pageId:doc.id,quote:doc.content.split('\n').find(s=>s.trim()&&!s.startsWith('#')),reason:'The supplied source describes this constraint.'}],uncertainties:['Provider behavior still needs testing.']}))},usage:{input_tokens:10,output_tokens:20},responseId:'fixture-response'};}
+export function fakeRequest({input,name}){if(name==='research_plan')return Promise.resolve({data:{steps:['Read source and constraints','Compare failure cases'],readPageIds:input.catalog.slice(0,3).map(p=>p.id)},usage:{},responseId:'fixture-plan'});return Promise.resolve(generated(input,input.mode==='research'?2:1));}
+export async function events(response){return (await response.text()).trim().split('\n').filter(Boolean).map(line=>JSON.parse(line));}

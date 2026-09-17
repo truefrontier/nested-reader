@@ -1,0 +1,10 @@
+{
+  "date": "2026-09-17T02:20:27.503Z",
+  "reviewer": "assistant",
+  "inspected": [
+    "icon.preview.png at 1024px",
+    "icon.png at 1024px",
+    "tmp/work/64.png"
+  ],
+  "result": "Project-local bracket mark preserved; readable at 64px; no material effects. Static ICNS decoded successfully."
+}

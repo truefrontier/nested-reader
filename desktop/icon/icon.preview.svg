@@ -1,0 +1,5 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+<defs><clipPath id="nested-clip"><rect width="1024" height="1024" rx="224"/></clipPath></defs>
+<g clip-path="url(#nested-clip)"><rect width="1024" height="1024" fill="#7461bb"/>
+<g transform="scale(25.6)"><path d="M10 12h7v16h-7m10-12h7v16h-7" fill="none" stroke="#faf9fc" stroke-width="2.8" stroke-linejoin="round"/></g></g>
+</svg>

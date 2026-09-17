@@ -1,0 +1,21 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { unzipSync,strFromU8 } from 'fflate';
+import { Store,hash } from '../server/store.mjs';
+import { root,scratch } from './helpers.mjs';
+function store(t){return new Store(scratch(t),path.join(root,'examples'));}
+function source(s){return s.create('Test book',[{title:'Queue design',content:'# Queue design\n\nJobs must be safe to repeat.\n',filename:'plans/design.md'}]);}
+
+test('imports and restarts preserve Markdown, nested pages, notes, and revisions',t=>{const s=store(t),b=source(s),p=b.pages[0];const child=s.addPage(b.id,{title:'Why?',content:'A duplicate delivery is possible.',kind:'generated',parentId:p.id,model:'gpt-6-astra',selection:'safe to repeat',question:'Why repeat?',sources:[{pageId:p.id,quote:'Jobs must be safe to repeat.',hash:hash(p.content)}]});s.note(b.id,child.id,'Check provider billing.','question');s.update(b.id,p.id,{content:'# Queue design\n\nUse a stable key.'});const again=new Store(s.root,s.examples);assert.equal(again.list().length,2);assert.equal(again.page(b.id,child.id).notes.length,1);assert.equal(again.page(b.id,p.id).revisions.length,1);assert.equal(again.page(b.id,child.id).stale,true);const raw=fs.readFileSync(path.join(s.directory(b),`${child.id}.md`),'utf8');assert.match(raw,/model: "gpt-6-astra"/);assert.match(raw,new RegExp(`source: "./${p.id}.md"`));assert.match(raw,/sources:/);});
+
+test('external changes create a revision and invalidate descendants and citing siblings',t=>{const s=store(t),b=source(s),p=b.pages[0];const child=s.addPage(b.id,{title:'Child',content:'child',parentId:p.id,kind:'generated'});const grand=s.addPage(b.id,{title:'Grandchild',content:'grand',parentId:child.id,kind:'generated'});const sibling=s.addPage(b.id,{title:'Citation',content:'cites',kind:'generated',sources:[{pageId:p.id}]});fs.appendFileSync(path.join(s.directory(b),`${p.id}.md`),'\nExternal edit.');s.sync(b.id);assert.equal(p.revisions.length,1);for(const page of [child,grand,sibling])assert.equal(page.stale,true);s.sync(b.id);assert.equal(p.revisions.length,1,'reading twice does not add spurious revisions');});
+
+test('read-status mutations preserve unseen edits on disk',t=>{const s=store(t),b=source(s),p=b.pages[0];const file=path.join(s.directory(b),`${p.id}.md`);fs.appendFileSync(file,'\nA new external decision.');s.update(b.id,p.id,{unread:false});assert.match(fs.readFileSync(file,'utf8'),/A new external decision/);assert.equal(p.revisions.length,1);});
+
+test('imported front matter stays literal and is never executed',t=>{const s=store(t);const body='---javascript\n(()=>{throw new Error("must never execute")})()\n---\n# Untrusted text\n\nContent.';const b=s.create('Raw text',[{title:'Raw',content:body}]);assert.equal(s.sync(b.id).pages[0].content,body);const file=path.join(s.directory(b),`${b.pages[0].id}.md`);fs.writeFileSync(file,body);assert.equal(s.sync(b.id).pages[0].content,body);});
+
+test('exports contain linked Markdown, notes, complete backup, and no API key',t=>{const s=store(t),b=source(s),p=b.pages[0];s.note(b.id,p.id,'Ask the provider.','change');s.update(b.id,p.id,{content:'Revised source'});const child=s.addPage(b.id,{title:'Child',content:`Read [parent](${p.id}.md).`,parentId:p.id,kind:'generated',model:'gpt-6-astra'});const files=unzipSync(s.archive(b.id).buffer);assert.ok(files[`${child.id}.md`]);assert.match(strFromU8(files['README.md']),/Ask the provider/);const backup=JSON.parse(strFromU8(files['nested-book.json']));assert.equal(backup.book.pages[0].revisions.length,1);const restored=s.restore(backup.book);assert.notEqual(restored.id,b.id);assert.equal(restored.pages[1].parentId,restored.pages[0].id);assert.ok(restored.pages[1].content.includes(restored.pages[0].id));assert.equal(restored.pages[0].notes.length,1);assert.doesNotMatch(strFromU8(files['nested-book.json']),/apiKey|OPENAI_API_KEY/);});
+
+test('a missing file keeps the recoverable database copy',t=>{const s=store(t),b=source(s),p=b.pages[0];fs.unlinkSync(path.join(s.directory(b),`${p.id}.md`));s.sync(b.id);assert.equal(p.fileMissing,true);assert.match(p.content,/safe to repeat/);s.update(b.id,p.id,{content:p.content});assert.ok(fs.existsSync(path.join(s.directory(b),`${p.id}.md`)));});

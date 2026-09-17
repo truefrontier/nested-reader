@@ -1,0 +1,77 @@
+{
+  "books": [
+    {
+      "id": "f6c80c12-6e93-428f-ba2a-c03930444dce",
+      "title": "Making background jobs make sense",
+      "createdAt": "2026-09-17T02:13:53.409Z",
+      "pages": [
+        {
+          "id": "4bed2410-45b6-40b5-aecc-82ac39eca8d7",
+          "title": "A plan for background jobs",
+          "content": "# A plan for background jobs\n\n## The proposal\n\nOur product turns uploaded customer interviews into searchable research. Today, the request that accepts an upload also transcribes, indexes, and summarizes it. A long interview can hold that request open for several minutes.\n\nWe propose moving this work to a **durable queue**. The upload endpoint stores the file, creates a job, and returns immediately. A separate worker picks up the job and updates its progress.\n\n## How it would work\n\n1. Save the upload and a job record in the same database transaction.\n2. A worker claims the next available job.\n3. The worker processes the file and saves the result.\n4. The client polls the job's status until the result is ready.\n\nJobs should be **idempotent**: processing the same job more than once must not create duplicate results or charge the customer twice.\n\nA worker can crash after saving a result but before acknowledging the job. The queue may deliver that job again. We therefore need a stable job identifier and a unique constraint on the resulting artifact.\n\n## The architectural choice\n\nStart with a PostgreSQL-backed job table. Claim work with a short transaction using `FOR UPDATE SKIP LOCKED`, then perform slow work outside the transaction. A lease allows abandoned jobs to be retried.\n\nA dedicated message broker could separate delivery from storage and offer more operational controls. It also adds a service for our two-person team to operate.\n\n> A queue changes when work happens. It does not remove the need to make that work safe to repeat.\n\n## Assumptions to examine\n\n- We expect fewer than 500 uploads per day at launch. This is a planning assumption, not measured demand.\n- Most interviews should finish processing within five minutes. We have not benchmarked the full pipeline.\n- A database-backed queue should be sufficient initially. We need a load test before treating that as established.\n\n## Before we approve\n\nDecide what happens after three failed attempts. Check whether our external transcription provider supports an idempotency key. Define how we will recover a job whose worker disappears.\n\nThe goal is a simpler customer experience without creating a system we cannot explain or maintain.\n",
+          "kind": "source",
+          "parentId": null,
+          "question": "",
+          "selection": "",
+          "mode": null,
+          "model": null,
+          "filename": "01-background-jobs.md",
+          "sources": [],
+          "uncertainties": [],
+          "trace": [],
+          "revisions": [],
+          "notes": [],
+          "stale": false,
+          "unread": false,
+          "createdAt": "2026-09-17T02:13:53.410Z",
+          "updatedAt": "2026-09-17T02:13:53.410Z",
+          "sourceHash": null
+        },
+        {
+          "id": "844c3308-276e-4406-b57a-7ddc6041be91",
+          "title": "What the first release needs",
+          "content": "# What the first release needs\n\n## People and capacity\n\nTwo developers maintain the product. Neither is on call full time. We have one managed PostgreSQL database and one application service.\n\n## User promises\n\n- An uploaded interview should remain visible while it is processing.\n- Users need a clear failure message and a way to retry.\n- A repeated click should not create a second charge.\n- Original recordings must remain recoverable when processing fails.\n\n## Open decisions\n\nWe have not committed to a processing-time guarantee. Customer interviews can range from ten minutes to two hours. Any capacity estimate needs to account for this variation.\n\nA dedicated broker is acceptable only if we can explain the operational benefit. Fewer moving parts is a preference, not a reason to ignore failure modes.\n\n## Evidence we still need\n\nA representative set of recordings, measured provider latency, provider retry semantics, and a small failure-injection test. None of these measurements is included in this sample book.\n",
+          "kind": "source",
+          "parentId": null,
+          "question": "",
+          "selection": "",
+          "mode": null,
+          "model": null,
+          "filename": "02-product-constraints.md",
+          "sources": [],
+          "uncertainties": [],
+          "trace": [],
+          "revisions": [],
+          "notes": [],
+          "stale": false,
+          "unread": false,
+          "createdAt": "2026-09-17T02:13:53.410Z",
+          "updatedAt": "2026-09-17T02:13:53.410Z",
+          "sourceHash": null
+        },
+        {
+          "id": "b95f2d8d-87f0-4d63-808f-be7f359b0612",
+          "title": "Failure cases worth testing",
+          "content": "# Failure cases worth testing\n\n## A worker disappears\n\nIf the process stops after claiming a job, the lease must expire and make the job eligible for another attempt. The lease needs a heartbeat or a duration longer than normal processing.\n\n## A result is saved twice\n\nA unique constraint on the job identifier can prevent two result rows. It does not by itself prevent two calls to a paid external service. That boundary needs its own idempotency design.\n\n## A provider stays unavailable\n\nRetry with bounded exponential backoff and jitter. After a limited number of attempts, mark the job as failed and give the user a deliberate retry action. Keep enough diagnostic information for an operator to investigate without logging the recording itself.\n\n## A new version ships mid-job\n\nA worker should record the processing version on the job. Decide whether retries continue with that version or deliberately migrate. Do not silently mix incompatible intermediate artifacts.\n\n## Test plan\n\nKill a worker before and after each external side effect. Verify that every job either reaches a terminal state or becomes available for recovery. Check charges independently from database result counts.\n\nThese are proposed tests. They have not been run; this book is an illustrative architecture review.\n",
+          "kind": "source",
+          "parentId": null,
+          "question": "",
+          "selection": "",
+          "mode": null,
+          "model": null,
+          "filename": "03-failure-scenarios.md",
+          "sources": [],
+          "uncertainties": [],
+          "trace": [],
+          "revisions": [],
+          "notes": [],
+          "stale": false,
+          "unread": false,
+          "createdAt": "2026-09-17T02:13:53.410Z",
+          "updatedAt": "2026-09-17T02:13:53.410Z",
+          "sourceHash": null
+        }
+      ]
+    }
+  ]
+}

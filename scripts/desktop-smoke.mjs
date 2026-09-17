@@ -1,0 +1,12 @@
+import {spawn} from 'node:child_process';
+import path from 'node:path';
+import fs from 'node:fs';
+import {fileURLToPath} from 'node:url';
+const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+const executable=path.join(root,'release','mac-arm64','Nested.app','Contents','MacOS','Nested');
+if(!fs.existsSync(executable))throw new Error('Build the Mac package first with npm run package:mac.');
+const child=spawn(executable,[],{cwd:root,env:{...process.env,NESTED_SMOKE:'1',NESTED_DATA_DIR:path.join(root,'.local','packaged-smoke'),TMPDIR:path.join(root,'.cache','tmp')},stdio:['ignore','pipe','pipe']});
+let output='';for(const stream of [child.stdout,child.stderr])stream.on('data',chunk=>{output+=chunk;process.stdout.write(chunk);});
+const timeout=setTimeout(()=>child.kill('SIGTERM'),30000);
+child.on('error',error=>{clearTimeout(timeout);throw error;});
+child.on('close',code=>{clearTimeout(timeout);fs.mkdirSync(path.join(root,'artifacts'),{recursive:true});fs.writeFileSync(path.join(root,'artifacts','desktop-smoke.log'),output);if(code!==0||!output.includes('NESTED_DESKTOP_SMOKE_OK'))process.exitCode=1;});

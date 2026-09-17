@@ -1,0 +1,62 @@
+{
+  "name": "Nested",
+  "brief": "Convert the mark authored for this fresh Nested reader into reusable app-icon artwork.",
+  "source_reference": "public/mark.svg, authored in this project",
+  "semantic_review": {
+    "status": "exact-enough",
+    "identity_risk": "low",
+    "basis": "Project-local vector authored for this implementation",
+    "route": "semantic-svg",
+    "notes": "Two offset open page brackets in a single stroke family; no external brand source."
+  },
+  "source_analysis": {
+    "fidelity_target": "Preserve the project-local mark silhouette and palette",
+    "identity_risk": "low",
+    "route": "semantic-svg",
+    "must_preserve": [
+      "two offset open brackets",
+      "lavender background",
+      "light foreground"
+    ],
+    "must_not_add": [
+      "bevel",
+      "glow",
+      "text",
+      "external symbolism"
+    ],
+    "components": [
+      {
+        "id": "mark",
+        "layer": "mark",
+        "format": "svg",
+        "source_vector": "public/mark.svg",
+        "source_provenance": "project-local",
+        "alignment_basis": "40-unit source uniformly scaled to a 1024-unit canvas",
+        "spec_constraints": [
+          "same stroke family and offset"
+        ]
+      }
+    ],
+    "acceptance_checks": [
+      "Foreground remains legible at small sizes",
+      "No material effects"
+    ]
+  },
+  "layers": [
+    {
+      "name": "background",
+      "svg": "<rect width=\"1024\" height=\"1024\" fill=\"#7461bb\"/>",
+      "composer": {
+        "include": false
+      }
+    },
+    {
+      "name": "mark",
+      "svg": "<g transform=\"scale(25.6)\"><path d=\"M10 12h7v16h-7m10-12h7v16h-7\" fill=\"none\" stroke=\"#faf9fc\" stroke-width=\"2.8\" stroke-linejoin=\"round\"/></g>",
+      "composer": {
+        "format": "svg",
+        "reason": "Project-local vector mark"
+      }
+    }
+  ]
+}
