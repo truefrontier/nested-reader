@@ -9,13 +9,30 @@ export function Marketing(){const [menu,setMenu]=useState(false),[policy,setPoli
 <ol className="install-steps-doc">
 <li><strong>Download</strong> Nested for Apple silicon and unzip it.</li>
 <li><strong>Move Nested.app into Applications.</strong> Leaving it in Downloads can trigger App Translocation and break local data paths.</li>
-<li><strong>Open Nested.</strong> If macOS refuses, open <strong>System Settings → Privacy &amp; Security</strong>, scroll to the message about Nested, and choose <strong>Open Anyway</strong>.</li>
+<li><strong>Open Nested.</strong> If you see <em>“Nested.app” Not Opened</em>, choose <strong>Done</strong> (not Move to Trash).</li>
+<li><strong>System Settings → Privacy &amp; Security</strong> — scroll to the Nested.app message and click <strong>Open Anyway</strong>.</li>
+<li>In the follow-up dialog <em>Open “Nested.app”?</em>, choose <strong>Open Anyway</strong> again (not Move to Trash).</li>
+<li>Approve with <strong>Touch ID</strong> or an administrator password when macOS asks.</li>
 <li><strong>Connect AI.</strong> Paste an OpenAI API key, or use <em>Use local Codex API key</em> when Codex on this Mac already has an API key. A ChatGPT subscription login alone is not enough for GPT-6 Astra.</li>
 </ol>
+<div className="install-figures">
 <figure className="install-figure">
-<img src="/images/macos-open-anyway.svg" width="640" height="400" alt="Illustrative macOS Privacy &amp; Security panel showing an Open Anyway button for Nested"/>
-<figcaption>Illustrative: System Settings → Privacy &amp; Security → Open Anyway</figcaption>
+<img src="/images/macos-nested-not-opened.png" width="420" height="280" alt='macOS dialog: “Nested.app” Not Opened — choose Done'/>
+<figcaption>1. “Nested.app” Not Opened → <strong>Done</strong></figcaption>
 </figure>
+<figure className="install-figure">
+<img src="/images/macos-open-anyway.png" width="640" height="400" alt="System Settings Privacy &amp; Security with Nested.app Open Anyway button"/>
+<figcaption>2. Privacy &amp; Security → <strong>Open Anyway</strong></figcaption>
+</figure>
+<figure className="install-figure">
+<img src="/images/macos-open-anyway-confirm.png" width="420" height="280" alt='Confirm dialog: Open “Nested.app”? — choose Open Anyway'/>
+<figcaption>3. Open “Nested.app”? → <strong>Open Anyway</strong></figcaption>
+</figure>
+<figure className="install-figure">
+<img src="/images/macos-open-anyway-auth.png" width="420" height="280" alt="Privacy &amp; Security Touch ID or password confirmation"/>
+<figcaption>4. Touch ID or administrator password</figcaption>
+</figure>
+</div>
 </div>
 </section>
 <section className="faq-section section-wrap" id="questions"><div><span className="eyebrow">A few useful answers</span><h2>Before you open<br/>the next layer.</h2></div><div className="faq-list">{[

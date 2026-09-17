@@ -33,3 +33,33 @@
 @media(max-width:800px){
   .install-grid,.auth-options{grid-template-columns:1fr}
 }
+
+
+.install-figures {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: 1fr;
+}
+@media (min-width: 700px) {
+  .install-figures {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.install-figures .install-figure img {
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--ink, #2c241b) 12%, transparent);
+}
+@media (min-width: 900px) {
+  .install-figures {
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    align-items: start;
+  }
+}
+.install-figures .install-figure img {
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--ink, #2c241b) 12%, transparent);
+}
