@@ -32,6 +32,8 @@
   /* Where the article starts. `--reading-width` then says how far right its box reaches. */
   --page-inset: 48px;
   --page-inset-end: 16px;
+  /* The page's box sits against the pane's left edge; centred, the auto margins split the slack. */
+  --page-margin: 0;
   --split-share: 26%;
   color-scheme: light;
 }
@@ -58,6 +60,13 @@
 }
 :root[data-font="sans"] {
   --reading: var(--sans);
+}
+:root[data-align="center"] {
+  --page-margin: auto;
+  /* The same 64px of gutter, halved either side, so the text column keeps its width and sits
+     centred in its box rather than pushed to the left of it. */
+  --page-inset: 32px;
+  --page-inset-end: 32px;
 }
 
 * {
@@ -783,11 +792,12 @@ button {
   color: var(--mute);
   z-index: 2;
 }
-/* Left-aligned at the inset, border-box: `--reading-width` stays the width of the article's box, so
-   the Page width setting means what it always did while the page no longer drifts with the window. */
+/* Against the pane's left edge or centred in it, as `--page-margin` says. Border-box either way, so
+   `--reading-width` stays the width of the article's box and the Page width setting means what it
+   always did while the page no longer drifts with the window. */
 .article {
   max-width: var(--reading-width);
-  margin: 0;
+  margin: 0 var(--page-margin);
   padding: 56px var(--page-inset-end) 120px var(--page-inset);
   font-family: var(--reading);
   font-size: var(--text-size);
@@ -1309,12 +1319,15 @@ button {
 
 /* ---------- top strip ---------- */
 
+/* Mirrors the article's box so the strips track the page's left edge in either alignment. */
 .top {
   position: sticky;
   top: 0;
   z-index: 3;
   display: flex;
   justify-content: flex-start;
+  max-width: var(--reading-width);
+  margin-inline: var(--page-margin);
   padding-left: var(--page-inset);
   height: 0;
   font-family: var(--sans);
