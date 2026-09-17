@@ -449,6 +449,8 @@ export class ReaderStore {
     root.style.setProperty("--reading-width", readingWidthCss(s.readingWidth));
     root.style.setProperty("--side-width", `${sidebarWidthPx(s.sidebarWidth)}px`);
     root.dataset.font = s.readingFont;
+    // A hand-edited settings file can hold anything, so `data-align` is kept to the two values the CSS knows.
+    root.dataset.align = s.pageAlign === "center" ? "center" : "left";
   }
 
   /** ⌘O: one Open panel for a folder or a single .md, then the session that path starts. */

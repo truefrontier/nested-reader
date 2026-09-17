@@ -124,6 +124,8 @@ export type Settings = {
   readingFont: "serif" | "sans";
   /** Both values are kept, so switching the unit brings back the last choice made in it. */
   readingWidth: ReadingWidth;
+  /** Where the page's box sits in the pane; its text is left-justified either way. */
+  pageAlign: "left" | "center";
   /** Width of the sidebar in px, set by dragging its edge. */
   sidebarWidth: number;
   newPageOpens: Placement;
@@ -174,6 +176,7 @@ export const DEFAULT_SETTINGS: Settings = {
   textSize: 17,
   readingFont: "serif",
   readingWidth: { unit: "em", em: 33, percent: 70 },
+  pageAlign: "left",
   sidebarWidth: 224,
   newPageOpens: "beside",
   deepDiveOpens: "background",
@@ -201,7 +204,6 @@ export const READING_WIDTH_RANGE: Record<ReadingWidthUnit, { min: number; max: n
   percent: { min: 30, max: 100 },
 };
 
-/** The CSS length behind `--reading-width`; a value outside its range (a hand-edited settings file) is clamped. */
 export const SIDEBAR_WIDTH_RANGE = { min: 180, max: 480 };
 
 /** The sidebar width to apply: the setting clamped to its range, or the default when it is not a number. */
@@ -210,12 +212,17 @@ export function sidebarWidthPx(w: unknown): number {
   return Math.round(Math.min(SIDEBAR_WIDTH_RANGE.max, Math.max(SIDEBAR_WIDTH_RANGE.min, n)));
 }
 
+/**
+ * The CSS length behind `--reading-width`; a value outside its range (a hand-edited settings file) is
+ * clamped. The em unit is emitted as a multiplication against `--text-size`, so the token is an absolute
+ * length that means the same width wherever it is read, not just on the article's own text size.
+ */
 export function readingWidthCss(w: ReadingWidth): string {
   const unit = w.unit === "percent" ? "percent" : "em";
   const range = READING_WIDTH_RANGE[unit];
   const raw = Number(w[unit]);
   const n = Number.isFinite(raw) ? Math.min(range.max, Math.max(range.min, raw)) : DEFAULT_SETTINGS.readingWidth[unit];
-  return unit === "percent" ? `${n}%` : `${n}em`;
+  return unit === "percent" ? `${n}%` : `calc(${n} * var(--text-size))`;
 }
 
 export function emptySession(): Session {
