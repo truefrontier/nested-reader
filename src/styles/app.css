@@ -25,8 +25,9 @@
   --serif: "Literata", Georgia, "Times New Roman", serif;
   --reading: var(--serif);
   --text-size: 17px;
-  /* em resolves against the article's own text size, so the default matches the old 560px at 17px. */
-  --reading-width: 33em;
+  /* The same multiplication `readingWidthCss` emits, so the fallback is the one length `.article` and
+     `.top` both resolve to; a bare `em` here would measure 12px on `.top`. 33 is the old 560px at 17px. */
+  --reading-width: calc(33 * var(--text-size));
   --side-width: 224px;
   --topbar-h: 28px;
   /* Where the article starts. `--reading-width` then says how far right its box reaches. */
