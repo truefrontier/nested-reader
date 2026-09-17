@@ -16,7 +16,7 @@ src/                     React app (both windows)
     mock.ts              in-memory backend for the browser (pnpm dev)
   state/store.ts         the reader store: every action lives here
   lib/                   pure helpers: markdown, diff, front matter, tree, prompts
-  reader/                Home, Sidebar, Page, TopStrip, Popovers, SplitPane, MapOverlay
+  reader/                Home, TopBar, Sidebar, Page, TopStrip, Popovers, SplitPane, MapOverlay
   settings/              the Settings window (General / Appearance / AI)
   styles/                design tokens, fonts, reader and settings CSS
 src-tauri/src/
@@ -52,7 +52,7 @@ Settings are stored in the app config directory as `settings.json`, and the Home
 
 ## Home and sessions
 
-Home replaces the window: recent sessions on the left, the ways to start one on the right. The ‹ beside the session title in the sidebar (⌘⇧H) steps up to it; the open session stays loaded, so leaving Home (Esc, or clicking that session) lands exactly where you were. Clicking another recent session loads that folder and restores its saved session.
+Home replaces the window: recent sessions on the left, the ways to start one on the right. The logo at the top of the tree (⌘⇧H) steps up to it; the open session stays loaded, so leaving Home (Esc, or clicking that session) lands exactly where you were. Clicking another recent session loads that folder and restores its saved session.
 
 A session is either a **folder** (every `.md` under it) or a **file**. Both come from the one Open panel behind ⌘O (`pick_path`, an NSOpenPanel in `src-tauri/src/open_panel.rs` that takes a folder or a `.md`, which the dialog plugin cannot do in one panel) or from a drop; `path_kind` decides which kind the path is. A file session lists only that page and the pages whose `source` chain leads back to it (`growsFrom` in `src/lib/tree.ts`); new pages are still written beside the file, so the folder stays the unit on disk and the session keeps its own `session-<page>.json`. Drops arrive through the webview's drag-drop events; `path_kind` tells the frontend whether a path is a folder, a Markdown file, or neither.
 

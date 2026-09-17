@@ -408,7 +408,7 @@ fn open_page_window(app: AppHandle, folder: String, path: String, version: Optio
     let builder = builder
         .title_bar_style(tauri::TitleBarStyle::Overlay)
         .hidden_title(true)
-        .traffic_light_position(tauri::Position::Logical(tauri::LogicalPosition::new(16.0, 16.0)));
+        .traffic_light_position(tauri::Position::Logical(tauri::LogicalPosition::new(12.0, 16.0)));
     builder.build()?;
     Ok(())
 }

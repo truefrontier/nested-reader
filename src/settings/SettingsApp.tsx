@@ -552,6 +552,7 @@ function Appearance({ settings, save }: SectionProps) {
         </div>
       </Row>
       <div className="hint lines">
+        <div>The page starts at the left of the pane; this sets how far it reaches to the right.</div>
         <div>em follows the text size, so a line keeps about the same number of characters. % follows the width of the pane.</div>
       </div>
     </div>

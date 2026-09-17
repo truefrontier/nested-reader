@@ -1087,7 +1087,7 @@ export class ReaderStore {
     }
     await this.loadBody(path);
     this.dropPaneUi("split");
-    this.setSession({ split: path, splitDirection: placement, sidebar: false });
+    this.setSession({ split: path, splitDirection: placement });
     this.setUi({ versionView: { ...this.state.ui.versionView, split: closedVersionView }, syncScroll: true });
     await this.refreshVersions(path);
   }
@@ -2052,7 +2052,7 @@ export class ReaderStore {
       this.setUi({ popover: undefined, selection: undefined, panePopover: undefined });
       if (opts.placement === "active") await this.navigate(path);
       else if (opts.placement === "beside" || opts.placement === "below") {
-        this.setSession({ split: path, splitDirection: opts.placement, sidebar: false });
+        this.setSession({ split: path, splitDirection: opts.placement });
       } else if (opts.placement === "window") {
         await platform.openPageWindow(folder, path);
       }

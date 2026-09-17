@@ -7,7 +7,6 @@ import { applyWraps, rangeOffsets, type Wrap } from "../lib/wraps";
 import { AnswerCard, AskPopover, BeforeCard, FailedCard, NowCard, RefinePopover, RefineStatus, SKELETON_FADE_MS, Skeleton } from "./Popovers";
 import { TopStrip } from "./TopStrip";
 import { FindBar } from "./FindBar";
-import { DragBand } from "./DragBand";
 
 type LinkState = "loading" | "unread" | "read" | "missing";
 
@@ -545,7 +544,6 @@ export function Page({ path, role }: Props) {
 
   return (
     <>
-      <DragBand />
       <TopStrip path={path} role={role} diff={reviewDiff}>
         {findHere && <FindBar count={matches.length} current={findCurrent} />}
       </TopStrip>

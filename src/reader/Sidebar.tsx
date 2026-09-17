@@ -2,10 +2,9 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEve
 import { createPortal } from "react-dom";
 import { store, useReader } from "../state/store";
 import { buildFolders, dotState, rootDirs, type FolderNode, type TreeItem } from "../lib/tree";
-import { ChevronLeft, ChevronRight, MoreIcon } from "./Icons";
+import { ChevronRight, MapIcon, MoreIcon, NestedLogo } from "./Icons";
 import { RenameInput } from "./RenameInput";
 import { DEFAULT_SETTINGS } from "../platform";
-import { DragBand } from "./DragBand";
 
 const stop = (e: MouseEvent) => e.stopPropagation();
 
@@ -454,17 +453,13 @@ export function Sidebar() {
   };
   return (
     <aside className="side">
-      <DragBand />
       <div className="side-head">
-        <span className="home-btn" title="Home ⌘⇧H" onClick={() => store.goHome()}>
-          <ChevronLeft />
+        <span className="brand" title="Home ⌘⇧H" onClick={() => store.goHome()}>
+          <NestedLogo />
         </span>
-        <span className="name" title={s.folderName}>
-          {s.folderName || "Library"}
-        </span>
-        <span className="link" onClick={() => store.openMap("web")}>
-          Map
-        </span>
+        <button className={`tbtn side-map${s.ui.map ? " on" : ""}`} title="Session map ⌘K" aria-pressed={!!s.ui.map} onClick={() => store.openMap("web")}>
+          <MapIcon />
+        </button>
       </div>
       <div className="side-filter">
         <input

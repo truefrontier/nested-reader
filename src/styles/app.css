@@ -9,7 +9,12 @@
   --unread: oklch(0.58 0.15 255);
   --hl: oklch(0.93 0.06 95);
   --card: rgba(30, 28, 25, 0.035);
-  --side: #f2f0ec;
+  /* The title bar keeps the deeper tint; the tree sits a step lighter, between it and the page. */
+  --bar: #f2f0ec;
+  --side: #f6f5f2;
+  /* Between `--bg` and `--bar`, so the second pane reads as a companion to the page, not a twin. */
+  --split-bg: #f5f4f1;
+  --brand: #a4886f;
   --rev: oklch(0.55 0.1 150 / 0.13);
   --old: oklch(0.7 0.13 75 / 0.16);
   --warn: oklch(0.7 0.13 75);
@@ -23,6 +28,11 @@
   /* em resolves against the article's own text size, so the default matches the old 560px at 17px. */
   --reading-width: 33em;
   --side-width: 224px;
+  --topbar-h: 28px;
+  /* Where the article starts. `--reading-width` then says how far right its box reaches. */
+  --page-inset: 48px;
+  --page-inset-end: 16px;
+  --split-share: 26%;
   color-scheme: light;
 }
 :root[data-theme="dark"] {
@@ -34,7 +44,10 @@
   --unread: oklch(0.74 0.12 255);
   --hl: oklch(0.42 0.07 95);
   --card: rgba(232, 228, 221, 0.05);
-  --side: #1e1d1a;
+  --bar: #1e1d1a;
+  --side: #1c1b18;
+  --split-bg: #1b1a17;
+  --brand: #e7d3ba;
   --rev: oklch(0.76 0.1 150 / 0.18);
   --old: oklch(0.78 0.12 75 / 0.2);
   --warn: oklch(0.78 0.12 75);
@@ -130,9 +143,15 @@ button {
   width: 100%;
   height: 100%;
   display: flex;
+  flex-direction: column;
   background: var(--bg);
   color: var(--fg);
   overflow: hidden;
+}
+.body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
 }
 .tl {
   position: absolute;
@@ -146,6 +165,13 @@ button {
   width: 12px;
   height: 12px;
   border-radius: 50%;
+}
+/* The reader window's native lights are centred in the 28px topbar: `tauri.conf.json` asks for (12, 16),
+   which macOS draws with their top edge near y 8 (measured: the requested y lands about 8px high). The
+   Settings window keeps (16, 16) under its taller title strip. This mock copy mirrors where they land. */
+.app > .tl {
+  top: 8px;
+  left: 12px;
 }
 .tbtn {
   width: 28px;
@@ -165,18 +191,10 @@ button {
   color: var(--acc);
   background: var(--card);
 }
-.tbtn.side-toggle {
-  position: absolute;
-  top: 8px;
-  left: 84px;
-  z-index: 6;
-}
-/* The band along the top of the window that behaves like a title bar: dragging empty space there
-   moves the window (see `DragBand.tsx`). It is rendered *behind* each region's own chrome, because
-   Tauri only starts a drag when the mousedown lands on the band element itself — so the tree
-   toggle, the review strip and the pane tools keep their clicks while the space around them drags.
-   `.main`, `.side`, `.pane` and `.home` each trap their own stacking context, which is why this is
-   one band per region rather than a single overlay across the window. */
+/* The band that behaves like a title bar: dragging empty space there moves the window (see
+   `DragBand.tsx`). It is rendered *behind* its region's own chrome, because Tauri only starts a drag
+   when the mousedown lands on the band element itself — so the tree toggle keeps its clicks while
+   the space around it drags. */
 .dragband {
   position: absolute;
   top: 0;
@@ -185,13 +203,71 @@ button {
   height: 44px;
   z-index: 0;
 }
-/* Inside a pane the band scrolls with the page, so it sticks to the top of the scrollport with the
-   same zero-footprint trick the fade and the review strip use. It sits above the fade (z-index 1)
-   but below the pane tools (2) and the review strip (3). */
-.pane > .dragband {
-  position: sticky;
-  margin-bottom: -44px;
+
+/* ---------- topbar ---------- */
+
+.topbar {
+  flex: none;
+  height: var(--topbar-h);
+  position: relative;
+  /* Its own stacking context, so the traffic lights (z 6) stay above it and the panes below. */
+  z-index: 0;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  background: var(--bar);
+  font-family: var(--sans);
+  user-select: none;
+  -webkit-user-select: none;
+}
+.topbar > .dragband {
+  height: var(--topbar-h);
+}
+/* The slot stretches across its whole grid column, so it would swallow drags on the empty bar.
+   Only what it holds takes the pointer. */
+/* The native lights end at x 72; the toggle starts a standard 12px past them. */
+.tb-left {
+  padding-left: 84px;
+  position: relative;
   z-index: 1;
+  display: flex;
+  pointer-events: none;
+}
+.tb-left > * {
+  pointer-events: auto;
+}
+.tb-left .tbtn {
+  width: 24px;
+  height: 24px;
+}
+.tb-title {
+  font-size: 12px;
+  color: var(--mute);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 60vw;
+  pointer-events: none;
+}
+.tb-status {
+  justify-self: end;
+  padding-right: 12px;
+  font-size: 11.5px;
+  color: var(--mute);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+}
+.tb-check {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--acc);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
 }
 
 /* ---------- sidebar ---------- */
@@ -202,7 +278,7 @@ button {
   position: relative;
   z-index: 0;
   background: var(--side);
-  padding: 58px 0 16px;
+  padding: 12px 0 16px;
   display: flex;
   flex-direction: column;
   font-size: 12.5px;
@@ -236,41 +312,23 @@ button {
   opacity: 0.7;
 }
 .side-head {
-  padding: 0 18px 12px 12px;
+  height: 40px;
+  padding: 0 10px 0 16px;
   display: flex;
   align-items: center;
-  gap: 4px;
-  color: var(--mute);
-  font-size: 11.5px;
-  letter-spacing: 0.02em;
+  justify-content: space-between;
+  margin-bottom: 8px;
 }
-.side-head .name {
-  flex: 1;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.brand {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  color: var(--fg);
 }
-.side-head .home-btn {
-  width: 22px;
+.brand svg {
   height: 22px;
-  border-radius: 5px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  flex: none;
-  color: var(--mute);
-}
-.side-head .home-btn:hover {
-  color: var(--fg);
-  background: var(--card);
-}
-.side-head .link {
-  cursor: pointer;
-}
-.side-head .link:hover {
-  color: var(--fg);
+  width: auto;
+  display: block;
 }
 .side-filter {
   margin: 0 14px 12px;
@@ -658,6 +716,7 @@ button {
   flex-direction: column;
 }
 .pane {
+  --pane-bg: var(--bg);
   flex: 1;
   min-width: 0;
   min-height: 0;
@@ -665,34 +724,51 @@ button {
   position: relative;
   /* Trap the scroll compositor so reading text cannot paint over window overlays. */
   z-index: 0;
+  background: var(--pane-bg);
   user-select: text;
   -webkit-user-select: text;
 }
-/* The window chrome sits over the panes: traffic lights, the tree toggle, the pane tools and the review strip.
-   Scrolled text fades out under it instead of running through it. This lives on `.pane` itself (sticky, not
-   `.main`-relative) rather than on `.main`, so it stays inside the same stacking context as `.top` (z-index 3):
-   `.pane` traps its own stacking, so an overlay hung off `.main` can never out-rank content inside `.pane`
-   no matter its z-index, which used to let this fade paint over the review strip / version pill. The negative
-   margin cancels the height it would otherwise add to the flow. Pointer events pass through, so the scrollbar
-   and the `.dragband` underneath keep working. */
+/* The pane's own chrome sits over it: the pane tools and the review strip. Scrolled text fades out
+   under them instead of running through them. This lives on `.pane` itself (sticky, not
+   `.main`-relative) rather than on `.main`, so it stays inside the same stacking context as `.top`
+   (z-index 3): `.pane` traps its own stacking, so an overlay hung off `.main` can never out-rank
+   content inside `.pane` no matter its z-index, which used to let this fade paint over the review
+   strip / version pill. The negative margin cancels the height it would otherwise add to the flow.
+   It fades from `--pane-bg`, so the split pane's own colour never shows a seam. */
 .pane::before {
   content: "";
   display: block;
   position: sticky;
   top: 0;
-  height: 64px;
-  margin-bottom: -64px;
-  background: linear-gradient(var(--bg) 0, var(--bg) 40px, transparent);
+  height: 56px;
+  margin-bottom: -56px;
+  background: linear-gradient(var(--pane-bg) 0, var(--pane-bg) 28px, transparent);
   pointer-events: none;
   z-index: 1;
 }
 .pane.split {
+  --pane-bg: var(--split-bg);
+  flex: 0 0 var(--split-share);
+  min-width: 260px;
   border-left: 1px solid var(--hair);
   animation: rise 0.2s ease-out;
 }
+.pane.split::before {
+  height: 84px;
+  margin-bottom: -84px;
+  background: linear-gradient(var(--pane-bg) 0, var(--pane-bg) 56px, transparent);
+}
+/* Stacked, a quarter of the height would be unreadable, so the halves stand. */
 .main.below .pane.split {
+  flex: 1;
+  min-width: 0;
   border-left: 0;
   border-top: 1px solid var(--hair);
+}
+/* ⌘⇧F hides the main pane, so the split takes the whole width rather than its share of nothing. */
+.main.fullscreen .pane.split {
+  flex: 1;
+  border-left: 0;
 }
 .pane.hidden {
   display: none;
@@ -707,16 +783,18 @@ button {
   color: var(--mute);
   z-index: 2;
 }
+/* Left-aligned at the inset, border-box: `--reading-width` stays the width of the article's box, so
+   the Page width setting means what it always did while the page no longer drifts with the window. */
 .article {
   max-width: var(--reading-width);
-  margin: 0 auto;
-  padding: 84px 32px 120px;
+  margin: 0;
+  padding: 56px var(--page-inset-end) 120px var(--page-inset);
   font-family: var(--reading);
   font-size: var(--text-size);
   line-height: 1.7;
 }
 .pane.split .article {
-  padding: 84px 36px 120px;
+  padding: 84px 24px 120px 28px;
   font-size: calc(var(--text-size) - 1px);
 }
 .crumb {
@@ -1055,7 +1133,8 @@ button {
 }
 .card .answer.tool .pulse,
 .tool-line .pulse,
-.status-card .pulse {
+.status-card .pulse,
+.tb-status .pulse {
   width: 7px;
   height: 7px;
   border-radius: 50%;
@@ -1235,7 +1314,8 @@ button {
   top: 0;
   z-index: 3;
   display: flex;
-  justify-content: center;
+  justify-content: flex-start;
+  padding-left: var(--page-inset);
   height: 0;
   font-family: var(--sans);
   font-size: 12px;
@@ -1244,11 +1324,18 @@ button {
 }
 .top-inner {
   position: relative;
-  margin-top: 14px;
+  margin-top: 10px;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
+}
+/* The split pane is too narrow to sit the strips beside its tools, so they start under them. */
+.pane.split .top {
+  padding-left: 28px;
+}
+.pane.split .top-inner {
+  margin-top: 44px;
 }
 .strip {
   display: inline-flex;
@@ -1313,8 +1400,7 @@ button {
 .menu {
   position: absolute;
   top: 32px;
-  left: 50%;
-  transform: translateX(-50%);
+  left: 0;
   width: 250px;
   padding: 4px;
   border-radius: 10px;
@@ -1349,8 +1435,7 @@ button {
 .confirm {
   position: absolute;
   top: 36px;
-  left: 50%;
-  transform: translateX(-50%);
+  left: 0;
   width: 250px;
   padding: 12px 14px;
   border-radius: 10px;

@@ -8,7 +8,7 @@ import { SplitPane } from "./reader/SplitPane";
 import { MapOverlay } from "./reader/MapOverlay";
 import { FeedbackPopover, NewFilePopover, RefinePopover, RefineStatus } from "./reader/Popovers";
 import { SidebarIcon } from "./reader/Icons";
-import { DragBand } from "./reader/DragBand";
+import { TopBar } from "./reader/TopBar";
 import { UpdateBar } from "./reader/UpdateBar";
 import { useSyncScroll } from "./reader/useSyncScroll";
 import { SettingsApp } from "./settings/SettingsApp";
@@ -141,59 +141,62 @@ export default function App() {
         <Home />
       ) : (
         <>
-          <button className="tbtn side-toggle" title="Toggle tree ⌘B" onClick={() => store.toggleSidebar()}>
-            <SidebarIcon />
-          </button>
-          {s.session.sidebar && <Sidebar />}
-          <div className={`main ${s.session.splitDirection}`} ref={mainRef}>
-            <DragBand />
-            {current && s.pages[current] ? (
-              <div className={`pane${showMainPane ? "" : " hidden"}`}>
-                <Page path={current} role="main" />
-              </div>
-            ) : (
-              s.ready && (
-                <div className="empty-state">
-                  <div>
-                    This folder has no Markdown pages yet.
-                    <button onClick={() => store.goHome()}>Home</button>
-                  </div>
+          <TopBar>
+            <button className="tbtn side-toggle" title="Toggle tree ⌘B" onClick={() => store.toggleSidebar()}>
+              <SidebarIcon />
+            </button>
+          </TopBar>
+          <div className="body">
+            {s.session.sidebar && <Sidebar />}
+            <div className={`main ${s.session.splitDirection}${showMainPane ? "" : " fullscreen"}`} ref={mainRef}>
+              {current && s.pages[current] ? (
+                <div className={`pane${showMainPane ? "" : " hidden"}`}>
+                  <Page path={current} role="main" />
                 </div>
-              )
-            )}
-            {split && <SplitPane />}
-            {showPaneStack && (
-              <div className="pane-stack">
-                {refineStatus.map(({ id, run, working, hotkey }) => (
-                  <RefineStatus
-                    key={id}
-                    pane
-                    scope={run.scope}
-                    text={run.text}
-                    working={working}
-                    // A corpus refine holds one card for the session it is rewriting, so it counts down
-                    // the pages it has left rather than putting an identical card on every one of them.
-                    pagesLeft={run.scope === "corpus" ? run.pages.length : undefined}
-                    error={run.error}
-                    hotkey={hotkey}
-                    onRetry={() => store.retryRefine(id)}
-                    onDismiss={() => store.dismissRefine(id)}
-                  />
-                ))}
-                {paneBox === "new" && current && <NewFilePopover onSubmit={(text, verb, alt) => void store.newFile(text, verb, alt)} onEsc={() => store.closePopover()} />}
-                {paneBox === "feedback" && <FeedbackPopover onSend={(message, email) => store.sendFeedback(message, email)} onEsc={() => store.closePopover()} />}
-                {paneBox === "refine" && current && (
-                  <RefinePopover
-                    pane
-                    initial={s.ui.refineRetry}
-                    onSubmit={(text, scope) => void store.refine(text, scope)}
-                    onEsc={() => store.closePopover()}
-                    onToggle={() => store.toggleRefine()}
-                  />
-                )}
-              </div>
-            )}
-            {s.ui.map && <MapOverlay />}
+              ) : (
+                s.ready && (
+                  <div className="empty-state">
+                    <div>
+                      This folder has no Markdown pages yet.
+                      <button onClick={() => store.goHome()}>Home</button>
+                    </div>
+                  </div>
+                )
+              )}
+              {split && <SplitPane />}
+              {showPaneStack && (
+                <div className="pane-stack">
+                  {refineStatus.map(({ id, run, working, hotkey }) => (
+                    <RefineStatus
+                      key={id}
+                      pane
+                      scope={run.scope}
+                      text={run.text}
+                      working={working}
+                      // A corpus refine holds one card for the session it is rewriting, so it counts down
+                      // the pages it has left rather than putting an identical card on every one of them.
+                      pagesLeft={run.scope === "corpus" ? run.pages.length : undefined}
+                      error={run.error}
+                      hotkey={hotkey}
+                      onRetry={() => store.retryRefine(id)}
+                      onDismiss={() => store.dismissRefine(id)}
+                    />
+                  ))}
+                  {paneBox === "new" && current && <NewFilePopover onSubmit={(text, verb, alt) => void store.newFile(text, verb, alt)} onEsc={() => store.closePopover()} />}
+                  {paneBox === "feedback" && <FeedbackPopover onSend={(message, email) => store.sendFeedback(message, email)} onEsc={() => store.closePopover()} />}
+                  {paneBox === "refine" && current && (
+                    <RefinePopover
+                      pane
+                      initial={s.ui.refineRetry}
+                      onSubmit={(text, scope) => void store.refine(text, scope)}
+                      onEsc={() => store.closePopover()}
+                      onToggle={() => store.toggleRefine()}
+                    />
+                  )}
+                </div>
+              )}
+              {s.ui.map && <MapOverlay />}
+            </div>
           </div>
         </>
       )}

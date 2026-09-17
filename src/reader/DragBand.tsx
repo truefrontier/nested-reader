@@ -1,13 +1,11 @@
 /**
- * The strip along the top of the window that behaves like a title bar: dragging empty space there
- * moves the window, double-clicking it zooms.
+ * The band that behaves like a title bar: dragging it moves the window, double-clicking it zooms.
+ * The reader's topbar, Home and the Settings window each lay one behind their own chrome.
  *
  * Tauri starts that drag only when the mousedown lands on the element carrying
- * `data-tauri-drag-region` *itself*, so each band is rendered behind its own region's chrome — the
- * review strip, the pane tools, the tree toggle — and those keep their clicks. One band per region
- * rather than one overlay across the window: `.main`, `.pane` and `.side` each trap their own
- * stacking context, so a window-wide overlay can only ever paint over them, never sit under their
- * chrome, which is what left "Undo all"/"Done" unclickable (#29, #31, #41).
+ * `data-tauri-drag-region` *itself*, so whatever sits over the band would swallow the drag. The
+ * title and status in the topbar are therefore `pointer-events: none`, and only the buttons over
+ * the band take their clicks back.
  */
 export function DragBand() {
   return <div className="dragband" data-tauri-drag-region />;

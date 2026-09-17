@@ -8,7 +8,7 @@ Read a page. Select text to ask about it. **Quick Answer** puts a short answer i
 
 Every page is a plain `.md` file in the folder you opened. Nothing else is required to read your notes elsewhere.
 
-**Home** is one level up from a session: the ‹ beside the session title (or ⌘⇧H) shows your recent sessions and the way to start one. **Open…** (⌘O) takes a folder, so every `.md` inside is the corpus, or a single `.md`, so pages you create are saved next to it. Dropping a folder or file anywhere in the window does the same. **Add to Session…** (⌘⇧O) brings another folder or file into the open session: its pages join the tree under a header of their own, the model sees them like any other page, and the ··· menu on that header takes them out again. Clicking a recent session returns you to it where you left off; its ··· menu can rename it, reveal it in Finder, open its map, or drop it from the list.
+**Home** is one level up from a session: the logo at the top of the tree (or ⌘⇧H) shows your recent sessions and the way to start one. The map button at the top of the tree (⌘K) lays the session out as a web or a timeline. **Open…** (⌘O) takes a folder, so every `.md` inside is the corpus, or a single `.md`, so pages you create are saved next to it. Dropping a folder or file anywhere in the window does the same. **Add to Session…** (⌘⇧O) brings another folder or file into the open session: its pages join the tree under a header of their own, the model sees them like any other page, and the ··· menu on that header takes them out again. Clicking a recent session returns you to it where you left off; its ··· menu can rename it, reveal it in Finder, open its map, or drop it from the list.
 
 ## Run
 
