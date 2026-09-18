@@ -1860,10 +1860,11 @@ button {
   animation: rise 0.2s ease-out;
 }
 .home-side {
-  width: 224px;
+  width: var(--side-width);
   flex: none;
+  position: relative;
   background: var(--side);
-  padding: 58px 0 16px;
+  padding: 12px 0 16px;
   display: flex;
   flex-direction: column;
   font-size: 12.5px;
@@ -2011,6 +2012,7 @@ button {
 .home-main {
   flex: 1;
   min-width: 0;
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;

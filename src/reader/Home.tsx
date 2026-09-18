@@ -1,9 +1,10 @@
 import { useEffect, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { store, useReader } from "../state/store";
-import type { RecentSession } from "../platform";
+import { DEFAULT_SETTINGS, type RecentSession } from "../platform";
 import { MoreIcon } from "./Icons";
 import { RenameInput } from "./RenameInput";
-import { DragBand } from "./DragBand";
+import { FeedbackPopover } from "./Popovers";
+import { useSidebarGrip } from "./useSidebarGrip";
 
 const stop = (e: MouseEvent | KeyboardEvent) => e.stopPropagation();
 
@@ -40,10 +41,10 @@ export function Home() {
   }, [menuFor]);
 
   const isCurrent = (r: RecentSession) => r.folder === s.folder && (r.file ?? "") === (s.rootFile ?? "");
+  const { onGripDown, onGripMove, onGripUp } = useSidebarGrip(s.settings.sidebarWidth);
 
   return (
     <div className="home">
-      <DragBand />
       <aside className="home-side">
         <div className="home-head">Recent Sessions</div>
         <div className="home-list">
@@ -126,6 +127,20 @@ export function Home() {
             );
           })}
         </div>
+        <div className="side-foot">
+          <span className={`link${s.ui.panePopover === "feedback" ? " on" : ""}`} onClick={() => store.toggleFeedback()} title="A bug, an idea, anything">
+            Send feedback
+          </span>
+        </div>
+        <div
+          className="side-grip"
+          title="Drag to resize"
+          onPointerDown={onGripDown}
+          onPointerMove={onGripMove}
+          onPointerUp={onGripUp}
+          onPointerCancel={onGripUp}
+          onDoubleClick={() => void store.setSidebarWidth(DEFAULT_SETTINGS.sidebarWidth)}
+        />
       </aside>
       <div className="home-main">
         <div className="home-start">
@@ -158,6 +173,11 @@ export function Home() {
             </div>
           )}
         </div>
+        {s.ui.panePopover === "feedback" && (
+          <div className="pane-stack">
+            <FeedbackPopover onSend={(message, email) => store.sendFeedback(message, email)} onEsc={() => store.closePopover()} />
+          </div>
+        )}
       </div>
     </div>
   );
