@@ -29,6 +29,11 @@ export function PopWrap({ caretX, width, className, children }: { caretX: number
       setLeft(Math.round(Math.min(Math.max(caretX - popLeft, 14), el.offsetWidth - 24)));
     };
     place();
+    // Bring a popover that lands below the fold into view; only on mount/reposition, not on every
+    // resize, so it doesn't fight the user by re-scrolling as the box grows while they type.
+    if (el.getBoundingClientRect().bottom > window.innerHeight) {
+      el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
     const ro = new ResizeObserver(place);
     ro.observe(parent);
     return () => ro.disconnect();
