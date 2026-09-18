@@ -293,6 +293,8 @@ export function Sidebar() {
           if (open || confirming) cls.push("open");
           const showTick = it.branch && !filtering;
           const isRootFile = rootFilePaths.has(it.path);
+          // A page nested inside an added root, other than the root's own file, can be dropped on its own.
+          const nestedInRoot = !isRootFile && roots.some((r) => it.path.startsWith(r + "/"));
           return (
             <div key={it.path} className={cls.join(" ")} onClick={onRow(it.path)} onContextMenu={openMenu(it.path)} title={p.title}>
               {showTick && <span className="tick" />}
@@ -357,6 +359,17 @@ export function Sidebar() {
                       Remove from session
                     </div>
                   )}
+                  {nestedInRoot && (
+                    <div
+                      className="item"
+                      onClick={() => {
+                        setMenuFor(null);
+                        void store.excludeFromSession(it.path);
+                      }}
+                    >
+                      Remove from session
+                    </div>
+                  )}
                   <div className="sep" />
                   <div
                     className="item warn"
@@ -415,15 +428,17 @@ export function Sidebar() {
     if (!kids.length && !own) return null;
     const open = filtering || !collapsed.includes(f.path);
     const menuKey = `root:${f.path}`;
-    const menuOpen = f.root && menuFor === menuKey;
+    // The root folder of an added root drops the whole root; a folder nested inside one drops just its pages.
+    const removable = f.root ? "root" : roots.some((r) => f.path.startsWith(r + "/")) ? "nested" : undefined;
+    const menuOpen = !!removable && menuFor === menuKey;
     return (
       <div key={f.path} className={`folder${open ? " open" : ""}${f.root ? " root" : ""}`}>
-        <div className={`frow${menuOpen ? " open" : ""}`} onClick={() => store.toggleFolder(f.path)} onContextMenu={f.root ? openMenu(menuKey) : undefined} title={f.path}>
+        <div className={`frow${menuOpen ? " open" : ""}`} onClick={() => store.toggleFolder(f.path)} onContextMenu={removable ? openMenu(menuKey) : undefined} title={f.path}>
           <span className="chev">
             <ChevronRight />
           </span>
           <span className="label">{f.name}</span>
-          {f.root && (
+          {removable && (
             <span className="more" title="More" onMouseDown={stop} onClick={openMenu(menuKey)}>
               <MoreIcon />
             </span>
@@ -434,7 +449,8 @@ export function Sidebar() {
                 className="item"
                 onClick={() => {
                   setMenuFor(null);
-                  void store.removeRoot(f.path);
+                  if (removable === "root") void store.removeRoot(f.path);
+                  else void store.excludeFromSession(f.path);
                 }}
               >
                 Remove from session

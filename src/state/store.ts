@@ -602,14 +602,37 @@ export class ReaderStore {
     await this.dropRoots((r) => r !== root);
   }
 
+  /**
+   * Drops one page, or a whole subfolder of pages, from an added root's session view. The file
+   * (or folder) stays on disk; only the root's own file or the whole root can take the rest with it.
+   */
+  async excludeFromSession(path: string) {
+    if (!rootOfKey(path, this.rootDirs())) return;
+    const { folder: primary, rootFile, session } = this.state;
+    if (!primary) return;
+    const excluded = session.excluded ?? [];
+    if (excluded.includes(path)) return;
+    try {
+      window.clearTimeout(this.saveTimer);
+      await platform.saveSession(primary, { ...session, excluded: [...excluded, path] }, rootFile);
+      await this.openFolder(primary, { file: rootFile });
+    } catch (e) {
+      this.fail(e);
+    }
+  }
+
   /** Saves the session with only the roots `keep` accepts, then reloads it so the tree matches. */
   private async dropRoots(keep: (r: SessionRoot) => boolean) {
     const { folder: primary, rootFile, session } = this.state;
     if (!primary) return;
     const roots = (session.roots ?? []).filter(keep);
+    // A root gone for good takes its own exclusions with it; kept around they would silently
+    // hide pages again if the same folder were ever added back.
+    const dirs = rootDirs(roots, primary);
+    const excluded = (session.excluded ?? []).filter((e) => rootOfKey(e, dirs));
     try {
       window.clearTimeout(this.saveTimer);
-      await platform.saveSession(primary, { ...session, roots: roots.length ? roots : undefined }, rootFile);
+      await platform.saveSession(primary, { ...session, roots: roots.length ? roots : undefined, excluded: excluded.length ? excluded : undefined }, rootFile);
       await this.openFolder(primary, { file: rootFile });
     } catch (e) {
       this.fail(e);
@@ -626,9 +649,10 @@ export class ReaderStore {
    * The pages of one root, keyed as the session holds them: by full path, `<folder>/<page>`, or by their
    * relative path when the root is the session folder itself. A file root gives that page and the pages grown
    * from it, like a file session. Pages whose file is already in the session (`taken` holds full paths) are
-   * left out, so overlapping roots never list a page twice.
+   * left out, so overlapping roots never list a page twice. `excluded` drops pages, or whole subfolders of
+   * them, that "Remove from session" took out of this root without touching their files.
    */
-  private async rootPages(root: SessionRoot, primary: string, taken: Set<string>): Promise<Record<string, PageMeta>> {
+  private async rootPages(root: SessionRoot, primary: string, taken: Set<string>, excluded: string[] = []): Promise<Record<string, PageMeta>> {
     const list = await platform.listPages(root.folder);
     const all: Record<string, PageMeta> = {};
     for (const p of list) all[p.path] = p;
@@ -640,6 +664,7 @@ export class ReaderStore {
       const abs = `${root.folder}/${p.path}`;
       if (taken.has(abs)) continue;
       const key = own ? p.path : abs;
+      if (excluded.some((e) => key === e || key.startsWith(e + "/"))) continue;
       out[key] = keyedMeta(p, key, root.folder);
     }
     return out;
@@ -859,7 +884,7 @@ export class ReaderStore {
       let lost: string | undefined;
       for (const root of session.roots ?? []) {
         try {
-          Object.assign(pages, await this.rootPages(root, folder, takenPaths(pages, folder, rootDirs(roots, folder))));
+          Object.assign(pages, await this.rootPages(root, folder, takenPaths(pages, folder, rootDirs(roots, folder)), session.excluded));
           roots.push(root);
         } catch {
           lost = root.file ? `${root.folder}/${root.file}` : root.folder;
@@ -867,6 +892,9 @@ export class ReaderStore {
       }
       if (this.opening !== target) return;
       session.roots = roots.length ? roots : undefined;
+      // A root lost above (or dropped since the exclusion was made) leaves nothing for its entries to hide.
+      const excludedStill = (session.excluded ?? []).filter((e) => rootOfKey(e, rootDirs(roots, folder)));
+      session.excluded = excludedStill.length ? excludedStill : undefined;
       session.loading = session.loading.filter((p) => pages[p]);
       session.unread = session.unread.filter((p) => pages[p]);
       for (const key of Object.keys(session.pending)) if (!pages[key]) delete session.pending[key];
@@ -1881,7 +1909,20 @@ export class ReaderStore {
     // With tools on, the request names the session folder so the model can read its pages itself.
     const folder = s.tools ? this.state.folder : undefined;
     const roots = folder ? this.rootDirs() : undefined;
-    return { provider: s.provider, auth, model: s.models[modelSlot(s.provider, auth)], baseUrl: baseUrl || undefined, system, messages, maxTokens, folder, roots: roots?.length ? roots : undefined, kind };
+    const excluded = folder ? this.state.session.excluded : undefined;
+    return {
+      provider: s.provider,
+      auth,
+      model: s.models[modelSlot(s.provider, auth)],
+      baseUrl: baseUrl || undefined,
+      system,
+      messages,
+      maxTokens,
+      folder,
+      roots: roots?.length ? roots : undefined,
+      excluded: excluded?.length ? excluded : undefined,
+      kind,
+    };
   }
 
   private stream(key: string, req: AiRequest, on: { delta: (t: string) => void; done: (truncated: boolean) => void; error: (m: string) => void }) {

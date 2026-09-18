@@ -30,6 +30,11 @@ pub struct AiRequest {
     /// The folders of the roots added to the session, which the tools may read too.
     #[serde(default)]
     pub roots: Vec<String>,
+    /// Pages, or whole subfolders, dropped from an added root's session view with "Remove from
+    /// session"; keyed the same way the app's own `excluded` list is. Kept out of the tools'
+    /// reach, and out of what a CLI is told is fair to read, the same as a dropped root's pages.
+    #[serde(default)]
+    pub excluded: Vec<String>,
     /// The kind of AI ask: "quick_answer", "new_page", "deep_dive", or "refine" (for analytics).
     #[serde(default)]
     pub kind: Option<String>,
@@ -232,9 +237,9 @@ fn parse_input(raw: &str) -> Value {
 }
 
 /// Tells the UI what the model is looking at, then runs the call against the session's folders.
-fn call_tool(folder: &str, roots: &[String], call: &ToolCall, channel: &Channel<StreamEvent>) -> tools::Outcome {
+fn call_tool(folder: &str, roots: &[String], excluded: &[String], call: &ToolCall, channel: &Channel<StreamEvent>) -> tools::Outcome {
     let _ = channel.send(StreamEvent::Tool { name: call.name.clone(), detail: tools::describe(&call.name, &call.input) });
-    tools::run(folder, roots, &call.name, &call.input)
+    tools::run(folder, roots, excluded, &call.name, &call.input)
 }
 
 /// Whether a server refused the request because of the `tools` field, so it is worth one try without.
@@ -327,7 +332,7 @@ async fn stream_ollama(req: &AiRequest, channel: &Channel<StreamEvent>, cancel: 
             .collect();
         messages.push(json!({ "role": "assistant", "content": text, "tool_calls": tool_calls }));
         for c in &calls {
-            let out = call_tool(folder, &req.roots, c, channel);
+            let out = call_tool(folder, &req.roots, &req.excluded, c, channel);
             messages.push(json!({ "role": "tool", "tool_name": c.name, "tool_call_id": c.id, "content": out.text }));
         }
     }
@@ -437,7 +442,7 @@ async fn stream_openai(req: &AiRequest, channel: &Channel<StreamEvent>, cancel: 
             .collect();
         messages.push(json!({ "role": "assistant", "content": if text.is_empty() { Value::Null } else { json!(text) }, "tool_calls": tool_calls }));
         for c in &calls {
-            let out = call_tool(folder, &req.roots, c, channel);
+            let out = call_tool(folder, &req.roots, &req.excluded, c, channel);
             messages.push(json!({ "role": "tool", "tool_call_id": c.id, "content": out.text }));
         }
     }
@@ -584,7 +589,7 @@ async fn stream_anthropic(req: &AiRequest, channel: &Channel<StreamEvent>, cance
         let results: Vec<Value> = calls
             .iter()
             .map(|c| {
-                let out = call_tool(folder, &req.roots, c, channel);
+                let out = call_tool(folder, &req.roots, &req.excluded, c, channel);
                 json!({ "type": "tool_result", "tool_use_id": c.id, "content": out.text, "is_error": out.is_error })
             })
             .collect();
@@ -791,6 +796,7 @@ mod ollama_live {
             max_tokens: Some(40),
             folder: None,
             roots: vec![],
+            excluded: vec![],
             kind: None,
         };
         tauri::async_runtime::block_on(stream(req, channel, CancelToken::default())).unwrap();
@@ -893,6 +899,7 @@ mod tool_loops {
             max_tokens: Some(200),
             folder: Some(folder.into()),
             roots: vec![],
+            excluded: vec![],
             kind: None,
         }
     }
