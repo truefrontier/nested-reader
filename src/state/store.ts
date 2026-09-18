@@ -639,6 +639,37 @@ export class ReaderStore {
     }
   }
 
+  /**
+   * Takes the primary folder (and its `rootFile`, if the session was opened from one) out of the
+   * session, promoting the root added earliest with ⌘⇧O in its place: the session record moves to
+   * that root's folder, and its pages are keyed relative to it from here on, exactly as the primary's
+   * own always were. A session with no other root left has nothing to promote, so it is refused —
+   * only the last surviving root cannot be removed this way.
+   */
+  async removePrimary() {
+    const { folder: primary, session } = this.state;
+    if (!primary) return;
+    const roots = session.roots ?? [];
+    const promoted = roots.find((r) => r.folder !== primary);
+    if (!promoted) return;
+    const restRoots = roots.filter((r) => r !== promoted);
+    // The promoted root stops being a root of its own, so the exclusions scoped to it lapse too,
+    // the same way a root's exclusions go with it when it is dropped for good in `dropRoots`.
+    const dirs = rootDirs(restRoots, promoted.folder);
+    const excluded = (session.excluded ?? []).filter((e) => rootOfKey(e, dirs));
+    try {
+      window.clearTimeout(this.saveTimer);
+      await platform.saveSession(
+        promoted.folder,
+        { ...session, roots: restRoots.length ? restRoots : undefined, excluded: excluded.length ? excluded : undefined },
+        promoted.file,
+      );
+      await this.openFolder(promoted.folder, { file: promoted.file });
+    } catch (e) {
+      this.fail(e);
+    }
+  }
+
   /** The key a root's own page is held under: relative in the session folder, absolute in any other. */
   private rootKey(r: SessionRoot): string | undefined {
     if (!r.file) return undefined;

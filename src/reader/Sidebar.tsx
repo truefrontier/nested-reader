@@ -244,7 +244,8 @@ export function Sidebar() {
   };
   // A row whose page has left the session (deleted here or elsewhere) takes its menu and boxes with it.
   useEffect(() => {
-    const gone = (key: string | null) => !!key && (key.startsWith("root:") ? !roots.includes(key.slice(5)) : !s.pages[key]);
+    const gone = (key: string | null) =>
+      !!key && (key === "primary" ? !roots.length : key.startsWith("root:") ? !roots.includes(key.slice(5)) : !s.pages[key]);
     if (gone(menuFor)) {
       setMenuFor(null);
       if (!deleting || gone(deleting)) setLayerAnchor(null);
@@ -414,17 +415,50 @@ export function Sidebar() {
       </div>
     );
   };
-  // A folder is its subfolders, then its own pages. Only the session folder itself has no header.
+  // A folder is its subfolders, then its own pages. The session folder itself has no header, unless
+  // another root could stand in its place if it were removed.
   const folder = (f: FolderNode): ReactNode => {
     const kids = f.folders.map(folder).filter(Boolean);
     const own = rows(f.items);
-    if (!f.path)
+    if (!f.path) {
+      // The session folder itself only earns a header once another root could take its place: with
+      // none, it is the whole session and there is nothing to fall back on if it were removed.
+      if (!roots.length)
+        return (
+          <>
+            {kids}
+            {own}
+          </>
+        );
+      const menuOpen = menuFor === "primary";
       return (
         <>
+          <div className="folder primary">
+            <div className={`frow${menuOpen ? " open" : ""}`} onContextMenu={openMenu("primary")} title={s.folder}>
+              <span className="label">{s.folderName}</span>
+              <span className="more" title="More" onMouseDown={stop} onClick={openMenu("primary")}>
+                <MoreIcon />
+              </span>
+              {menuOpen && (
+                <AnchoredLayer anchor={layerAnchor ?? undefined} className="row-menu">
+                  <div
+                    className="item"
+                    onClick={() => {
+                      setMenuFor(null);
+                      void store.removePrimary();
+                    }}
+                  >
+                    Remove from session
+                  </div>
+                </AnchoredLayer>
+              )}
+            </div>
+          </div>
           {kids}
           {own}
         </>
       );
+    }
     if (!kids.length && !own) return null;
     const open = filtering || !collapsed.includes(f.path);
     const menuKey = `root:${f.path}`;
