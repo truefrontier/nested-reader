@@ -21,7 +21,7 @@ export function UpdateBar() {
     return (
       <div className="update-bar" role="status">
         <span className="what">{u.message ?? "Couldn't check for updates."}</span>
-        <span className="acts">
+        <span className="acts" key="acts">
           <button onClick={() => void store.checkForUpdate(true)}>Try again</button>
           <button className="quiet" onClick={() => store.dismissUpdate()}>
             Later
@@ -38,7 +38,7 @@ export function UpdateBar() {
         <span className="what">
           Downloading {name}… {pct !== undefined ? `${pct}%` : `${mb(u.downloaded ?? 0)} MB`}
         </span>
-        <span className={`meter${pct === undefined ? " busy" : ""}`}>
+        <span className={`meter${pct === undefined ? " busy" : ""}`} key="meter">
           <i style={{ width: `${pct ?? 0}%` }} />
         </span>
       </div>
@@ -48,7 +48,7 @@ export function UpdateBar() {
     return (
       <div className="update-bar" role="status">
         <span className="what">Installing {name}… it will relaunch in a moment.</span>
-        <span className="meter busy">
+        <span className="meter busy" key="meter">
           <i />
         </span>
       </div>
@@ -67,7 +67,7 @@ export function UpdateBar() {
           </>
         )}
       </span>
-      <span className="acts">
+      <span className="acts" key="acts">
         <button onClick={() => void store.installUpdate()}>{u.phase === "error" ? "Try again" : "Update and relaunch"}</button>
         <button className="quiet" onClick={() => store.dismissUpdate()}>
           Later
