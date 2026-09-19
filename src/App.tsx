@@ -138,7 +138,12 @@ export default function App() {
         </div>
       )}
       {showHome ? (
-        <Home />
+        <>
+          <TopBar />
+          <div className="body">
+            <Home />
+          </div>
+        </>
       ) : (
         <>
           <TopBar>

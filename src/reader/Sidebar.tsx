@@ -1,10 +1,11 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { store, useReader } from "../state/store";
 import { buildFolders, dotState, rootDirs, type FolderNode, type TreeItem } from "../lib/tree";
 import { ChevronRight, MapIcon, MoreIcon, NestedLogo } from "./Icons";
 import { RenameInput } from "./RenameInput";
 import { DEFAULT_SETTINGS } from "../platform";
+import { useSidebarGrip } from "./useSidebarGrip";
 
 const stop = (e: MouseEvent) => e.stopPropagation();
 
@@ -180,24 +181,8 @@ export function Sidebar() {
     if (unreadOnly || changesOnly) return (unreadOnly && unreadMark(it.path)) || (changesOnly && changesMark(it.path));
     return true;
   };
-  // Dragging the right edge resizes the sidebar; the width is saved when the pointer is let go. Double-click resets it.
-  const drag = useRef<{ x: number; width: number } | null>(null);
-  const onGripDown = (e: PointerEvent<HTMLDivElement>) => {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    e.currentTarget.setPointerCapture(e.pointerId);
-    drag.current = { x: e.clientX, width: e.currentTarget.parentElement?.getBoundingClientRect().width ?? s.settings.sidebarWidth };
-  };
-  const onGripMove = (e: PointerEvent<HTMLDivElement>) => {
-    if (!drag.current) return;
-    store.previewSidebarWidth(drag.current.width + e.clientX - drag.current.x);
-  };
-  const onGripUp = (e: PointerEvent<HTMLDivElement>) => {
-    if (!drag.current) return;
-    const width = drag.current.width + e.clientX - drag.current.x;
-    drag.current = null;
-    void store.setSidebarWidth(width);
-  };
+  // Dragging the right edge resizes the sidebar; double-click resets it to the default width.
+  const { onGripDown, onGripMove, onGripUp } = useSidebarGrip(s.settings.sidebarWidth);
   const onRow = (path: string) => (e: MouseEvent) => {
     e.preventDefault();
     void store.openPage(path, store.placementFor(e));
