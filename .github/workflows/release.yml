@@ -114,8 +114,8 @@ jobs:
           releaseName: Nested __VERSION__
           releaseBody: |
             Download the `.dmg` to install Nested. Copies already installed update themselves from the Nested menu › Check for Updates…, or on their own within a few hours.
-          # Keep Nested's first notarized release as a draft. Return to false after Kevin validates one good draft.
-          releaseDraft: true
+          # Notarized releases publish as normal releases. Flip to true only for a deliberate dry-run tag.
+          releaseDraft: false
           prerelease: false
           includeUpdaterJson: true
           # tauri.release.conf.json turns on the updater artifacts (which need the signing key) only here,
