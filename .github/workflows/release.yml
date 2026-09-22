@@ -4,18 +4,26 @@
 # them with latest.json. Running copies of Nested see the new version through the relay in
 # feedback-relay/ within a few hours, or at their next launch.
 #
-# Needs three repository secrets (Settings › Secrets and variables › Actions):
+# Required repository secrets (Settings › Secrets and variables › Actions):
 #   TAURI_SIGNING_PRIVATE_KEY           the private half of the updater key (its public half is
 #                                       plugins.updater.pubkey in src-tauri/tauri.conf.json)
+#   APPLE_CERTIFICATE                   the base64-encoded Developer ID Application .p12
+#   APPLE_CERTIFICATE_PASSWORD          the .p12 export password
+#   APPLE_ID                            the Apple ID used for notarization
+#   APPLE_PASSWORD                      an app-specific password, not the Apple ID password
+#   APPLE_TEAM_ID                       the Apple Developer team ID
+#
+# Optional repository secrets:
 #   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  the key's password. The key made for this repo has an empty
 #                                       one, so leave this secret unset: an unset secret reaches the
 #                                       build as an empty string, which is what that key expects.
+#   APPLE_SIGNING_IDENTITY              pins the Developer ID identity; Tauri can infer it when the
+#                                       imported certificate contains only one identity.
 #   APTABASE_APP_KEY                    (optional) the Aptabase app key for privacy-friendly analytics.
 #                                       When unset, all tracking is disabled.
 #
-# To also code-sign and notarize with Apple (so a fresh install opens without the right-click
-# dance), add APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY, APPLE_ID,
-# APPLE_PASSWORD and APPLE_TEAM_ID to the build step's env; tauri-action picks them up by name.
+# Tauri owns Apple signing, notarization, stapling, and updater artifact creation. Do not run a
+# separate notarytool submission or mutate the app after Tauri signs the updater archive.
 name: Release
 
 on:
@@ -39,6 +47,24 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Check required release secrets
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          missing=0
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID TAURI_SIGNING_PRIVATE_KEY; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name is not configured."
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ]
 
       # The tag and the app's own version must agree, or the release would carry the wrong number.
       - name: Check the tag against the app version
@@ -70,20 +96,51 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - uses: tauri-apps/tauri-action@v0
+      - name: Build signed and notarized Tauri updater release
+        uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           APTABASE_APP_KEY: ${{ secrets.APTABASE_APP_KEY }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           tagName: v__VERSION__
           releaseName: Nested __VERSION__
           releaseBody: |
             Download the `.dmg` to install Nested. Copies already installed update themselves from the Nested menu › Check for Updates…, or on their own within a few hours.
-          releaseDraft: false
+          # Keep Nested's first notarized release as a draft. Return to false after Kevin validates one good draft.
+          releaseDraft: true
           prerelease: false
           includeUpdaterJson: true
           # tauri.release.conf.json turns on the updater artifacts (which need the signing key) only here,
           # so a plain `pnpm tauri build` on a Mac keeps working without it.
           args: --target universal-apple-darwin --config src-tauri/tauri.release.conf.json
+
+      - name: Verify the notarized app and updater pair
+        run: |
+          bundle_dir=src-tauri/target/universal-apple-darwin/release/bundle
+          if [ ! -d "$bundle_dir" ]; then
+            echo "::error::Tauri bundle directory is missing."
+            exit 1
+          fi
+
+          app=$(find "$bundle_dir" -type d -name '*.app' -print -quit)
+          if [ -z "$app" ]; then
+            echo "::error::No .app bundle was produced."
+            exit 1
+          fi
+          codesign --verify --deep --strict --verbose=2 "$app"
+          xcrun stapler validate "$app"
+          spctl --assess --type execute --verbose=4 "$app"
+
+          archive=$(find "$bundle_dir" -type f -name '*.app.tar.gz' -print -quit)
+          if [ -z "$archive" ] || [ ! -s "$archive" ] || [ ! -s "$archive.sig" ]; then
+            echo "::error::The signed Tauri updater archive or its .sig is missing or empty."
+            exit 1
+          fi
