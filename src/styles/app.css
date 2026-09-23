@@ -1306,6 +1306,19 @@ button {
 .feedback-pop .verbs .note.err {
   color: var(--warn);
 }
+.release-notes .lab {
+  font-size: 11px;
+  color: var(--mute);
+}
+.release-notes ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.release-notes li + li {
+  margin-top: 4px;
+}
 
 /* ---------- top strip ---------- */
 
