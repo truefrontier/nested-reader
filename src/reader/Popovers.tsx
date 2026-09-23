@@ -1,8 +1,8 @@
-import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
 import type { Lookup, NewFileVerb, Verb } from "../state/store";
 import type { Change } from "../lib/diff";
 import type { RefineScope } from "../lib/prompts";
-import { FEEDBACK_MAX } from "../platform";
+import { ATTACHMENT_MAX_BYTES, FEEDBACK_MAX, type Attachment } from "../platform";
 import { CURRENT_RELEASE_NOTES } from "./releaseNotes";
 
 export function Kbd({ children }: { children: ReactNode }) {
@@ -523,10 +523,27 @@ export function FailedCard({ title, error, hotkey, onRetry }: { title: string; e
   );
 }
 
+/** Reads a picked or dropped File into an `Attachment`, rejecting anything that isn't a small image. */
+function fileToAttachment(file: File): Promise<Attachment> {
+  return new Promise((resolve, reject) => {
+    if (!file.type.startsWith("image/")) return reject(new Error("Attach an image."));
+    if (file.size > ATTACHMENT_MAX_BYTES) return reject(new Error(`Keep the screenshot under ${Math.round(ATTACHMENT_MAX_BYTES / (1024 * 1024))} MB.`));
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Couldn't read that file."));
+    reader.onload = () => {
+      // reader.result is "data:<mime>;base64,<data>"; only the part after the comma goes to the relay.
+      const data = String(reader.result).split(",", 2)[1] ?? "";
+      resolve({ name: file.name, mime: file.type, data });
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 /**
  * The Send feedback box, opened from the link at the bottom of the sidebar. The note goes to the
  * relay as a GitHub issue; the email is optional and only for a reply. ↵ makes a new line, ⌘↵ sends.
  * The draft text lives in the store, not local state, so it survives the box being hidden and reopened.
+ * A screenshot can be dropped on the window or picked by hand; it rides along as an attachment.
  */
 export function FeedbackPopover({
   text,
@@ -535,19 +552,67 @@ export function FeedbackPopover({
   onChangeEmail,
   onSend,
   onEsc,
+  subscribeAttachment,
 }: {
   text: string;
   email: string;
   onChangeText: (v: string) => void;
   onChangeEmail: (v: string) => void;
-  onSend: (message: string, email: string) => Promise<void>;
+  onSend: (message: string, email: string, attachment?: Attachment) => Promise<void>;
   onEsc: () => void;
+  /** Hears about a screenshot the window's native drag-drop attached, since that drop can't reach this box's own handlers. */
+  subscribeAttachment?: (handler: (a: Attachment) => void) => () => void;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   // ⌘R swaps the form for a quick look at what's new, in place; it doesn't touch the note being typed.
   const [view, setView] = useState<"form" | "notes">("form");
+  const [attachment, setAttachment] = useState<Attachment | null>(null);
+  const [attachError, setAttachError] = useState<string | undefined>();
+  const [dragOver, setDragOver] = useState(false);
   const [state, setState] = useState<{ kind: "idle" } | { kind: "sending" } | { kind: "sent" } | { kind: "error"; message: string }>({ kind: "idle" });
   const busy = state.kind === "sending";
+  const locked = busy || state.kind === "sent";
+  useEffect(() => {
+    if (!subscribeAttachment) return;
+    return subscribeAttachment((a) => {
+      setAttachment(a);
+      setAttachError(undefined);
+    });
+  }, [subscribeAttachment]);
+  const attach = (file: File) => {
+    fileToAttachment(file).then(
+      (a) => {
+        setAttachment(a);
+        setAttachError(undefined);
+      },
+      (err: unknown) => setAttachError(err instanceof Error ? err.message : String(err)),
+    );
+  };
+  const onPick = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (file) attach(file);
+  };
+  // The window's native drag-drop (see the store) delivers a real screenshot drop in the desktop app;
+  // this DOM handler only ever fires in the browser preview, where a drop is an ordinary File.
+  const onDrop = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) attach(file);
+  };
+  const onDragOver = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOver(true);
+  };
+  const onDragLeave = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOver(false);
+  };
   useEffect(() => {
     if (view !== "form") return;
     const t = window.setTimeout(() => ref.current?.focus({ preventScroll: true }), 60);
@@ -562,12 +627,12 @@ export function FeedbackPopover({
     const t = window.setTimeout(() => close.current(), 1600);
     return () => window.clearTimeout(t);
   }, [state.kind]);
-  const canSend = !!text.trim() && text.length <= FEEDBACK_MAX && !busy && state.kind !== "sent";
+  const canSend = !!text.trim() && text.length <= FEEDBACK_MAX && !locked;
   const send = async () => {
     if (!canSend) return;
     setState({ kind: "sending" });
     try {
-      await onSend(text, email);
+      await onSend(text, email, attachment ?? undefined);
       setState({ kind: "sent" });
     } catch (err) {
       setState({ kind: "error", message: err instanceof Error ? err.message : String(err) });
@@ -625,16 +690,34 @@ export function FeedbackPopover({
               rows={3}
               value={text}
               onChange={(e) => onChangeText(e.target.value)}
-              disabled={busy || state.kind === "sent"}
+              disabled={locked}
               spellCheck
             />
+            <div className={`attach${dragOver ? " drag-over" : ""}`} onDragOver={locked ? undefined : onDragOver} onDragLeave={onDragLeave} onDrop={locked ? undefined : onDrop}>
+              {attachment ? (
+                <div className="attach-chip">
+                  <img src={`data:${attachment.mime};base64,${attachment.data}`} alt="" />
+                  <span className="name">{attachment.name}</span>
+                  {!locked && (
+                    <span className="remove" onClick={() => setAttachment(null)}>
+                      Remove
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <span className="attach-hint" onClick={() => !locked && fileRef.current?.click()}>
+                  Drop a screenshot, or click to attach
+                </span>
+              )}
+              <input ref={fileRef} type="file" accept="image/*" hidden onChange={onPick} disabled={locked} />
+            </div>
             <input
               className="email"
               type="email"
               placeholder="Email, if you'd like a reply (optional)"
               value={email}
               onChange={(e) => onChangeEmail(e.target.value)}
-              disabled={busy || state.kind === "sent"}
+              disabled={locked}
               autoComplete="email"
               spellCheck={false}
             />
@@ -647,6 +730,8 @@ export function FeedbackPopover({
                 </span>
               ) : over ? (
                 <span className="note err">Keep it under {FEEDBACK_MAX.toLocaleString()} characters.</span>
+              ) : attachError ? (
+                <span className="note err">{attachError}</span>
               ) : (
                 <span className="note">Goes to the people who make Nested, as an issue on GitHub.</span>
               )}

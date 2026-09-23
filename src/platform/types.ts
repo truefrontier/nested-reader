@@ -157,6 +157,18 @@ export type Settings = {
 /** The Send feedback box keeps the note this long at most; the relay refuses more. */
 export const FEEDBACK_MAX = 5000;
 
+/** A screenshot attached to a feedback note. `data` is base64, without a `data:` URL prefix. */
+export type Attachment = { name: string; mime: string; data: string };
+
+/** Largest screenshot the Send feedback box will attach, before base64 encoding; the relay refuses more. */
+export const ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024;
+
+const IMAGE_PATH = /\.(png|jpe?g|gif|webp)$/i;
+/** Whether a path dropped on the window looks like a screenshot the feedback box can attach. */
+export function isImagePath(path: string): boolean {
+  return IMAGE_PATH.test(path);
+}
+
 /** Which Mac app opens .md files today, from the desktop backend. */
 export type DefaultApp = {
   /** Display name, e.g. "Typora"; missing when no app is set. */
@@ -348,7 +360,13 @@ export interface Platform {
   /** Asks the OS to make this app the default for .md files; resolves once it has answered, with the new state. */
   setDefaultMarkdownApp(): Promise<DefaultApp>;
   /** Sends a note from the Send feedback box; it is filed as a GitHub issue. Rejects with a sentence to show. */
-  sendFeedback(message: string, email?: string): Promise<void>;
+  sendFeedback(message: string, email?: string, attachment?: Attachment): Promise<void>;
+  /**
+   * Reads a path the window's native drag-drop delivered into a feedback attachment; used because that
+   * drop hands over a file path rather than the browser's own File, unlike click-to-attach. Rejects with
+   * a sentence to show when the path isn't a supported image or is too large.
+   */
+  readDroppedImage(path: string): Promise<Attachment>;
   /** Asks the update server for a newer release. Rejects with a sentence to show. */
   checkForUpdate(): Promise<UpdateCheck>;
   /** Downloads and installs the update the last check found; resolves once it is in place, ready for `relaunch`. */

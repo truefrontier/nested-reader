@@ -1294,6 +1294,42 @@ button {
 .feedback-pop .pop input.email:disabled {
   opacity: 0.6;
 }
+.feedback-pop .attach {
+  border-top: 1px solid var(--hair);
+  padding: 7px 0;
+}
+.feedback-pop .attach-hint {
+  font-size: 12px;
+  color: var(--mute);
+  cursor: pointer;
+}
+.feedback-pop .attach.drag-over .attach-hint {
+  color: var(--acc);
+}
+.feedback-pop .attach-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--mute);
+}
+.feedback-pop .attach-chip img {
+  width: 32px;
+  height: 32px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid var(--hair);
+}
+.feedback-pop .attach-chip .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+.feedback-pop .attach-chip .remove {
+  cursor: pointer;
+  text-decoration: underline;
+}
 .feedback-pop .verbs .note {
   min-width: 0;
   overflow: hidden;

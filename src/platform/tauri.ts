@@ -5,6 +5,7 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   DEFAULT_SETTINGS,
   type AiRequest,
+  type Attachment,
   type Auth,
   type DefaultApp,
   type Page,
@@ -157,7 +158,8 @@ export const tauriPlatform: Platform = {
   defaultMarkdownApp: () => invoke<DefaultApp>("default_markdown_app"),
   setDefaultMarkdownApp: () => invoke<DefaultApp>("set_default_markdown_app"),
 
-  sendFeedback: (message, email) => invoke("send_feedback", { message, email: email?.trim() || null }),
+  sendFeedback: (message, email, attachment) => invoke("send_feedback", { message, email: email?.trim() || null, attachment: attachment ?? null }),
+  readDroppedImage: (path) => invoke<Attachment>("read_dropped_image", { path }),
 
   checkForUpdate: () => invoke<UpdateCheck>("check_for_update"),
 

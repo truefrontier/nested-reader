@@ -180,8 +180,10 @@ export function Home() {
               email={s.ui.feedbackEmail}
               onChangeText={(v) => store.setFeedbackMessage(v)}
               onChangeEmail={(v) => store.setFeedbackEmail(v)}
-              onSend={(message, email) => store.sendFeedback(message, email)}
+              onSend={(message, email, attachment) => store.sendFeedback(message, email, attachment)}
               onEsc={() => store.closePopover()}
+              subscribeAttachment={(h) => store.onFeedbackAttachment(h)}
+>>>>>>> 8e57384 (Add screenshot attachment to Send feedback)
             />
           </div>
         )}

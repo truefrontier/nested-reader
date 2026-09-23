@@ -2,11 +2,13 @@ import { useSyncExternalStore } from "react";
 import {
   DEFAULT_SETTINGS,
   emptySession,
+  isImagePath,
   platform,
   readingWidthCss,
   sidebarWidthPx,
   type AiRequest,
   type Ask,
+  type Attachment,
   type ChatMessage,
   type DefaultApp,
   type PageMeta,
@@ -314,6 +316,8 @@ export class ReaderStore {
 
   private listeners = new Set<() => void>();
   private streams = new Map<string, StreamHandle>();
+  /** Told about a screenshot the window's native drag-drop attached to the open feedback box; see `onFeedbackAttachment`. */
+  private feedbackAttachmentListeners = new Set<(a: Attachment) => void>();
   /** One task chain per page, so work on the same page runs in turn while other pages run alongside. */
   private chains = new Map<string, Promise<void>>();
   /** Lets go of whatever waits on a stream, by stream key, since a cancelled stream sends no last event. */
@@ -399,6 +403,11 @@ export class ReaderStore {
       platform.onDragDrop((e) => {
         if (e.type === "drop") {
           this.setUi({ dragging: false });
+          // With the feedback box open, a dropped screenshot attaches to it instead of trying to open a session.
+          if (this.state.ui.panePopover === "feedback" && e.paths.length === 1 && isImagePath(e.paths[0])) {
+            void this.attachDroppedImage(e.paths[0]);
+            return;
+          }
           void this.openDropped(e.paths);
         } else if (e.type === "leave") {
           if (this.state.ui.dragging) this.setUi({ dragging: false });
@@ -1846,9 +1855,25 @@ export class ReaderStore {
   }
 
   /** Sends the note; the box shows the rejection's message when it fails. The draft is kept until a send succeeds, so it isn't lost if the box closes. */
-  async sendFeedback(message: string, email: string) {
-    await platform.sendFeedback(message, email);
+  async sendFeedback(message: string, email: string, attachment?: Attachment) {
+    await platform.sendFeedback(message, email, attachment);
     this.setUi({ feedbackMessage: "", feedbackEmail: "" });
+  }
+
+  /** A screenshot dropped on the window while the feedback box is open, reported by its path rather than a File. */
+  private async attachDroppedImage(path: string) {
+    try {
+      const attachment = await platform.readDroppedImage(path);
+      this.feedbackAttachmentListeners.forEach((h) => h(attachment));
+    } catch (e) {
+      this.fail(e);
+    }
+  }
+
+  /** Lets the open feedback box hear about a screenshot the window's native drag-drop attached to it. */
+  onFeedbackAttachment(handler: (a: Attachment) => void): () => void {
+    this.feedbackAttachmentListeners.add(handler);
+    return () => this.feedbackAttachmentListeners.delete(handler);
   }
 
   /** Reopens the refine box on the instruction a failed attempt was carrying, and retires its card. */

@@ -27,6 +27,7 @@ keyring = { version = "3", features = ["apple-native"] }
 walkdir = "2"
 chrono = "0.4"
 thiserror = "2"
+base64 = "0.22"
 
 [dev-dependencies]
 tempfile = "3"

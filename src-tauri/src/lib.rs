@@ -309,14 +309,21 @@ fn has_api_key(provider: String) -> Result<bool> {
 
 /// The Send feedback box: posts the note to the relay, which files a GitHub issue.
 #[tauri::command]
-async fn send_feedback(app: AppHandle, message: String, email: Option<String>) -> Result<()> {
+async fn send_feedback(app: AppHandle, message: String, email: Option<String>, attachment: Option<feedback::Attachment>) -> Result<()> {
     let url = feedback::relay_url(feedback::RELAY_URL)?;
-    let payload = feedback::payload(&message, email.as_deref(), &app.package_info().version.to_string())?;
+    let payload = feedback::payload(&message, email.as_deref(), attachment, &app.package_info().version.to_string())?;
     let result = feedback::send(url, &payload).await;
     if result.is_ok() {
         analytics::track_feedback_sent(&app, email.is_some());
     }
     result
+}
+
+/// A screenshot dropped on the window while the feedback box is open, reported by path since the
+/// window's native drag-drop hands over a path rather than a browser `File`.
+#[tauri::command]
+fn read_dropped_image(path: String) -> Result<feedback::Attachment> {
+    feedback::read_attachment(&path)
 }
 
 // ---------- updates ----------
@@ -588,6 +595,7 @@ pub fn run() {
             ai_cancel,
             ai_ping,
             send_feedback,
+            read_dropped_image,
             check_for_update,
             install_update,
             relaunch,
