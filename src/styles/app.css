@@ -1132,6 +1132,9 @@ button {
   margin-top: 5px;
   padding-left: 16px;
 }
+.status-card .acts {
+  margin-top: 8px;
+}
 .card .answer.tool,
 .tool-line {
   display: flex;

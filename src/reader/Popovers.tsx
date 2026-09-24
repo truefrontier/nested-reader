@@ -328,6 +328,7 @@ export function RefineStatus({
   pane,
   onRetry,
   onDismiss,
+  onCancel,
 }: {
   scope: RefineScope;
   text?: string;
@@ -342,6 +343,8 @@ export function RefineStatus({
   pane?: boolean;
   onRetry: () => void;
   onDismiss: () => void;
+  /** ✕ on a card still running: stops it and leaves the page unchanged. */
+  onCancel: () => void;
 }) {
   useEffect(() => {
     if (!error || !hotkey) return;
@@ -376,6 +379,11 @@ export function RefineStatus({
         {!!pagesLeft && <span className="pages-left">{pagesLeft === 1 ? "1 page" : `${pagesLeft} pages`} to go</span>}
       </div>
       {working && <div className="working tool">{working}…</div>}
+      <div className="acts">
+        <span className="r verb esc" onClick={onCancel}>
+          Esc
+        </span>
+      </div>
     </div>
   );
   if (pane) return <div className="pane-pop">{body}</div>;

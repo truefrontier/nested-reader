@@ -21,6 +21,7 @@ import {
   type VersionInfo,
 } from "../platform";
 import { diffBodies, revertChange, type Change, type PageDiff } from "../lib/diff";
+import { unmaskDataUris } from "../lib/dataUris";
 import { findWikiLink, joinBlocks, lexBlocks, linkTextInRaw, replaceFlexible, resolveWikiTarget } from "../lib/markdown";
 import { authFor, modelSlot } from "../lib/models";
 import { serializePage, titleFromBody } from "../lib/frontmatter";
@@ -324,6 +325,8 @@ export class ReaderStore {
   private releases = new Map<string, (err?: unknown) => void>();
   /** Names each refine asked for, so its own card can be found again when it settles. */
   private refineSeq = 0;
+  /** Refines cancelled before their page's turn came up, checked by `runRefine` before it starts. */
+  private cancelledRefines = new Set<string>();
   private saveTimer: number | undefined;
   private writeTimers = new Map<string, number>();
   private initialized = false;
@@ -1713,6 +1716,22 @@ export class ReaderStore {
   }
 
   /**
+   * ✕ (or Esc) on a refine that is still running: stops the page(s) it currently holds the turn
+   * on, and marks it so a page it has only queued behind bails out when its turn comes rather than
+   * running the model and writing over the page. Nothing this refine would have written lands.
+   */
+  cancelRefine(id: string) {
+    const run = this.state.ui.refines[id];
+    if (!run || run.error) return;
+    this.cancelledRefines.add(id);
+    const atWork = refineAtWork(this.state.ui.refines);
+    for (const path of run.pages) if (atWork[path] === id) this.stopStream(`refine:${path}`);
+    const refines = { ...this.state.ui.refines };
+    delete refines[id];
+    this.setUi({ popover: undefined, selection: undefined, panePopover: undefined, refines });
+  }
+
+  /**
    * A failed selection refine's card hangs off the highlight it was asked from, so it goes when that
    * highlight does. Cards for refines still running, and the pane-level ones, are left standing.
    */
@@ -1896,11 +1915,17 @@ export class ReaderStore {
     for (const role of roles) if (ui.versionView[role].history) return this.setVersionView(role, { history: false });
     for (const role of roles) if (ui.versionView[role].viewing !== undefined) return this.backToCurrent(role);
     if (ui.popover || ui.panePopover) return this.closePopover();
-    // A failure card belongs to a page, so this dismisses the one on the page being read.
+    // A refine card belongs to a page, so this answers the one on the page being read: a failure
+    // is dismissed, a run still going is cancelled, and the page is left exactly as it was.
     for (const role of roles) {
       const path = this.panePath(role);
       const failed = path ? this.refinesOn(path).find(([, r]) => r.error) : undefined;
       if (failed) return this.dismissRefine(failed[0]);
+    }
+    for (const role of roles) {
+      const path = this.panePath(role);
+      const running = path ? this.refinesOn(path).find(([, r]) => !r.error) : undefined;
+      if (running) return this.cancelRefine(running[0]);
     }
     const top = this.topLookupId();
     if (top) return this.closeLookup(top);
@@ -2345,7 +2370,7 @@ export class ReaderStore {
     const selection = scope === "selection" ? highlight : undefined;
     const failures = await Promise.all(
       targets.map((path) =>
-        this.refinePage(path, instruction, path === current ? selection : undefined)
+        this.refinePage(id, path, instruction, path === current ? selection : undefined)
           .then(
             () => undefined,
             (e) => (e instanceof Error ? e.message : String(e)),
@@ -2353,6 +2378,7 @@ export class ReaderStore {
           .finally(() => this.pageRefined(id, path)),
       ),
     );
+    this.cancelledRefines.delete(id);
     const message = failures.find((m) => m);
     const held = this.state.ui.refines[id];
     const refines = { ...this.state.ui.refines };
@@ -2384,24 +2410,28 @@ export class ReaderStore {
     return Object.entries(this.state.ui.refines).filter(([, r]) => r.path === path);
   }
 
-  private refinePage(path: string, instruction: string, selection: Selection | undefined): Promise<void> {
+  private refinePage(id: string, path: string, instruction: string, selection: Selection | undefined): Promise<void> {
     // In the page's own turn: a refine asked for during a generation, or behind another refine,
     // waits here and then rewrites the finished body.
-    return this.queue(path, () => this.runRefine(path, instruction, selection));
+    return this.queue(path, () => this.runRefine(id, path, instruction, selection));
   }
 
-  private runRefine(path: string, instruction: string, selection: Selection | undefined): Promise<void> {
+  private runRefine(id: string, path: string, instruction: string, selection: Selection | undefined): Promise<void> {
     const key = `refine:${path}`;
     return new Promise<void>((resolve, reject) => {
       const { finish, watch } = this.settler(key, resolve, reject);
       void (async () => {
+        // Cancelled before its turn came up: no model call, no write, and it does not hold the
+        // page's chain for anyone else waiting behind it.
+        if (this.cancelledRefines.has(id)) return finish();
         if (!this.state.folder) return finish();
         const body = await this.loadBody(path);
         const blocks = lexBlocks(body);
         const target = selection ? selection.text : body;
         const ctx = await this.askContext(selection, undefined, path);
         if (!ctx) return finish();
-        const { system, messages } = refineMessages({ ...ctx, page: { meta: this.state.pages[path], body } }, instruction, selection ? "selection" : "page", target);
+        if (this.cancelledRefines.has(id)) return finish();
+        const { system, messages, mask } = refineMessages({ ...ctx, page: { meta: this.state.pages[path], body } }, instruction, selection ? "selection" : "page", target);
         let out = "";
         this.stream(key, this.request(system, messages, selection ? 800 : 4000, "refine"), {
           delta: (t) => {
@@ -2414,7 +2444,13 @@ export class ReaderStore {
             void (async () => {
               try {
                 let next: string;
-                const cleaned = stripFences(out).trim();
+                const stripped = stripFences(out).trim();
+                // Fails closed: an image reference that comes back unknown, doubled or torn means
+                // the rewrite cannot be trusted, so nothing is written and the original images —
+                // the ones the model was never actually shown — are left exactly as they were.
+                const restored = unmaskDataUris(mask, stripped);
+                if (!restored.ok) throw new Error(`The rewrite ${restored.reason}, so it was left unwritten. The page is unchanged.`);
+                const cleaned = restored.text;
                 if (selection) {
                   // A refine ahead of this one in the page's turn may have reshaped the body since the
                   // highlight was made, so the block it names is only the first place to look.

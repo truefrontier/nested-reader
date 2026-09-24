@@ -9,7 +9,7 @@ use serde_json::Value;
 use std::path::PathBuf;
 use std::process::Stdio;
 use tauri::ipc::Channel;
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
 
 /// Claude Code resolves these aliases to the current model of each tier, cheapest first.
@@ -107,18 +107,30 @@ fn cli_tool_detail(name: &str, input: &Value) -> String {
     }
 }
 
-fn spawn(mut cmd: Command, cwd: Option<&str>) -> Result<Child> {
+fn spawn(mut cmd: Command, cwd: Option<&str>, stdin: Stdio) -> Result<Child> {
     Ok(cmd
         .current_dir(cwd.map(PathBuf::from).unwrap_or_else(neutral_cwd))
-        .stdin(Stdio::null())
+        .stdin(stdin)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true)
         .spawn()?)
 }
 
+/// Writes `prompt` to the child's stdin and closes it, off to one side of reading stdout: a prompt
+/// this large (a page's worth of embedded images can run past argv's `ARG_MAX`) would otherwise
+/// deadlock against a child that starts answering before it has finished reading its input.
+fn feed_stdin(child: &mut Child, prompt: String) {
+    let Some(mut stdin) = child.stdin.take() else { return };
+    tokio::spawn(async move {
+        let _ = stdin.write_all(prompt.as_bytes()).await;
+    });
+}
+
 /// Feeds each JSON line of stdout to `on_line` until it returns `false` or the process ends.
-/// Returns whether the process exited cleanly, plus everything it wrote to stderr.
+/// Returns whether the process exited cleanly, plus everything it wrote to stderr. Cancellation is
+/// raced against the stdout read, not just checked between lines, so a child that has gone quiet
+/// (stalled, or streaming too slowly to matter) is killed as soon as it is asked to stop.
 async fn run_lines<F>(mut child: Child, cancel: &CancelToken, mut on_line: F) -> Result<(bool, String)>
 where
     F: FnMut(&Value) -> Result<bool>,
@@ -135,10 +147,10 @@ where
     let mut lines = BufReader::new(stdout).lines();
     loop {
         let line = tokio::select! {
-            line = lines.next_line() => line?,
+line = lines.next_line() => line?,
             // Races the read so a child that has gone quiet (a stalled tool call, a hung
             // subscription CLI) is killed as soon as the caller cancels, rather than lingering
-            // until it next writes a line.
+            // until it next writes a line. Prefer CancelToken::cancelled() (Notify) over polling.
             _ = cancel.cancelled() => {
                 let _ = child.kill().await;
                 return Ok((true, String::new()));
@@ -200,23 +212,45 @@ pub async fn stream_claude(req: &AiRequest, channel: &Channel<StreamEvent>, canc
     if let Some(sys) = &system {
         cmd.args(["--system-prompt", sys]);
     }
-    cmd.arg(transcript(req));
-    let child = spawn(cmd, None)?;
+    // The prompt goes on stdin, not argv: a page with embedded images can be most of a megabyte,
+    // and macOS's ARG_MAX is only around that. `feed_stdin` writes it off to one side of the
+    // read loop below, so a long prompt cannot deadlock against a child that starts answering
+    // before it has finished reading its input.
+    let mut child = spawn(cmd, None, Stdio::piped())?;
+    feed_stdin(&mut child, transcript(req));
     let mut streamed = false;
     let mut failure: Option<String> = None;
+    let mut stop_reason: Option<String> = None;
+    let mut total_len = 0usize;
+    let mut budget_exceeded = false;
+    // The CLI has no `--max-tokens`, so nothing stops a runaway answer on its own — the failure
+    // mode that sent a whole-page refine into a seven-minute run of hallucinated base64. This is
+    // a blunt, app-side backstop: a rough chars-per-token estimate, generous enough not to cut off
+    // a real answer, that kills the child rather than waiting for it to finish on its own.
+    let budget_chars = req.max_tokens.map(|t| t as usize * 8).unwrap_or(32_000);
     let (ok, stderr) = run_lines(child, cancel, |v| {
         match v["type"].as_str() {
             Some("stream_event") => {
                 if v["event"]["delta"]["type"] == "text_delta" {
                     if let Some(t) = v["event"]["delta"]["text"].as_str() {
                         streamed = true;
+                        total_len += t.len();
                         let _ = channel.send(StreamEvent::Delta { text: t.to_string() });
+                        if total_len > budget_chars {
+                            budget_exceeded = true;
+                            cancel.cancel();
+                        }
                     }
+                } else if let Some(r) = v["event"]["delta"]["stop_reason"].as_str() {
+                    stop_reason = Some(r.to_string());
                 }
             }
             // Each finished assistant turn arrives whole: its tool calls tell the UI what the
             // model is reading, and a CLI without partial messages gives its text here too.
             Some("assistant") => {
+                if let Some(r) = v["message"]["stop_reason"].as_str() {
+                    stop_reason = Some(r.to_string());
+                }
                 if let Some(blocks) = v["message"]["content"].as_array() {
                     for b in blocks {
                         match (b["type"].as_str(), b["text"].as_str()) {
@@ -251,7 +285,14 @@ pub async fn stream_claude(req: &AiRequest, channel: &Channel<StreamEvent>, canc
     if let Some(f) = failure {
         return Err(AppError::Message(f));
     }
-    if !ok && !streamed {
+    // Cut off by the budget above, or by the model's own ceiling: either way this is half an
+    // answer, and `ai::stream` will refuse to let it overwrite a page.
+    if budget_exceeded || stop_reason.as_deref() == Some("max_tokens") {
+        return Ok(true);
+    }
+    // A non-zero exit is a failure even if some text streamed first: a killed or crashed child
+    // leaves a partial answer that must not be mistaken for a finished one.
+    if !ok {
         return Err(AppError::Message(last_line(&stderr).unwrap_or_else(|| "Claude Code exited with an error".into())));
     }
     Ok(false)
@@ -292,7 +333,7 @@ pub async fn stream_codex(req: &AiRequest, channel: &Channel<StreamEvent>, cance
     cmd.arg(prompt);
     // With the folder as its working directory, Codex's read-only sandbox lets it look at the
     // pages with its own shell; from the neutral folder it has nothing to read.
-    let child = spawn(cmd, req.folder.as_deref())?;
+    let child = spawn(cmd, req.folder.as_deref(), Stdio::null())?;
     let mut sent = false;
     let mut failure: Option<String> = None;
     let (ok, stderr) = run_lines(child, cancel, |v| {
