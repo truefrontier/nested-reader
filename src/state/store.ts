@@ -142,6 +142,8 @@ export type RefineRun = {
 export type UiState = {
   selection?: Selection;
   popover?: Popover;
+  /** Which mode ⌘R last left the highlight popover in, kept after it closes so the next highlight opens the same way. */
+  lastPopoverMode: Popover;
   panePopover?: PanePopover;
   /** The answer cards on show, by `lookupId`, so several quick asks can stream at once. */
   lookups: Record<string, Lookup>;
@@ -241,6 +243,7 @@ const closedVersionView: VersionView = { history: false, confirmRestore: false }
 
 const initialUi: UiState = {
   lookups: {},
+  lastPopoverMode: "ask",
   versionView: { main: closedVersionView, split: closedVersionView },
   refines: {},
   fullscreen: false,
@@ -1093,6 +1096,7 @@ export class ReaderStore {
         versionView: { ...initialUi.versionView, split: ui.versionView.split },
         lookups,
         refines: ui.refines,
+        lastPopoverMode: ui.lastPopoverMode,
       });
       await this.refreshVersions(path);
       await this.refreshReview(path);
@@ -1644,8 +1648,13 @@ export class ReaderStore {
 
   /** The page calls this with the current match once it is on screen. The refine box stays if that is what was open. */
   selectMatch(selection: Selection) {
-    const popover = this.state.ui.popover === "refine" ? "refine" : "ask";
-    this.setUi({ selection, popover, panePopover: undefined, versionView: this.closedMenus(), ...this.withoutSelectionFailure(this.panePath(selection.pane)) });
+    this.setUi({
+      selection,
+      popover: this.state.ui.lastPopoverMode,
+      panePopover: undefined,
+      versionView: this.closedMenus(),
+      ...this.withoutSelectionFailure(this.panePath(selection.pane)),
+    });
   }
 
   openMap(kind: "web" | "timeline") {
@@ -1664,10 +1673,10 @@ export class ReaderStore {
       return;
     }
     // The cards keep streaming; only the one peeked at from hover gives way to a fresh highlight.
-    // Sticky like selectMatch: a fresh highlight keeps the refine box open if that is what was open.
+    // Sticky: a fresh highlight opens in whichever mode ⌘R was last left in, ask or refine.
     this.setUi({
       selection,
-      popover: this.state.ui.popover === "refine" ? "refine" : "ask",
+      popover: this.state.ui.lastPopoverMode,
       panePopover: undefined,
       lookups: this.withoutPeek(),
       versionView: this.closedMenus(),
@@ -1799,11 +1808,11 @@ export class ReaderStore {
 
   toggleRefine() {
     const ui = this.state.ui;
-    if (ui.selection && ui.popover === "ask") return this.setUi({ popover: "refine" });
-    if (ui.popover === "refine") return this.setUi({ popover: "ask" });
+    if (ui.selection && ui.popover === "ask") return this.setUi({ popover: "refine", lastPopoverMode: "refine" });
+    if (ui.popover === "refine") return this.setUi({ popover: "ask", lastPopoverMode: "ask" });
     // The refine box takes the place of the card on this highlight; cards on other blocks stay.
     const id = ui.selection ? lookupId(ui.selection.pane, ui.selection.block) : undefined;
-    if (id && ui.lookups[id]) return this.setUi({ popover: "refine", lookups: this.closedLookups([id]) });
+    if (id && ui.lookups[id]) return this.setUi({ popover: "refine", lastPopoverMode: "refine", lookups: this.closedLookups([id]) });
     // Opened by hand rather than by Try again, so the box starts empty.
     this.setUi({ panePopover: ui.panePopover === "refine" ? undefined : "refine", popover: undefined, selection: undefined, refineRetry: undefined });
   }

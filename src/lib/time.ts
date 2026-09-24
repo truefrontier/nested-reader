@@ -1,4 +1,6 @@
 const DAY = 86_400_000;
+const HOUR = 3_600_000;
+const MINUTE = 60_000;
 
 function sameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
@@ -11,14 +13,21 @@ function hhmm(d: Date): string {
   return `${h12}:${m}`;
 }
 
-/** Short relative label in the register of the design: "now", "9:20", "yesterday", "Tue 9:12", "Sep 3". */
+/** Short relative label in the register of the design: "now", "2m", "3h", "yesterday", "Tue 9:12", "Sep 3". */
 export function relTime(iso: string | undefined, now = new Date(), style: "short" | "long" = "short"): string {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
   const diff = now.getTime() - d.getTime();
-  if (diff < 60_000) return style === "long" ? "just now" : "now";
-  if (sameDay(d, now)) return hhmm(d);
+  if (diff < MINUTE) return style === "long" ? "just now" : "now";
+  if (diff < HOUR) {
+    const m = Math.floor(diff / MINUTE);
+    return style === "long" ? `${m}m ago` : `${m}m`;
+  }
+  if (diff < DAY) {
+    const h = Math.floor(diff / HOUR);
+    return style === "long" ? `${h}h ago` : `${h}h`;
+  }
   const yesterday = new Date(now.getTime() - DAY);
   if (sameDay(d, yesterday)) return "yesterday";
   if (diff < 6 * DAY) {
