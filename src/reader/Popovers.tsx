@@ -526,11 +526,24 @@ export function FailedCard({ title, error, hotkey, onRetry }: { title: string; e
 /**
  * The Send feedback box, opened from the link at the bottom of the sidebar. The note goes to the
  * relay as a GitHub issue; the email is optional and only for a reply. ↵ makes a new line, ⌘↵ sends.
+ * The draft text lives in the store, not local state, so it survives the box being hidden and reopened.
  */
-export function FeedbackPopover({ onSend, onEsc }: { onSend: (message: string, email: string) => Promise<void>; onEsc: () => void }) {
+export function FeedbackPopover({
+  text,
+  email,
+  onChangeText,
+  onChangeEmail,
+  onSend,
+  onEsc,
+}: {
+  text: string;
+  email: string;
+  onChangeText: (v: string) => void;
+  onChangeEmail: (v: string) => void;
+  onSend: (message: string, email: string) => Promise<void>;
+  onEsc: () => void;
+}) {
   const ref = useRef<HTMLTextAreaElement>(null);
-  const [text, setText] = useState("");
-  const [email, setEmail] = useState("");
   // ⌘R swaps the form for a quick look at what's new, in place; it doesn't touch the note being typed.
   const [view, setView] = useState<"form" | "notes">("form");
   const [state, setState] = useState<{ kind: "idle" } | { kind: "sending" } | { kind: "sent" } | { kind: "error"; message: string }>({ kind: "idle" });
@@ -611,7 +624,7 @@ export function FeedbackPopover({ onSend, onEsc }: { onSend: (message: string, e
               placeholder="What's working, what isn't, what you wish it did…"
               rows={3}
               value={text}
-              onChange={(e) => setText(e.target.value)}
+              onChange={(e) => onChangeText(e.target.value)}
               disabled={busy || state.kind === "sent"}
               spellCheck
             />
@@ -620,7 +633,7 @@ export function FeedbackPopover({ onSend, onEsc }: { onSend: (message: string, e
               type="email"
               placeholder="Email, if you'd like a reply (optional)"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => onChangeEmail(e.target.value)}
               disabled={busy || state.kind === "sent"}
               autoComplete="email"
               spellCheck={false}

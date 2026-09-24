@@ -165,6 +165,9 @@ export type UiState = {
   refines: Record<string, RefineRun>;
   /** The instruction Try again reopened the pane refine box with. */
   refineRetry?: string;
+  /** The Send feedback box's draft, kept here so it survives the popover being hidden; cleared only once the note sends. */
+  feedbackMessage: string;
+  feedbackEmail: string;
   error?: string;
   /** Something is being dragged over the window. */
   dragging: boolean;
@@ -258,6 +261,8 @@ const initialUi: UiState = {
   findFocus: 0,
   findSelect: 0,
   filterFocus: 0,
+  feedbackMessage: "",
+  feedbackEmail: "",
 };
 
 /** What the OS can hand the app that it cannot open. */
@@ -1097,6 +1102,8 @@ export class ReaderStore {
         lookups,
         refines: ui.refines,
         lastPopoverMode: ui.lastPopoverMode,
+        feedbackMessage: ui.feedbackMessage,
+        feedbackEmail: ui.feedbackEmail,
       });
       await this.refreshVersions(path);
       await this.refreshReview(path);
@@ -1830,9 +1837,18 @@ export class ReaderStore {
     this.setUi({ panePopover: ui.panePopover === "feedback" ? undefined : "feedback", popover: undefined, selection: undefined, lookups: this.withoutPeek() });
   }
 
-  /** Sends the note; the box shows the rejection's message when it fails. */
-  sendFeedback(message: string, email: string) {
-    return platform.sendFeedback(message, email);
+  setFeedbackMessage(message: string) {
+    this.setUi({ feedbackMessage: message });
+  }
+
+  setFeedbackEmail(email: string) {
+    this.setUi({ feedbackEmail: email });
+  }
+
+  /** Sends the note; the box shows the rejection's message when it fails. The draft is kept until a send succeeds, so it isn't lost if the box closes. */
+  async sendFeedback(message: string, email: string) {
+    await platform.sendFeedback(message, email);
+    this.setUi({ feedbackMessage: "", feedbackEmail: "" });
   }
 
   /** Reopens the refine box on the instruction a failed attempt was carrying, and retires its card. */

@@ -175,7 +175,14 @@ export function Home() {
         </div>
         {s.ui.panePopover === "feedback" && (
           <div className="pane-stack">
-            <FeedbackPopover onSend={(message, email) => store.sendFeedback(message, email)} onEsc={() => store.closePopover()} />
+            <FeedbackPopover
+              text={s.ui.feedbackMessage}
+              email={s.ui.feedbackEmail}
+              onChangeText={(v) => store.setFeedbackMessage(v)}
+              onChangeEmail={(v) => store.setFeedbackEmail(v)}
+              onSend={(message, email) => store.sendFeedback(message, email)}
+              onEsc={() => store.closePopover()}
+            />
           </div>
         )}
       </div>

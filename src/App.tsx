@@ -188,7 +188,16 @@ export default function App() {
                     />
                   ))}
                   {paneBox === "new" && current && <NewFilePopover onSubmit={(text, verb, alt) => void store.newFile(text, verb, alt)} onEsc={() => store.closePopover()} />}
-                  {paneBox === "feedback" && <FeedbackPopover onSend={(message, email) => store.sendFeedback(message, email)} onEsc={() => store.closePopover()} />}
+                  {paneBox === "feedback" && (
+                    <FeedbackPopover
+                      text={s.ui.feedbackMessage}
+                      email={s.ui.feedbackEmail}
+                      onChangeText={(v) => store.setFeedbackMessage(v)}
+                      onChangeEmail={(v) => store.setFeedbackEmail(v)}
+                      onSend={(message, email) => store.sendFeedback(message, email)}
+                      onEsc={() => store.closePopover()}
+                    />
+                  )}
                   {paneBox === "refine" && current && (
                     <RefinePopover
                       pane
