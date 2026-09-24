@@ -3,6 +3,7 @@ import { lookupId, refineToRetry, refineWorking, store, useReader, type PaneRole
 import type { Ask } from "../platform";
 import { flexiblePattern, isStubBody, lexBlocks, resolveWikiTarget, type Block } from "../lib/markdown";
 import { diffBodies, type Change, type PageDiff } from "../lib/diff";
+import { renderMermaid } from "../lib/mermaid";
 import { applyWraps, rangeOffsets, type Wrap } from "../lib/wraps";
 import { AnswerCard, AskPopover, BeforeCard, FailedCard, NowCard, RefinePopover, RefineStatus, SKELETON_FADE_MS, Skeleton } from "./Popovers";
 import { TopStrip } from "./TopStrip";
@@ -67,6 +68,22 @@ function BlockView({ html, wraps, className, index, linkState }: { html: string;
     for (const a of Array.from(el.querySelectorAll<HTMLAnchorElement>("a.wl"))) {
       a.dataset.state = linkState(a.dataset.target ?? "");
     }
+    let cancelled = false;
+    for (const diagram of Array.from(el.querySelectorAll<HTMLElement>(".mermaid-block"))) {
+      const source = diagram.querySelector("code")?.textContent ?? "";
+      if (!source.trim()) continue;
+      void renderMermaid(source).then((svg) => {
+        if (cancelled || !svg) return;
+        const holder = document.createElement("div");
+        holder.className = "mermaid-svg";
+        holder.innerHTML = svg;
+        diagram.appendChild(holder);
+        diagram.dataset.rendered = "true";
+      });
+    }
+    return () => {
+      cancelled = true;
+    };
   }, [html, wraps, linkState]);
   return <div ref={ref} className={className} data-index={index} />;
 }

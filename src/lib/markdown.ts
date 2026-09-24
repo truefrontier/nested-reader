@@ -19,6 +19,15 @@ function escapeHtml(s: string): string {
 marked.use({
   gfm: true,
   breaks: false,
+  renderer: {
+    code(token: Tokens.Code) {
+      const lang = (token.lang ?? "").trim().split(/\s+/)[0]?.toLowerCase();
+      if (lang !== "mermaid") return false;
+      // The source stays as inert text (hidden once a diagram renders) so diffing and the no-JS
+      // fallback both see the same plain markdown source that `renderMermaid` reads in the reader.
+      return `<div class="mermaid-block"><pre class="mermaid-source"><code class="language-mermaid">${escapeHtml(token.text)}</code></pre></div>`;
+    },
+  },
   extensions: [
     {
       name: "wikilink",
