@@ -1,5 +1,6 @@
 import { version as APP_VERSION } from "../../package.json";
 import {
+  ATTACHMENT_MAX_BYTES,
   DEFAULT_SETTINGS,
   type AiRequest,
   type Page,
@@ -34,6 +35,17 @@ let markdownApp = "TextEdit";
 const keys = new Map<Provider, string>();
 const failedOnce = new Set<string>();
 const settingsListeners = new Set<(s: Settings) => void>();
+/** Screenshots dropped on the window, held by the fake path handed back through `onDragDrop` until `readDroppedImage` claims them. */
+const droppedImages = new Map<string, File>();
+const DROPPED_IMAGE_PREFIX = "__attachment__/";
+
+async function base64OfFile(file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  return btoa(binary);
+}
 
 const t0 = Date.now();
 const stamps: Record<string, number> = {
@@ -359,10 +371,10 @@ export const mockPlatform: Platform = {
   },
 
   /** No relay in the browser: the note is logged. A note starting with "fail:" is refused, to try the error state. */
-  async sendFeedback(message, email) {
+  async sendFeedback(message, email, attachment) {
     await new Promise((r) => setTimeout(r, 500));
     if (/^fail:/i.test(message.trim())) throw new Error("The feedback server refused the note (502).");
-    console.info("[feedback]", { message, email });
+    console.info("[feedback]", { message, email, attachment: attachment && { name: attachment.name, mime: attachment.mime, bytes: attachment.data.length } });
   },
 
   /** No release server in the browser. `?update` in the URL pretends one is out; `?update=fail` makes the install fail part way. */
@@ -410,10 +422,17 @@ export const mockPlatform: Platform = {
       void (async () => {
         const paths: string[] = [];
         for (const f of Array.from(e.dataTransfer?.files ?? [])) {
-          if (!MARKDOWN.test(f.name)) continue;
-          const now = new Date().toISOString();
-          files.set(f.name, { raw: await f.text(), modified: now, created: now });
-          paths.push(`${SAMPLE_FOLDER}/${f.name}`);
+          if (MARKDOWN.test(f.name)) {
+            const now = new Date().toISOString();
+            files.set(f.name, { raw: await f.text(), modified: now, created: now });
+            paths.push(`${SAMPLE_FOLDER}/${f.name}`);
+          } else if (f.type.startsWith("image/")) {
+            // Kept by a fake path, like the paths a native drop hands the real backend, so `readDroppedImage`
+            // can stand in for it without the browser exposing a real filesystem path.
+            const path = `${DROPPED_IMAGE_PREFIX}${Date.now()}-${f.name}`;
+            droppedImages.set(path, f);
+            paths.push(path);
+          }
         }
         handler({ type: "drop", paths });
       })();
@@ -426,6 +445,15 @@ export const mockPlatform: Platform = {
       window.removeEventListener("dragleave", leave);
       window.removeEventListener("drop", drop);
     };
+  },
+
+  async readDroppedImage(path) {
+    const file = droppedImages.get(path);
+    droppedImages.delete(path);
+    if (!file) throw new Error("Couldn't read that file.");
+    if (!file.type.startsWith("image/")) throw new Error("Drop a screenshot (PNG, JPEG, GIF or WebP).");
+    if (file.size > ATTACHMENT_MAX_BYTES) throw new Error("Keep the screenshot under 5 MB.");
+    return { name: file.name, mime: file.type, data: await base64OfFile(file) };
   },
 };
 

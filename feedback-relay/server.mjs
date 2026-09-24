@@ -6,6 +6,7 @@ const env = {
   GITHUB_TOKEN: process.env.GITHUB_TOKEN,
   GITHUB_REPO: process.env.GITHUB_REPO || "truefrontier/nested-reader",
   LABEL: process.env.LABEL || "feedback",
+  ATTACHMENTS_BRANCH: process.env.ATTACHMENTS_BRANCH,
 };
 
 const server = createServer(async (req, res) => {

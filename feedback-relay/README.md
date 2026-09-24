@@ -15,7 +15,7 @@ npx wrangler deploy
 npx wrangler secret put GITHUB_TOKEN
 ```
 
-The token is a [fine-grained personal access token](https://github.com/settings/personal-access-tokens/new) scoped to this one repository with **Issues: Read and write** and **Contents: Read** (releases count as contents). Nothing else. Issues are filed under the account that made the token.
+The token is a [fine-grained personal access token](https://github.com/settings/personal-access-tokens/new) scoped to this one repository with **Issues: Read and write** and **Contents: Read and write** (releases count as contents; write lets a feedback screenshot be committed to its own `feedback-attachments` branch). Nothing else. Issues are filed under the account that made the token.
 
 `wrangler deploy` prints the worker's URL. Put it in `src-tauri/.cargo/config.toml` as `NESTED_FEEDBACK_URL` and rebuild the app; until then the box in the app says feedback is not set up in this build.
 
@@ -54,10 +54,17 @@ curl -I "$NESTED_FEEDBACK_URL/updates/dmg"
 `POST` with a JSON body:
 
 ```json
-{ "message": "The tree loses my place when…", "email": "me@example.com", "app": { "version": "0.1.0", "os": "macos", "arch": "aarch64" } }
+{
+  "message": "The tree loses my place when…",
+  "email": "me@example.com",
+  "attachment": { "name": "shot.png", "mime": "image/png", "data": "<base64>" },
+  "app": { "version": "0.1.0", "os": "macos", "arch": "aarch64" }
+}
 ```
 
-`email` and `app` are optional. The note becomes the issue body (quoted), the first line its title, and the contact line carries the email when one was given, so a reply can go back to the person. The repository is private, so the email is seen only by its collaborators. Notes over 5000 characters and malformed emails are refused with a plain-text reason the app shows as is.
+`email`, `attachment` and `app` are optional. The note becomes the issue body (quoted), the first line its title, and the contact line carries the email when one was given, so a reply can go back to the person. The repository is private, so the email is seen only by its collaborators. Notes over 5000 characters and malformed emails are refused with a plain-text reason the app shows as is.
+
+A screenshot (`attachment`, PNG/JPEG/GIF/WebP, up to 5 MB, base64 in `data` without a `data:` prefix) is committed to a `feedback-attachments` branch of its own, created from the default branch the first time one is needed, and embedded in the issue by its raw URL. Uploading it costs a few extra GitHub API calls; if that upload fails, the note is still filed, just without the picture.
 
 Try it:
 
