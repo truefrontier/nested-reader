@@ -1,6 +1,6 @@
 [package]
 name = "nested"
-version = "0.2.14"
+version = "0.2.15"
 description = "A calm research reader for Markdown notes"
 authors = ["True Frontier"]
 edition = "2021"
