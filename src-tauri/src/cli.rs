@@ -133,11 +133,18 @@ where
         s
     });
     let mut lines = BufReader::new(stdout).lines();
-    while let Some(line) = lines.next_line().await? {
-        if cancel.is_cancelled() {
-            let _ = child.kill().await;
-            return Ok((true, String::new()));
-        }
+    loop {
+        let line = tokio::select! {
+            line = lines.next_line() => line?,
+            // Races the read so a child that has gone quiet (a stalled tool call, a hung
+            // subscription CLI) is killed as soon as the caller cancels, rather than lingering
+            // until it next writes a line.
+            _ = cancel.cancelled() => {
+                let _ = child.kill().await;
+                return Ok((true, String::new()));
+            }
+        };
+        let Some(line) = line else { break };
         let v: Value = match serde_json::from_str(line.trim()) {
             Ok(v) => v,
             Err(_) => continue,

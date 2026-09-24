@@ -606,6 +606,16 @@ pub fn run() {
                     let paths = urls.iter().filter_map(|u| u.to_file_path().ok()).map(|p| p.to_string_lossy().into_owned()).collect();
                     open_paths(app, paths);
                 }
+                // Cancel any AI stream still running (a Claude/Codex CLI child, or an HTTP
+                // stream) so its reader task stops and its child is killed before the process
+                // dies, instead of racing wry/WKWebView teardown on the way out.
+                tauri::RunEvent::ExitRequested { .. } => {
+                    let streams = app.state::<Streams>();
+                    let tokens: Vec<CancelToken> = streams.0.lock().unwrap().drain().map(|(_, t)| t).collect();
+                    for t in tokens {
+                        t.cancel();
+                    }
+                }
                 _ => {}
             }
             #[cfg(not(target_os = "macos"))]
