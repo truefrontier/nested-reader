@@ -197,7 +197,6 @@ export default function App() {
                       onSend={(message, email, attachment) => store.sendFeedback(message, email, attachment)}
                       onEsc={() => store.closePopover()}
                       subscribeAttachment={(h) => store.onFeedbackAttachment(h)}
->>>>>>> 8e57384 (Add screenshot attachment to Send feedback)
                     />
                   )}
                   {paneBox === "refine" && current && (
