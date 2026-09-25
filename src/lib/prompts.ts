@@ -1,4 +1,5 @@
 import type { ChatMessage, PageMeta, Settings } from "../platform/types";
+import { createDataUriMask, maskDataUris, type DataUriMask } from "./dataUris";
 import { queryTerms, rankByRelevance } from "./rank";
 import { sessionMapForPrompt, type SummaryCache } from "./sessionmap";
 
@@ -50,11 +51,14 @@ function clip(s: string, max: number): string {
  * Session pages keep their own order. Nearest-first says something ranking does not — how the
  * session was actually built — and overruling it with word counts would throw that away.
  */
-function contextBlock(ctx: AskContext, query = ""): string {
+function contextBlock(ctx: AskContext, query: string, mask: DataUriMask): string {
   const parts: string[] = [];
   let used = 0;
   const push = (label: string, text: string, max: number, ceiling = BUDGET) => {
-    const t = clip(text.trim(), max);
+    // Masked before it is clipped: a page carrying embedded images is mostly opaque base64, and
+    // clipping that first would spend the whole budget on a truncated image instead of the text
+    // around it.
+    const t = clip(maskDataUris(mask, text.trim()), max);
     if (!t) return;
     if (used + t.length > ceiling) return;
     used += t.length;
@@ -97,7 +101,9 @@ export function quickAnswerMessages(ctx: AskContext, question: string): { system
   const system = `You are the research assistant inside a markdown reader. Answer the reader's question about the highlighted text in two to four sentences. ${VOICE} Return plain prose, no headings, no lists.${tools(ctx)}`;
   const messages: ChatMessage[] = [];
   const thread = ctx.thread ?? [];
-  const base = contextBlock(ctx, `${question} ${ctx.selection ?? ""}`);
+  // An ask never echoes the page back, so the mask here is one-way: it keeps embedded images from
+  // burning the context budget and confusing the model, and nothing needs to restore them.
+  const base = contextBlock(ctx, `${question} ${ctx.selection ?? ""}`, createDataUriMask());
   if (thread.length === 0) {
     messages.push({ role: "user", content: `${base}\n\nQuestion: ${question || `Explain: ${ctx.selection ?? ctx.page.meta.title}`}` });
   } else {
@@ -116,7 +122,8 @@ export function newPageMessages(ctx: AskContext, question: string, deep: boolean
   const length = deep ? "six to nine paragraphs, going deeper into mechanism, evidence and open questions" : "three to five paragraphs";
   const system = `You are the research assistant inside a markdown reader. Write a short wiki-style page in Markdown that answers the reader's question about the highlighted text. Start with a level-1 heading that restates the question as a short title, then ${length}. ${VOICE} Use plain paragraphs; a short list only if the content is genuinely a list. Return only the Markdown.${tools(ctx)}`;
   const q = question || `Go deeper on: ${ctx.selection ?? ctx.page.meta.title}`;
-  return { system, messages: [{ role: "user", content: `${contextBlock(ctx, `${q} ${ctx.selection ?? ""}`)}\n\nQuestion: ${q}` }] };
+  const context = contextBlock(ctx, `${q} ${ctx.selection ?? ""}`, createDataUriMask());
+  return { system, messages: [{ role: "user", content: `${context}\n\nQuestion: ${q}` }] };
 }
 
 /**
@@ -126,7 +133,7 @@ export function newPageMessages(ctx: AskContext, question: string, deep: boolean
 export function newFileMessages(ctx: AskContext, brief: string, deep: boolean): { system: string; messages: ChatMessage[] } {
   const length = deep ? "six to nine paragraphs, going deeper into mechanism, evidence and open questions" : "three to five paragraphs";
   const system = `You are the research assistant inside a markdown reader. The reader is adding a new page to a research session and has described what it should cover. Write that page in Markdown, drawing on the session pages given as context and staying consistent with them. Start with a level-1 heading that gives the page a short title, then ${length}. ${VOICE} Use plain paragraphs; a short list only if the content is genuinely a list. Return only the Markdown.${tools(ctx)}`;
-  const context = contextBlock({ ...ctx, selection: undefined, paragraph: undefined }, brief);
+  const context = contextBlock({ ...ctx, selection: undefined, paragraph: undefined }, brief, createDataUriMask());
   return { system, messages: [{ role: "user", content: `${context}\n\nNew page: ${brief}` }] };
 }
 
@@ -137,16 +144,19 @@ export function refineMessages(
   instruction: string,
   scope: RefineScope,
   text: string,
-): { system: string; messages: ChatMessage[] } {
+): { system: string; messages: ChatMessage[]; mask: DataUriMask } {
   const what =
     scope === "selection"
       ? "Rewrite only the passage below. It is a fragment of a paragraph; return the replacement fragment with no surrounding text."
       : "Rewrite the Markdown page below. Keep its structure, headings and links unless the instruction says otherwise.";
   const system = `You are editing a markdown page in a research reader. ${what} Change as little as the instruction requires and keep everything else word for word. ${VOICE} Return only the rewritten text, with no commentary, no code fences.${tools(ctx)}`;
   const query = `${instruction} ${scope === "selection" ? ctx.selection ?? "" : ctx.page.meta.title}`;
-  const context = scope === "selection" ? contextBlock(ctx, query) : ctx.settings.context.session ? contextBlock({ ...ctx, page: { ...ctx.page, body: "" } }, query) : "";
-  const user = `${context ? context + "\n\n" : ""}Instruction: ${instruction}\n\nText to rewrite:\n${text}`;
-  return { system, messages: [{ role: "user", content: user }] };
+  // One mask for the whole prompt, context and target alike, so the same sentinel a page's own
+  // context carries for an image is the one the rewrite is expected to hand back unchanged.
+  const mask = createDataUriMask();
+  const context = scope === "selection" ? contextBlock(ctx, query, mask) : ctx.settings.context.session ? contextBlock({ ...ctx, page: { ...ctx.page, body: "" } }, query, mask) : "";
+  const user = `${context ? context + "\n\n" : ""}Instruction: ${instruction}\n\nText to rewrite:\n${maskDataUris(mask, text)}`;
+  return { system, messages: [{ role: "user", content: user }], mask };
 }
 
 /**

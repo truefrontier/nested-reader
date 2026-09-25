@@ -498,6 +498,7 @@ export function Page({ path, role }: Props) {
           caretLeft={selection.caretX}
           onRetry={() => store.retryRefine(id)}
           onDismiss={() => store.dismissRefine(id)}
+          onCancel={() => store.cancelRefine(id)}
         />,
       );
     }

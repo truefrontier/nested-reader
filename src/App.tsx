@@ -185,6 +185,7 @@ export default function App() {
                       hotkey={hotkey}
                       onRetry={() => store.retryRefine(id)}
                       onDismiss={() => store.dismissRefine(id)}
+                      onCancel={() => store.cancelRefine(id)}
                     />
                   ))}
                   {paneBox === "new" && current && <NewFilePopover onSubmit={(text, verb, alt) => void store.newFile(text, verb, alt)} onEsc={() => store.closePopover()} />}
