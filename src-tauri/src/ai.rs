@@ -143,12 +143,15 @@ pub async fn stream(req: AiRequest, channel: Channel<StreamEvent>, cancel: Cance
         )),
         (other, _) => Err(AppError::Message(format!("Unknown provider: {other}"))),
     };
-    match result {
-        Ok(truncated) => {
-            let _ = channel.send(StreamEvent::Done { truncated });
-        }
-        Err(e) => {
-            if !cancel.is_cancelled() {
+    // A cancelled stream (the UI moved on, or the app is quitting) must not push any more IPC
+    // events: on quit in particular, the webview may already be tearing down, and sending into
+    // it then is a likely cause of the "closed unexpectedly" crash report on macOS.
+    if !cancel.is_cancelled() {
+        match result {
+            Ok(truncated) => {
+                let _ = channel.send(StreamEvent::Done { truncated });
+            }
+            Err(e) => {
                 let _ = channel.send(StreamEvent::Error { message: e.to_string() });
             }
         }
@@ -178,11 +181,16 @@ where
 {
     let mut body = resp.bytes_stream();
     let mut buf = String::new();
-    while let Some(chunk) = body.next().await {
-        if cancel.is_cancelled() {
-            return Ok(());
-        }
-        let chunk = chunk?;
+    loop {
+        let chunk = tokio::select! {
+            chunk = body.next() => match chunk {
+                Some(c) => c?,
+                None => return Ok(()),
+            },
+            // Races the read so a connection gone quiet is dropped as soon as the caller
+            // cancels, rather than waiting for the next chunk or the read timeout.
+            _ = cancel.cancelled() => return Ok(()),
+        };
         buf.push_str(&String::from_utf8_lossy(&chunk));
         while let Some(pos) = buf.find('\n') {
             let line = buf[..pos].trim_end_matches('\r').to_string();
@@ -194,7 +202,6 @@ where
             }
         }
     }
-    Ok(())
 }
 
 /// Splits a newline-delimited JSON stream into lines and hands each to `on_line`.
@@ -204,11 +211,16 @@ where
 {
     let mut body = resp.bytes_stream();
     let mut buf = String::new();
-    while let Some(chunk) = body.next().await {
-        if cancel.is_cancelled() {
-            return Ok(());
-        }
-        let chunk = chunk?;
+    loop {
+        let chunk = tokio::select! {
+            chunk = body.next() => match chunk {
+                Some(c) => c?,
+                None => return Ok(()),
+            },
+            // Races the read so a connection gone quiet is dropped as soon as the caller
+            // cancels, rather than waiting for the next chunk or the read timeout.
+            _ = cancel.cancelled() => return Ok(()),
+        };
         buf.push_str(&String::from_utf8_lossy(&chunk));
         while let Some(pos) = buf.find('\n') {
             let line = buf[..pos].trim().to_string();
@@ -218,7 +230,6 @@ where
             }
         }
     }
-    Ok(())
 }
 
 /// The tool calls a model made in one round, however the provider spelled them.
@@ -720,16 +731,32 @@ pub async fn ping(provider: &str, auth: Option<&str>, base_url: &str, model: &st
 pub mod tokio_util_lite {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
+    use tokio::sync::Notify;
+
+    #[derive(Default)]
+    struct Inner {
+        cancelled: AtomicBool,
+        notify: Notify,
+    }
 
     #[derive(Clone, Default)]
-    pub struct CancelToken(Arc<AtomicBool>);
+    pub struct CancelToken(Arc<Inner>);
 
     impl CancelToken {
         pub fn cancel(&self) {
-            self.0.store(true, Ordering::SeqCst);
+            self.0.cancelled.store(true, Ordering::SeqCst);
+            self.0.notify.notify_one();
         }
         pub fn is_cancelled(&self) -> bool {
-            self.0.load(Ordering::SeqCst)
+            self.0.cancelled.load(Ordering::SeqCst)
+        }
+        /// Resolves as soon as `cancel` is called, so a read loop racing this against its next
+        /// chunk stops promptly even when the other side (a child process, a server) has gone quiet.
+        pub async fn cancelled(&self) {
+            if self.is_cancelled() {
+                return;
+            }
+            self.0.notify.notified().await;
         }
     }
 }
