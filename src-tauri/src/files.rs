@@ -276,14 +276,44 @@ fn is_openable_page(path: &Path) -> bool {
     is_markdown(path) || is_pdf(path) || is_html(path)
 }
 
-/// Extract text content from a PDF file.
-/// This is a basic implementation that extracts visible text from PDF content streams.
-/// It won't work for all PDFs but handles simple cases.
+/// Extract text content from a PDF file using the pdf-extract crate.
+/// This handles compressed PDFs and properly extracts text from content streams.
 fn extract_pdf_text(path: &Path) -> Result<String> {
     let bytes = fs::read(path)?;
-    let content = String::from_utf8_lossy(&bytes);
     
-    // Look for text between BT (begin text) and ET (end text) operators
+    match pdf_extract::extract_text_from_mem(&bytes) {
+        Ok(text) => {
+            let trimmed = text.trim();
+            if trimmed.is_empty() {
+                // PDF exists but has no extractable text (e.g., scanned image-only PDF)
+                Err(AppError::Message(format!(
+                    "PDF file '{}' contains no extractable text (possibly a scanned document)",
+                    path.file_name().and_then(|n| n.to_str()).unwrap_or("document")
+                )))
+            } else {
+                Ok(text)
+            }
+        }
+        Err(_e) => {
+            // pdf-extract failed, try naive BT/ET fallback for simple test PDFs
+            let text = extract_pdf_text_naive(&bytes);
+            if text.trim().is_empty() {
+                Err(AppError::Message(format!(
+                    "Failed to extract text from PDF '{}'",
+                    path.file_name().and_then(|n| n.to_str()).unwrap_or("document")
+                )))
+            } else {
+                Ok(text)
+            }
+        }
+    }
+}
+
+/// Naive PDF text extraction for simple hand-crafted test PDFs.
+/// Scans for BT/ET operators and (text) Tj commands in uncompressed streams.
+/// This is a fallback only; real PDFs should use pdf-extract.
+fn extract_pdf_text_naive(bytes: &[u8]) -> String {
+    let content = String::from_utf8_lossy(bytes);
     let mut text = String::new();
     let mut in_text = false;
     
@@ -306,13 +336,7 @@ fn extract_pdf_text(path: &Path) -> Result<String> {
         }
     }
     
-    if text.trim().is_empty() {
-        // Fallback: return a message indicating the PDF is binary
-        return Ok(format!("[PDF file: {}]\n\nThis PDF file contains binary content that cannot be easily extracted as plain text.", 
-            path.file_name().and_then(|n| n.to_str()).unwrap_or("document")));
-    }
-    
-    Ok(text)
+    text
 }
 
 /// Extract text content from an HTML file.
@@ -1057,27 +1081,13 @@ mod tests {
     fn list_pages_includes_pdf_files() {
         let dir = folder();
         write_md(dir.path(), "a.md", "# Markdown\n");
-        // Create a minimal valid PDF
-        let pdf_content = b"%PDF-1.4
-1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
-2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj
-3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Contents 4 0 R>>endobj
-4 0 obj<</Length 44>>stream
-BT /F1 12 Tf 50 700 Td (Test PDF) Tj ET
-endstream
-endobj
-xref
-0 5
-0000000000 65535 f 
-0000000009 00000 n 
-0000000052 00000 n 
-0000000101 00000 n 
-0000000184 00000 n 
-trailer<</Size 5/Root 1 0 R>>
-startxref
-277
-%%EOF";
-        fs::write(dir.path().join("test.pdf"), pdf_content).unwrap();
+        
+        // Copy the test fixture PDF
+        let fixture_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join(".unlazy/fixtures/sample.pdf");
+        fs::copy(&fixture_path, dir.path().join("test.pdf")).unwrap();
         
         let folder = dir.path().to_str().unwrap();
         let pages = list_pages(folder).unwrap();
@@ -1107,31 +1117,18 @@ startxref
     #[test]
     fn read_pdf_extracts_text() {
         let dir = folder();
-        let pdf_content = b"%PDF-1.4
-1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
-2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj
-3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Contents 4 0 R>>endobj
-4 0 obj<</Length 55>>stream
-BT /F1 12 Tf 50 700 Td (Sample PDF Document) Tj ET
-endstream
-endobj
-xref
-0 5
-0000000000 65535 f 
-0000000009 00000 n 
-0000000052 00000 n 
-0000000101 00000 n 
-0000000184 00000 n 
-trailer<</Size 5/Root 1 0 R>>
-startxref
-288
-%%EOF";
-        fs::write(dir.path().join("sample.pdf"), pdf_content).unwrap();
+        
+        // Copy the test fixture PDF
+        let fixture_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join(".unlazy/fixtures/sample.pdf");
+        fs::copy(&fixture_path, dir.path().join("sample.pdf")).unwrap();
         
         let folder = dir.path().to_str().unwrap();
         let page = read_page(folder, "sample.pdf").unwrap();
         assert_eq!(page.path, "sample.pdf");
-        assert!(page.raw.contains("Sample PDF Document") || page.raw.contains("PDF"));
+        assert!(page.raw.contains("Nested PDF Fixture"));
     }
 
     #[test]

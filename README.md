@@ -61,6 +61,8 @@ Click a link or a tree row to open the page here. ⌘‑click opens it beside (t
 
 **PDF and HTML support.** Nested can also open `.pdf`, `.html`, and `.htm` files alongside Markdown files. Text content is extracted from PDFs and HTML for reading, asking, and searching. PDF and HTML files are read-only: **Refine**, **New Page**, and **Deep Dive** work normally and create new `.md` files, but the original PDF or HTML file is never modified. Use ⌘O or ⌘⇧O to add PDF/HTML files to your session, or drop them into the window.
 
+PDF text extraction uses the `pdf-extract` crate and handles compressed PDFs properly. Scanned image-only PDFs without embedded text will not extract successfully (OCR is not supported).
+
 ## Send feedback
 
 The quiet **Send feedback** link at the bottom of the tree opens a box for a bug, an idea, anything. ⌘↵ sends it (↵ makes a new line); an email address is optional and only used to reply. The note lands as an issue on this repository, labelled `feedback`, where a Claude workflow reads it against the code and leaves a triage note. The app never holds a GitHub token: it posts to the small relay in [`feedback-relay/`](feedback-relay/README.md), and the relay's URL is compiled in from `src-tauri/.cargo/config.toml`. Until that is set, the box says feedback is not set up in this build.
