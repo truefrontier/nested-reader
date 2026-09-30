@@ -105,3 +105,7 @@ Link clicks follow browser habits: click opens here, ⌘-click loads in the back
 ## Layout
 
 See [docs/architecture.md](docs/architecture.md) for how the pieces fit, what is written to disk, and how refine, review and versions work. The Claude Design source files the app implements are in `design/`.
+
+## License
+
+[MIT](LICENSE). Forks and ports (for example an Obsidian plugin) are welcome with attribution; please keep the copyright notice.
