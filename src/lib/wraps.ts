@@ -47,7 +47,7 @@ export function applyWraps(el: Element, wraps: Wrap[]): void {
       let node = seg.node;
       if (s > seg.start) node = node.splitText(s - seg.start);
       if (e < seg.end) node.splitText(e - s);
-      const span = document.createElement("span");
+      const span = el.ownerDocument.createElement("span");
       span.className = w.className;
       if (w.attrs) for (const [k, v] of Object.entries(w.attrs)) span.setAttribute(k, v);
       node.parentNode?.insertBefore(span, node);

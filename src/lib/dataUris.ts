@@ -50,7 +50,7 @@ export function unmaskDataUris(mask: DataUriMask, text: string): UnmaskResult {
     seen.add(token);
   }
   let out = text;
-  for (const token of seen) out = out.split(token).join(mask.map.get(token)!);
+  for (const token of seen) out = out.split(token).join(mask.map.get(token) ?? token);
   if (out.includes(OPEN) || out.includes(CLOSE)) return { ok: false, reason: "came back with a broken image reference" };
   return { ok: true, text: out };
 }

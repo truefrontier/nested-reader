@@ -187,7 +187,7 @@ export const SUMMARY_BATCH_CHARS = 24_000;
  * no line rather than a wrong one, and the next run will try it again.
  */
 export function parseSummaries(text: string, count: number): (string | undefined)[] {
-  const out: (string | undefined)[] = new Array(count).fill(undefined);
+  const out: (string | undefined)[] = Array.from({ length: count }, () => undefined);
   if (count === 1) {
     const only = text.trim().replace(/^\s*1[.)]\s*/, "").replace(/\s+/g, " ").trim();
     if (only) out[0] = only;
