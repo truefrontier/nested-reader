@@ -148,7 +148,7 @@ export function refineMessages(
   const what =
     scope === "selection"
       ? "Rewrite only the passage below. It is a fragment of a paragraph; return the replacement fragment with no surrounding text."
-      : "Rewrite the Markdown page below. Keep its structure, headings and links unless the instruction says otherwise.";
+      : "Rewrite the Markdown page below. Keep its structure, headings and links unless the instruction says otherwise. If the instruction answers an open question or open item in the page, resolve it: replace the open question with the answer (for example \"Answered: ...\") or fold the answer into the text in place, rather than keeping the question and rewording it around the answer. Apply that only to the question being answered; leave everything else as it is.";
   const system = `You are editing a markdown page in a research reader. ${what} Change as little as the instruction requires and keep everything else word for word. ${VOICE} Return only the rewritten text, with no commentary, no code fences.${tools(ctx)}`;
   const query = `${instruction} ${scope === "selection" ? ctx.selection ?? "" : ctx.page.meta.title}`;
   // One mask for the whole prompt, context and target alike, so the same sentinel a page's own
