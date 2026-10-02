@@ -342,6 +342,21 @@ export function Page({ path, role }: Props) {
     store.setSelection(selectionState);
   };
 
+  // onMouseUp clears the native selection (the "sel" highlight stands in for it), so ⌘C / Edit → Copy would
+  // find nothing. The copy event fires for both the menu item and the shortcut; answer it with the highlight's text.
+  useEffect(() => {
+    if (!selection) return;
+    const onCopy = (e: ClipboardEvent) => {
+      const a = document.activeElement;
+      if (a instanceof HTMLInputElement || a instanceof HTMLTextAreaElement) return;
+      if (!window.getSelection()?.isCollapsed) return;
+      e.clipboardData?.setData("text/plain", selection.text);
+      e.preventDefault();
+    };
+    document.addEventListener("copy", onCopy);
+    return () => document.removeEventListener("copy", onCopy);
+  }, [selection]);
+
   // ----- remembered asks: hover peeks at the answer, a click keeps it open -----
 
   // Esc usually leaves the pointer on the text it was asked about; that text does not peek again until the pointer has left it.
