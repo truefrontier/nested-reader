@@ -1176,6 +1176,14 @@ export class ReaderStore {
     }
   }
 
+  /** The absolute path of the page now open, or the session folder when none is. */
+  currentPath(): string | undefined {
+    const { current } = this.state.session;
+    if (!current) return this.state.folder ?? undefined;
+    const { folder, rel } = this.loc(current);
+    return `${folder}/${rel}`;
+  }
+
   /** Selects a page's file in Finder. */
   async revealPage(path: string) {
     const { folder, rel } = this.loc(path);
