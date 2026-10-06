@@ -1,5 +1,6 @@
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { Menu } from "@tauri-apps/api/menu";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
@@ -41,6 +42,16 @@ export const tauriPlatform: Platform = {
   pickFolder: () => invoke<string | null>("pick_folder"),
   pathKind: (path) => invoke<PathKind>("path_kind", { path }),
   revealInFinder: (path) => invoke("reveal_in_finder", { path }),
+  async showPathMenu(path, leaf) {
+    const parts = path.split("/").filter(Boolean);
+    // The file first, then each parent up to the volume root, as in the native menu.
+    const items = parts.map((name, i) => {
+      const target = "/" + parts.slice(0, i + 1).join("/");
+      const command = leaf === "file" && i === parts.length - 1 ? "reveal_in_finder" : "open_folder";
+      return { text: name, action: () => void invoke(command, { path: target }).catch((e) => console.error(e)) };
+    });
+    await (await Menu.new({ items: items.reverse() })).popup();
+  },
   setRepresentedPath: (path) => invoke("set_represented_path", { path }),
 
   async getRecents() {

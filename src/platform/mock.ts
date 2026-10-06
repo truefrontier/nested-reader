@@ -145,6 +145,8 @@ export const mockPlatform: Platform = {
 
   async setRepresentedPath() {},
 
+  async showPathMenu() {},
+
   async getRecents() {
     return recents;
   },

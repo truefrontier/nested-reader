@@ -1,6 +1,6 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, type MouseEvent, type ReactNode } from "react";
 import { platform } from "../platform";
-import { useReader, type ReaderState } from "../state/store";
+import { store, useReader, type ReaderState } from "../state/store";
 import { DragBand } from "./DragBand";
 
 type TopStatus = "writing" | "refining" | "failed";
@@ -38,11 +38,19 @@ export function TopBar({ children }: { children?: ReactNode }) {
   useEffect(() => {
     void platform.setRepresentedPath(s.folder ?? null);
   }, [s.folder]);
+  // Hiding the native title also hides the proxy icon's hit area, so the title pops up the same
+  // parent-folder menu itself on right-click or ⌘-click.
+  const showPathMenu = (e: MouseEvent) => {
+    const path = store.currentPath();
+    if (!path || !s.folder || (e.type === "click" && !e.metaKey)) return;
+    e.preventDefault();
+    void platform.showPathMenu(path, s.session.current ? "file" : "folder");
+  };
   return (
     <div className="topbar">
       <DragBand />
       <div className="tb-left">{children}</div>
-      <div className="tb-title">{s.folderName || "Library"}</div>
+      <div className="tb-title" onContextMenu={showPathMenu} onClick={showPathMenu}>{s.folderName || "Library"}</div>
       <div className="tb-status">
         {status && (
           <>

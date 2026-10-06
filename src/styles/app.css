@@ -257,7 +257,7 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 60vw;
-  pointer-events: none;
+  pointer-events: auto;
 }
 .tb-status {
   justify-self: end;
