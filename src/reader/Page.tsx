@@ -348,8 +348,10 @@ export function Page({ path, role }: Props) {
     if (!selection) return;
     const onCopy = (e: ClipboardEvent) => {
       const a = document.activeElement;
-      if (a instanceof HTMLInputElement || a instanceof HTMLTextAreaElement) return;
-      if (!window.getSelection()?.isCollapsed) return;
+      if (a instanceof HTMLInputElement || a instanceof HTMLTextAreaElement) {
+        // Text selected inside the focused field wins; otherwise the field's own (empty) selection must not shadow the highlight.
+        if (a.selectionStart !== a.selectionEnd) return;
+      } else if (!window.getSelection()?.isCollapsed) return;
       e.clipboardData?.setData("text/plain", selection.text);
       e.preventDefault();
     };
