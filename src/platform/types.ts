@@ -313,7 +313,7 @@ export interface Platform {
    * Pops up a native menu at the pointer listing `path` and each of its parent folders, like the
    * macOS title-bar proxy-icon menu; choosing one opens it in Finder. No-op outside the desktop app.
    */
-  showPathMenu(path: string): Promise<void>;
+  showPathMenu(path: string, leaf: "file" | "folder"): Promise<void>;
   /**
    * macOS only, a no-op elsewhere: points the title bar's proxy icon at `path`, so right-click /
    * ⌘-click on it shows the native parent-folder menu. `null` clears it (Home, or no folder open).

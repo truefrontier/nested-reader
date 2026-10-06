@@ -44,7 +44,7 @@ export function TopBar({ children }: { children?: ReactNode }) {
     const path = store.currentPath();
     if (!path || !s.folder || (e.type === "click" && !e.metaKey)) return;
     e.preventDefault();
-    void platform.showPathMenu(path);
+    void platform.showPathMenu(path, s.session.current ? "file" : "folder");
   };
   return (
     <div className="topbar">

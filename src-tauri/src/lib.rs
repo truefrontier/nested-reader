@@ -106,6 +106,16 @@ fn reveal_in_finder(app: AppHandle, path: String) -> Result<()> {
     app.opener().reveal_item_in_dir(&path).map_err(|e| AppError::Message(e.to_string()))
 }
 
+/// Opens a folder in the system file manager. Done here rather than via the webview's opener
+/// plugin so the webview needs no `open-path` permission.
+#[tauri::command]
+fn open_folder(app: AppHandle, path: String) -> Result<()> {
+    if files::path_kind(&path) != "folder" {
+        return Err(AppError::Message(format!("not a folder: {}", path)));
+    }
+    app.opener().open_path(&path, None::<&str>).map_err(|e| AppError::Message(e.to_string()))
+}
+
 /// The title bar follows the open session: its native proxy icon (right-click / ⌘-click for a
 /// parent-folder menu) points at `path`, or clears when it's `None`.
 #[tauri::command]
@@ -588,6 +598,7 @@ pub fn run() {
             pick_path,
             path_kind,
             reveal_in_finder,
+            open_folder,
             set_represented_path,
             opened_paths,
             default_markdown_app,
