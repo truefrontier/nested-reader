@@ -2387,7 +2387,14 @@ export class ReaderStore {
       ),
     );
     this.cancelledRefines.delete(id);
-    const message = failures.find((m) => m);
+    let message = failures.find((m) => m);
+    // A corpus run that rewrote some pages and not others names the ones it left, by reason, so
+    // "the page is unchanged" is not read as the whole run.
+    if (message && scope === "corpus" && failures.some((m) => !m)) {
+      const left = new Map<string, string[]>();
+      failures.forEach((m, i) => m && left.set(m, [...(left.get(m) ?? []), this.state.pages[this.livePath(targets[i])]?.title ?? targets[i]]));
+      message = [...left].map(([m, titles]) => `${titles.join(", ")}: ${m}`).join(" ");
+    }
     const held = this.state.ui.refines[id];
     const refines = { ...this.state.ui.refines };
     // The failure is shown where the refine box was, with the text kept for a retry. A card dismissed
