@@ -779,8 +779,8 @@ export class ReaderStore {
       }
 
       const { system, messages } = summaryMessages(batch.map((b) => ({ title: b.title, body: b.body })));
-      // No folder on the request: indexing has no business calling tools.
-      const req = { ...this.request(system, messages, 60 * batch.length + 60, "summary"), folder: undefined, roots: undefined };
+      // No folder and no web on the request: indexing has no business calling tools.
+      const req = { ...this.request(system, messages, 60 * batch.length + 60, "summary"), folder: undefined, roots: undefined, webAccess: undefined };
       const key = `summary:${batch[0].path}`;
       let cutOff = false;
       const text = await new Promise<string>((resolve) => {
@@ -2004,6 +2004,7 @@ export class ReaderStore {
       folder,
       roots: roots?.length ? roots : undefined,
       excluded: excluded?.length ? excluded : undefined,
+      webAccess: s.webAccess || undefined,
       kind,
     };
   }

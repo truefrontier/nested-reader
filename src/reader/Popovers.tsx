@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type Dr
 import type { Lookup, NewFileVerb, Verb } from "../state/store";
 import type { Change } from "../lib/diff";
 import type { RefineScope } from "../lib/prompts";
+import { renderInline } from "../lib/markdown";
 import { ATTACHMENT_MAX_BYTES, FEEDBACK_MAX, type Attachment } from "../platform";
 import { CURRENT_RELEASE_NOTES } from "./releaseNotes";
 
@@ -434,7 +435,7 @@ export function AnswerCard({
       {lookup.thread.map((t, i) => (
         <div key={i} className="answer" style={{ marginBottom: 12, color: "var(--mute)" }}>
           <div style={{ fontFamily: "var(--sans)", fontSize: 12, marginBottom: 4 }}>{t.question}</div>
-          {t.answer}
+          <span dangerouslySetInnerHTML={{ __html: renderInline(t.answer) }} />
         </div>
       ))}
       {lookup.thread.length > 0 && <div style={{ fontFamily: "var(--sans)", fontSize: 12, color: "var(--mute)", marginBottom: 4 }}>{lookup.question}</div>}
@@ -451,7 +452,8 @@ export function AnswerCard({
           )}
         </>
       ) : (
-        <div className={`answer${lookup.streaming ? " streaming-cursor" : ""}`}>{lookup.answer}</div>
+        // Inline Markdown, so the source links a web search adds are links rather than brackets.
+        <div className={`answer${lookup.streaming ? " streaming-cursor" : ""}`} dangerouslySetInnerHTML={{ __html: renderInline(lookup.answer) }} />
       )}
       <input ref={ref} data-ask="1" placeholder="Follow up…" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} spellCheck={false} />
       <AskVerbs onVerb={submit} onEsc={onEsc} onToggle={onRefine} />

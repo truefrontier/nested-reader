@@ -50,6 +50,15 @@ marked.use({
   ],
 });
 
+// A plain click on a web link would take the whole window to the site, with no way back to the
+// reader. With target=_blank the opener plugin's click handler opens it in the browser instead.
+DOMPurify.addHook("afterSanitizeAttributes", (node) => {
+  if (node.tagName === "A" && /^https?:/i.test(node.getAttribute("href") ?? "")) {
+    node.setAttribute("target", "_blank");
+    node.setAttribute("rel", "noopener noreferrer");
+  }
+});
+
 const scratch = typeof document !== "undefined" ? document.createElement("div") : null;
 
 function textOf(html: string): string {
@@ -88,6 +97,12 @@ export function joinBlocks(blocks: Block[]): string {
 /** Render a whole body at once (used for lightweight views). */
 export function renderMarkdown(body: string): string {
   const rendered = marked.parse(normalizeBody(body)) as string;
+  return DOMPurify.sanitize(rendered, { ADD_ATTR: ["data-target"] });
+}
+
+/** Render inline Markdown only (links, emphasis, code), for an answer card; the text keeps its own line breaks. */
+export function renderInline(text: string): string {
+  const rendered = marked.parseInline(normalizeBody(text)) as string;
   return DOMPurify.sanitize(rendered, { ADD_ATTR: ["data-target"] });
 }
 

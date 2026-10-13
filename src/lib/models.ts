@@ -11,6 +11,14 @@ export function modelSlot(provider: Provider, auth: Auth | undefined): ModelSlot
   return provider;
 }
 
+/**
+ * Whether the provider gets a web tool when Settings allows the web: Claude Code and Codex use their
+ * own, an Anthropic key gets Anthropic's server-side search. OpenAI keys, Ollama and Custom servers get none.
+ */
+export function webSearchFor(provider: Provider, auth: Auth | undefined): boolean {
+  return provider === "anthropic" || (provider === "openai" && auth === "subscription");
+}
+
 /** OpenAI lists everything it serves; these are not chat models or are dated snapshots. */
 const NOT_CHAT = /(audio|realtime|tts|transcribe|whisper|embedding|moderation|search|image|dall-e|sora|instruct|batch|-\d{4}-\d{2}-\d{2}$)/i;
 

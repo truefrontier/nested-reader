@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { DragBand } from "../reader/DragBand";
 import { DEFAULT_SETTINGS, READING_WIDTH_RANGE, isTauri, platform, type Auth, type DefaultApp, type OpenAtLaunch, type UpdateCheck, type Placement, type Provider, type ReadingWidthUnit, type Settings } from "../platform";
-import { authFor, chatModels, modelSlot, pickDefaultModel } from "../lib/models";
+import { authFor, chatModels, modelSlot, pickDefaultModel, webSearchFor } from "../lib/models";
 import { AiIcon, AppearanceIcon, CheckIcon, GeneralIcon, UpDownIcon } from "../reader/Icons";
 
 type Tab = "general" | "appearance" | "ai";
@@ -28,6 +28,14 @@ const PROVIDERS: { value: Provider; label: string }[] = [
   { value: "ollama", label: "Ollama" },
   { value: "custom", label: "Custom" },
 ];
+
+/** What Settings calls each provider that has no web tool (`webSearchFor` in `src/lib/models.ts`). */
+const NO_WEB: Partial<Record<Provider, string>> = {
+  builtin: "The built-in plan",
+  openai: "An OpenAI API key",
+  ollama: "Ollama",
+  custom: "A Custom server",
+};
 
 function applyTheme(s: Settings) {
   const dark = s.theme === "dark" || (s.theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
@@ -796,7 +804,13 @@ function Ai({ settings, save }: SectionProps) {
       <Row label="Tools" top>
         <div className="checks">
           <Check on={settings.tools} label="Let the model read the folder itself" onChange={(v) => save({ tools: v })} />
-          <span className="note wrap">It can list, read and search the pages in the open folder while it answers, and nothing else.</span>
+          <span className="note wrap">It can list, read and search the pages in the open folder while it answers.</span>
+          <Check on={settings.webAccess} label="Let the model search the web" onChange={(v) => save({ webAccess: v })} />
+          <span className="note wrap">
+            {webSearchFor(p, auth)
+              ? "Search queries can include text from your pages."
+              : `${NO_WEB[p]} can't search the web. Anthropic and the ChatGPT plan can.`}
+          </span>
         </div>
       </Row>
     </div>

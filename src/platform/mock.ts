@@ -17,6 +17,7 @@ import {
   type VersionInfo,
 } from "./types";
 import { metaFromRaw } from "../lib/frontmatter";
+import { webSearchFor } from "../lib/models";
 import { EXTRA_FILES, EXTRA_FOLDER, SAMPLE_FILES, SAMPLE_FOLDER } from "./sample";
 
 /**
@@ -310,6 +311,8 @@ export const mockPlatform: Platform = {
           { type: "tool", name: "read_page", detail: "Reading sharp-wave-ripples.md" },
         ]
       : [];
+    // With the web allowed, and a provider that has a web tool, it searches as well.
+    if (req.webAccess && webSearchFor(req.provider, req.auth)) tools.push({ type: "tool", name: "web_search", detail: "Searching the web" });
     let at = 350;
     for (const t of tools) {
       setTimeout(() => !cancelled && onEvent(t), at);
