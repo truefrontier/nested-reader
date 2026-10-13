@@ -35,6 +35,10 @@ pub struct AiRequest {
     /// reach, and out of what a CLI is told is fair to read, the same as a dropped root's pages.
     #[serde(default)]
     pub excluded: Vec<String>,
+    /// Settings › AI lets the model search the web: Claude Code and Codex get their own web
+    /// tools, the Anthropic API its server-side web search. Off (the default), none of them can.
+    #[serde(default)]
+    pub web_access: bool,
     /// The kind of AI ask: "quick_answer", "new_page", "deep_dive", or "refine" (for analytics).
     #[serde(default)]
     pub kind: Option<String>,
@@ -469,6 +473,34 @@ fn anthropic_base(req: &AiRequest) -> String {
     }
 }
 
+/// The tools an Anthropic request offers: the folder tools with a folder, and Anthropic's own web
+/// search (run on its servers, results in the same stream) when Settings allows the web.
+pub(crate) fn anthropic_request_tools(req: &AiRequest) -> Vec<Value> {
+    let mut list = if req.folder.is_some() { tools::anthropic_tools() } else { Vec::new() };
+    if req.web_access {
+        list.push(json!({ "type": "web_search_20250305", "name": "web_search", "max_uses": 5 }));
+    }
+    list
+}
+
+/// The sources a web-search answer cites, as Markdown links after the passage that cites them:
+/// the API sends them alongside the text, not in it, and an answer from the web has to say where it came from.
+fn citation_links(block: &Value) -> Option<String> {
+    let mut seen: Vec<&str> = Vec::new();
+    let mut links: Vec<String> = Vec::new();
+    for c in block["citations"].as_array()? {
+        let Some(url) = c["url"].as_str() else { continue };
+        if seen.contains(&url) {
+            continue;
+        }
+        seen.push(url);
+        let title = c["title"].as_str().unwrap_or(url).replace(['[', ']'], "");
+        // Parentheses in the address would end the Markdown link early.
+        links.push(format!("[{title}]({})", url.replace('(', "%28").replace(')', "%29")));
+    }
+    (!links.is_empty()).then(|| format!(" ({})", links.join(", ")))
+}
+
 async fn stream_anthropic(req: &AiRequest, channel: &Channel<StreamEvent>, cancel: &CancelToken) -> Result<bool> {
     // A proxy at its own base URL may hold the key itself.
     let key = match api_key("anthropic") {
@@ -482,7 +514,8 @@ async fn stream_anthropic(req: &AiRequest, channel: &Channel<StreamEvent>, cance
         .iter()
         .map(|m| json!({ "role": m.role, "content": m.content }))
         .collect();
-    for _round in 0..tools::MAX_ROUNDS {
+    let offered = anthropic_request_tools(req);
+    for round in 0..tools::MAX_ROUNDS {
         let mut body = json!({
             "model": req.model,
             "max_tokens": req.max_tokens.unwrap_or(2048),
@@ -492,8 +525,8 @@ async fn stream_anthropic(req: &AiRequest, channel: &Channel<StreamEvent>, cance
         if let Some(sys) = &req.system {
             body["system"] = json!(sys);
         }
-        if req.folder.is_some() {
-            body["tools"] = json!(tools::anthropic_tools());
+        if !offered.is_empty() {
+            body["tools"] = json!(offered);
         }
         let resp = client()?
             .post(format!("{base}/v1/messages"))
@@ -505,8 +538,9 @@ async fn stream_anthropic(req: &AiRequest, channel: &Channel<StreamEvent>, cance
         if !resp.status().is_success() {
             return Err(AppError::Message(read_error_body(resp).await));
         }
-        // Every content block is kept as it streams (text, tool_use, thinking), because the
-        // whole assistant turn has to go back with the tool results.
+        // Every content block is kept as it streams (text with its citations, tool_use, a web
+        // search and its results, thinking), because the whole assistant turn has to go back
+        // unchanged with the tool results, or to carry on a paused turn.
         let mut blocks: Vec<Value> = Vec::new();
         let mut tool_json: Vec<String> = Vec::new();
         let mut stop_reason: Option<String> = None;
@@ -518,11 +552,22 @@ async fn stream_anthropic(req: &AiRequest, channel: &Channel<StreamEvent>, cance
             match v.get("type").and_then(|t| t.as_str()) {
                 Some("content_block_start") => {
                     let mut block = v.get("content_block").cloned().unwrap_or(json!({ "type": "text", "text": "" }));
-                    if block["type"] == "tool_use" {
+                    if block["type"] == "tool_use" || block["type"] == "server_tool_use" {
                         block["input"] = json!({});
+                    }
+                    // A web search runs on Anthropic's side; the UI only hears that it has started.
+                    if block["type"] == "server_tool_use" {
+                        let name = block["name"].as_str().unwrap_or("").to_string();
+                        let _ = channel.send(StreamEvent::Tool { detail: tools::describe(&name, &json!({})), name });
                     }
                     blocks.push(block);
                     tool_json.push(String::new());
+                }
+                Some("content_block_stop") => {
+                    let i = v.get("index").and_then(|i| i.as_u64()).unwrap_or(0) as usize;
+                    if let Some(links) = blocks.get(i).and_then(citation_links) {
+                        let _ = channel.send(StreamEvent::Delta { text: links });
+                    }
                 }
                 Some("content_block_delta") => {
                     let i = v.get("index").and_then(|i| i.as_u64()).unwrap_or(0) as usize;
@@ -555,6 +600,14 @@ async fn stream_anthropic(req: &AiRequest, channel: &Channel<StreamEvent>, cance
                                 blocks[i]["signature"] = json!(sig);
                             }
                         }
+                        Some("citations_delta") => {
+                            if let Some(c) = v.pointer("/delta/citation") {
+                                match blocks[i]["citations"].as_array_mut() {
+                                    Some(list) => list.push(c.clone()),
+                                    None => blocks[i]["citations"] = json!([c]),
+                                }
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -578,25 +631,37 @@ async fn stream_anthropic(req: &AiRequest, channel: &Channel<StreamEvent>, cance
         .await?;
         let mut calls: Vec<ToolCall> = Vec::new();
         for (block, raw) in blocks.iter_mut().zip(tool_json.iter()) {
-            if block["type"] == "tool_use" {
+            // A web search's query goes back with the turn too; only the folder tools run here.
+            if block["type"] == "tool_use" || block["type"] == "server_tool_use" {
                 let input = parse_input(raw);
                 block["input"] = input.clone();
-                calls.push(ToolCall {
-                    id: block["id"].as_str().unwrap_or("").to_string(),
-                    name: block["name"].as_str().unwrap_or("").to_string(),
-                    input,
-                });
+                if block["type"] == "tool_use" {
+                    calls.push(ToolCall {
+                        id: block["id"].as_str().unwrap_or("").to_string(),
+                        name: block["name"].as_str().unwrap_or("").to_string(),
+                        input,
+                    });
+                }
             }
         }
         if hit_token_ceiling(stop_reason.as_deref()) {
             return Ok(true);
         }
+        // The API refuses an empty text block, which a turn that goes straight to a tool can leave behind.
+        let content: Vec<Value> = blocks.into_iter().filter(|b| !(b["type"] == "text" && b["text"].as_str().unwrap_or("").is_empty())).collect();
+        // A long web search can pause the turn; sent back as it stands, the server carries on from
+        // there. Out of rounds while paused, the answer is unfinished, the same as a cut-off one.
+        if stop_reason.as_deref() == Some("pause_turn") && !cancel.is_cancelled() {
+            if round + 1 == tools::MAX_ROUNDS {
+                return Ok(true);
+            }
+            messages.push(json!({ "role": "assistant", "content": content }));
+            continue;
+        }
         let folder = match (&req.folder, stop_reason.as_deref(), calls.is_empty(), cancel.is_cancelled()) {
             (Some(f), Some("tool_use"), false, false) => f,
             _ => return Ok(false),
         };
-        // The API refuses an empty text block, which a turn that goes straight to a tool can leave behind.
-        let content: Vec<Value> = blocks.into_iter().filter(|b| !(b["type"] == "text" && b["text"].as_str().unwrap_or("").is_empty())).collect();
         messages.push(json!({ "role": "assistant", "content": content }));
         let results: Vec<Value> = calls
             .iter()
@@ -825,6 +890,7 @@ mod ollama_live {
             folder: None,
             roots: vec![],
             excluded: vec![],
+            web_access: false,
             kind: None,
         };
         tauri::async_runtime::block_on(stream(req, channel, CancelToken::default()));
@@ -928,6 +994,7 @@ mod tool_loops {
             folder: Some(folder.into()),
             roots: vec![],
             excluded: vec![],
+            web_access: false,
             kind: None,
         }
     }
@@ -979,6 +1046,102 @@ data: {\"type\":\"message_stop\"}\n\n";
         let events = events.lock().unwrap();
         assert_eq!(texts(&events, "tool", "detail"), vec!["Reading replay.md"]);
         assert_eq!(texts(&events, "delta", "text").join(""), "Ripples carry it.");
+        assert_eq!(events.last().unwrap()["type"], "done");
+    }
+
+    // A web search turn in the shapes Anthropic's streaming docs record: the search arrives as a
+    // `server_tool_use` block (with a ping while it runs), its results whole in one
+    // `web_search_tool_result` block, then text whose sources come as `citations_delta`.
+    macro_rules! web_search_turn {
+        () => {
+            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[]}}\n\n\
+event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n\
+event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"I'll check. \"}}\n\n\
+event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n\
+event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"server_tool_use\",\"id\":\"srvtoolu_1\",\"name\":\"web_search\",\"input\":{}}}\n\n\
+event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"\"}}\n\n\
+event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"query\"}}\n\n\
+event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"\\\": \\\"newest stable Rust\\\"}\"}}\n\n\
+event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1 }\n\n\
+event: ping\ndata: {\"type\": \"ping\"}\n\n\
+event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":2,\"content_block\":{\"type\":\"web_search_tool_result\",\"tool_use_id\":\"srvtoolu_1\",\"content\":[{\"type\":\"web_search_result\",\"title\":\"Announcing Rust 1.99.0\",\"url\":\"https://blog.rust-lang.org/2026/10/01/Rust-1.99.0/\",\"encrypted_content\":\"Ev0DCioIAxgCIiQ3NmU4\",\"page_age\":null}]}}\n\n\
+event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":2}\n\n\
+event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":3,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n\
+event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":3,\"delta\":{\"type\":\"citations_delta\",\"citation\":{\"type\":\"web_search_result_location\",\"cited_text\":\"Rust 1.99.0 is out\",\"url\":\"https://blog.rust-lang.org/2026/10/01/Rust-1.99.0/\",\"title\":\"Announcing Rust 1.99.0\",\"encrypted_index\":\"Eo8BCioIAhgB\"}}}\n\n\
+event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":3,\"delta\":{\"type\":\"text_delta\",\"text\":\"Rust 1.99.0 is the newest stable release.\"}}\n\n\
+event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":3}\n\n"
+        };
+    }
+
+    const ANTHROPIC_WEB_SEARCH: &str = concat!(web_search_turn!(), "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":40,\"server_tool_use\":{\"web_search_requests\":1}}}\n\n\
+event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n");
+
+    const ANTHROPIC_WEB_SEARCH_PAUSED: &str = concat!(web_search_turn!(), "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"pause_turn\",\"stop_sequence\":null}}\n\n\
+event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n");
+
+    fn web_request(base: &str) -> AiRequest {
+        let mut req = request("anthropic", base, "");
+        req.folder = None;
+        req.web_access = true;
+        req
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn anthropic_web_search_answers_with_its_sources() {
+        let (base, seen) = serve(vec![(200, ANTHROPIC_WEB_SEARCH)]).await;
+        let (channel, events) = collect();
+        stream(web_request(&base), channel, CancelToken::default()).await;
+
+        let seen = seen.lock().unwrap();
+        // The search ran on the server: one request, offering web search and no folder tools.
+        assert_eq!(seen.len(), 1);
+        assert_eq!(seen[0]["tools"], json!([{ "type": "web_search_20250305", "name": "web_search", "max_uses": 5 }]));
+
+        let events = events.lock().unwrap();
+        assert_eq!(texts(&events, "tool", "detail"), vec!["Searching the web"]);
+        assert_eq!(
+            texts(&events, "delta", "text").join(""),
+            "I'll check. Rust 1.99.0 is the newest stable release. ([Announcing Rust 1.99.0](https://blog.rust-lang.org/2026/10/01/Rust-1.99.0/))"
+        );
+        assert_eq!(events.last().unwrap()["type"], "done");
+        assert_eq!(events.last().unwrap()["truncated"], false);
+    }
+
+    #[test]
+    fn citations_become_links_once_each() {
+        let block = json!({ "type": "text", "text": "Rust 1.99.0 is out.", "citations": [
+            { "type": "web_search_result_location", "url": "https://a.example/x", "title": "A [draft]" },
+            { "type": "web_search_result_location", "url": "https://a.example/x", "title": "A [draft]" },
+            { "type": "web_search_result_location", "url": "https://en.wikipedia.org/wiki/Rust_(programming_language)", "title": "Rust" },
+        ]});
+        assert_eq!(
+            citation_links(&block).as_deref(),
+            Some(" ([A draft](https://a.example/x), [Rust](https://en.wikipedia.org/wiki/Rust_%28programming_language%29))")
+        );
+        assert_eq!(citation_links(&json!({ "type": "text", "text": "No sources." })), None);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn anthropic_paused_web_search_goes_back_unchanged_and_carries_on() {
+        let (base, seen) = serve(vec![(200, ANTHROPIC_WEB_SEARCH_PAUSED), (200, ANTHROPIC_ANSWER)]).await;
+        let (channel, events) = collect();
+        stream(web_request(&base), channel, CancelToken::default()).await;
+
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.len(), 2);
+        // The paused turn goes back as the last message, with no user message after it.
+        let second = seen[1]["messages"].as_array().unwrap();
+        assert_eq!(second.len(), 2);
+        assert_eq!(second[1]["role"], "assistant");
+        let content = second[1]["content"].as_array().unwrap();
+        assert_eq!(content.iter().map(|b| b["type"].as_str().unwrap()).collect::<Vec<_>>(), ["text", "server_tool_use", "web_search_tool_result", "text"]);
+        assert_eq!(content[1]["input"], json!({ "query": "newest stable Rust" }));
+        assert_eq!(content[2]["content"][0]["encrypted_content"], "Ev0DCioIAxgCIiQ3NmU4");
+        assert_eq!(content[3]["citations"][0]["encrypted_index"], "Eo8BCioIAhgB");
+        assert_eq!(content[3]["text"], "Rust 1.99.0 is the newest stable release.");
+
+        let events = events.lock().unwrap();
+        assert!(texts(&events, "delta", "text").join("").ends_with("Ripples carry it."));
         assert_eq!(events.last().unwrap()["type"], "done");
     }
 

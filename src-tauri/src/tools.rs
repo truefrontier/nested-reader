@@ -192,6 +192,11 @@ pub fn describe(name: &str, input: &Value) -> String {
                 format!("Searching for “{}”", clip(q, 40))
             }
         }
+        // Not one of these tools: the provider's own web search, described the same way for the UI.
+        "web_search" => match input["query"].as_str().map(str::trim).filter(|q| !q.is_empty()) {
+            Some(q) => format!("Searching the web for “{}”", clip(q, 40)),
+            None => "Searching the web".to_string(),
+        },
         other => format!("Using {other}"),
     }
 }

@@ -148,6 +148,8 @@ export type Settings = {
   context: { highlight: boolean; session: boolean; folder: boolean; map: boolean };
   /** Let the model list, read and search the session folder's pages itself while it answers. */
   tools: boolean;
+  /** Let the model search and fetch the web while it answers; off keeps it to the pages. See `webSearchFor` in `src/lib/models.ts`. */
+  webAccess: boolean;
   /** Ask before deleting a page from the tree; "Do not ask again" in that confirmation turns it off. */
   confirmDelete: boolean;
   /** The Home screen still offers to make Nested the Mac's app for .md files; off after Not now or once it is. */
@@ -213,6 +215,7 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   context: { highlight: true, session: true, folder: false, map: true },
   tools: true,
+  webAccess: false,
   confirmDelete: true,
   offerDefaultApp: true,
 };
@@ -266,7 +269,7 @@ export type AiRequest = {
   system?: string;
   messages: ChatMessage[];
   maxTokens?: number;
-  /** The session folder the model may read with its tools; without it no tools are offered. */
+  /** The session folder the model may read with its tools; without it the folder tools are not offered. */
   folder?: string;
   /** The folders of the session's other roots, which the tools may read too. */
   roots?: string[];
@@ -276,6 +279,8 @@ export type AiRequest = {
    * `Session.excluded` is.
    */
   excluded?: string[];
+  /** The model may search the web: Claude Code and Codex with their own tools, an Anthropic key with its server-side search. */
+  webAccess?: boolean;
   /** The kind of AI ask for analytics: "quick_answer", "new_page", "deep_dive", or "refine". */
   kind?: string;
 };

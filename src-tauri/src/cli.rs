@@ -67,15 +67,18 @@ fn transcript(req: &AiRequest) -> String {
 
 /// Claude Code's read-only tools; enough to look around the folder, nothing that writes or runs.
 const CLAUDE_TOOLS: &str = "Read,Grep,Glob";
+/// Claude Code's web tools, offered only when Settings lets the model search the web.
+const CLAUDE_WEB_TOOLS: &str = "WebSearch,WebFetch";
 
 /// The line added to the instructions when the CLI may read the session folder (and the folders added to the session).
 fn folder_note(req: &AiRequest) -> Option<String> {
     let folder = req.folder.as_deref()?;
+    // "Files" so the line limits what it reads on disk, not whether it may use the web.
     let mut note = if req.roots.is_empty() {
-        format!("The session folder is {folder}. Its Markdown files are the pages; read only inside it, and ignore its .reader directory.")
+        format!("The session folder is {folder}. Its Markdown files are the pages; read files only inside it, and ignore its .reader directory.")
     } else {
         format!(
-            "The session's folders are {folder} and {}. Their Markdown files are the pages; read only inside them, and ignore their .reader directories.",
+            "The session's folders are {folder} and {}. Their Markdown files are the pages; read files only inside them, and ignore their .reader directories.",
             req.roots.join(", ")
         )
     };
@@ -107,6 +110,11 @@ fn cli_tool_detail(name: &str, input: &Value) -> String {
         },
         "Glob" | "LS" => "Listing the pages".to_string(),
         "Bash" => "Running a command".to_string(),
+        "WebSearch" => crate::tools::describe("web_search", input),
+        "WebFetch" => match input["url"].as_str().and_then(|u| u.split("://").nth(1)).and_then(|r| r.split('/').next()) {
+            Some(host) if !host.is_empty() => format!("Reading {host}"),
+            _ => "Reading a web page".to_string(),
+        },
         other => format!("Using {other}"),
     }
 }
@@ -193,11 +201,11 @@ fn last_line(text: &str) -> Option<String> {
 
 // ---------- Claude Code ----------
 
-pub async fn stream_claude(req: &AiRequest, channel: &Channel<StreamEvent>, cancel: &CancelToken) -> Result<bool> {
-    let mut cmd = Command::new(find_bin("claude")?);
+/// Everything `claude` is run with but the prompt, which goes on stdin.
+fn claude_args(req: &AiRequest) -> Vec<String> {
     // Print mode, streamed; no session file, and none of the user's hooks, settings or MCP
     // servers, which would otherwise be loaded on every question.
-    cmd.args([
+    let mut args: Vec<String> = [
         "-p",
         "--output-format",
         "stream-json",
@@ -207,28 +215,43 @@ pub async fn stream_claude(req: &AiRequest, channel: &Channel<StreamEvent>, canc
         "--setting-sources",
         "",
         "--strict-mcp-config",
-    ]);
-    match &req.folder {
-        // Read-only tools, approved up front (print mode cannot ask), reaching only the
-        // session's folders, with enough turns to look around before answering.
-        Some(folder) => {
-            cmd.args(["--max-turns", "12", "--tools", CLAUDE_TOOLS, "--allowedTools", CLAUDE_TOOLS, "--add-dir", folder]);
-            for root in &req.roots {
-                cmd.args(["--add-dir", root]);
-            }
+    ]
+    .map(String::from)
+    .to_vec();
+    // The read-only tools with a folder, the web tools when Settings allows the web. Each is
+    // approved up front, since print mode cannot ask and stalls on a tool it would have to, and
+    // they get enough turns to look around before answering. With neither, one turn and no tools.
+    let mut tools: Vec<&str> = Vec::new();
+    if req.folder.is_some() {
+        tools.push(CLAUDE_TOOLS);
+    }
+    if req.web_access {
+        tools.push(CLAUDE_WEB_TOOLS);
+    }
+    let tools = tools.join(",");
+    if tools.is_empty() {
+        args.extend(["--max-turns", "1", "--tools", ""].map(String::from));
+    } else {
+        args.extend(["--max-turns".into(), "12".into(), "--tools".into(), tools.clone(), "--allowedTools".into(), tools]);
+    }
+    // The file tools reach only the session's folders.
+    if let Some(folder) = &req.folder {
+        for dir in std::iter::once(folder).chain(&req.roots) {
+            args.extend(["--add-dir".into(), dir.clone()]);
         }
-        // One turn and no tools at all.
-        None => {
-            cmd.args(["--max-turns", "1", "--tools", ""]);
-        }
-    };
+    }
     if !req.model.is_empty() {
-        cmd.args(["--model", &req.model]);
+        args.extend(["--model".into(), req.model.clone()]);
     }
-    let system = folder_note(req).or_else(|| req.system.clone());
-    if let Some(sys) = &system {
-        cmd.args(["--system-prompt", sys]);
+    if let Some(sys) = folder_note(req).or_else(|| req.system.clone()) {
+        args.extend(["--system-prompt".into(), sys]);
     }
+    args
+}
+
+pub async fn stream_claude(req: &AiRequest, channel: &Channel<StreamEvent>, cancel: &CancelToken) -> Result<bool> {
+    let mut cmd = Command::new(find_bin("claude")?);
+    cmd.args(claude_args(req));
     // The prompt goes on stdin, not argv: a page with embedded images can be most of a megabyte,
     // and macOS's ARG_MAX is only around that. `feed_stdin` writes it off to one side of the
     // read loop below, so a long prompt cannot deadlock against a child that starts answering
@@ -338,19 +361,46 @@ pub async fn ping_claude() -> Result<Vec<String>> {
 
 // ---------- Codex ----------
 
-pub async fn stream_codex(req: &AiRequest, channel: &Channel<StreamEvent>, cancel: &CancelToken) -> Result<bool> {
-    let mut cmd = Command::new(find_bin("codex")?);
-    cmd.args(["exec", "--json", "--skip-git-repo-check", "--ephemeral", "--sandbox", "read-only"]);
+/// Everything `codex` is run with, the prompt last.
+fn codex_args(req: &AiRequest) -> Vec<String> {
+    // Read-only, with no session file and none of the user's config.toml, command rules, plugins
+    // or ChatGPT connectors, as Claude Code runs without the user's settings and MCP servers:
+    // those bring tools (a browser, a GitHub fetch) that reach the web whatever the sandbox says,
+    // and an "allow" rule (`curl`, `git push`) runs its command outside the sandbox altogether.
+    let mut args: Vec<String> = [
+        "exec",
+        "--json",
+        "--skip-git-repo-check",
+        "--ephemeral",
+        "--sandbox",
+        "read-only",
+        "--ignore-user-config",
+        "--ignore-rules",
+        "--disable",
+        "apps",
+        "--disable",
+        "plugins",
+        "-c",
+    ]
+    .map(String::from)
+    .to_vec();
+    // Codex's own web search is set either way: left alone it defaults to searching a cached index.
+    args.push(if req.web_access { r#"web_search="live""# } else { r#"web_search="disabled""# }.into());
     if !req.model.is_empty() {
-        cmd.args(["--model", &req.model]);
+        args.extend(["--model".into(), req.model.clone()]);
     }
     // `codex exec` has no system-prompt flag, so the instructions lead the prompt.
     let system = folder_note(req).or_else(|| req.system.clone());
-    let prompt = match &system {
+    args.push(match &system {
         Some(s) if !s.trim().is_empty() => format!("{s}\n\n---\n\n{}", transcript(req)),
         _ => transcript(req),
-    };
-    cmd.arg(prompt);
+    });
+    args
+}
+
+pub async fn stream_codex(req: &AiRequest, channel: &Channel<StreamEvent>, cancel: &CancelToken) -> Result<bool> {
+    let mut cmd = Command::new(find_bin("codex")?);
+    cmd.args(codex_args(req));
     // With the folder as its working directory, Codex's read-only sandbox lets it look at the
     // pages with its own shell; from the neutral folder it has nothing to read.
     let child = spawn(cmd, req.folder.as_deref(), Stdio::null())?;
@@ -363,6 +413,9 @@ pub async fn stream_codex(req: &AiRequest, channel: &Channel<StreamEvent>, cance
                 let short: String = command.chars().take(60).collect();
                 let detail = if short.is_empty() { "Running a command".to_string() } else { format!("Running `{short}`") };
                 let _ = channel.send(StreamEvent::Tool { name: "command".to_string(), detail });
+            }
+            Some("item.started") if v["item"]["type"] == "web_search" => {
+                let _ = channel.send(StreamEvent::Tool { name: "web_search".to_string(), detail: crate::tools::describe("web_search", &v["item"]) });
             }
             Some("item.completed") if v["item"]["type"] == "agent_message" => {
                 if let Some(t) = v["item"]["text"].as_str() {
@@ -388,9 +441,19 @@ pub async fn stream_codex(req: &AiRequest, channel: &Channel<StreamEvent>, cance
         return Err(AppError::Message(f));
     }
     if !ok && !sent {
-        return Err(AppError::Message(last_line(&stderr).unwrap_or_else(|| "Codex exited with an error".into())));
+        return Err(AppError::Message(codex_exit_error(&stderr)));
     }
     Ok(false)
+}
+
+/// The error for a Codex run that failed before it answered, from what it wrote to stderr.
+fn codex_exit_error(stderr: &str) -> String {
+    // A Codex older than the flags in `codex_args` stops on them, and its last line
+    // ("For more information, try '--help'.") would not say why.
+    if stderr.contains("unexpected argument") || stderr.contains("Unknown feature flag") {
+        return "This Codex CLI is too old for Nested. Update it to version 0.122 or later.".into();
+    }
+    last_line(stderr).unwrap_or_else(|| "Codex exited with an error".into())
 }
 
 /// Proves `codex` is installed and signed in; returns the models a ChatGPT plan offers.
@@ -470,6 +533,7 @@ exec sleep 30
             folder: None,
             roots: vec![],
             excluded: vec![],
+            web_access: false,
             kind: None,
         }
     }
@@ -512,6 +576,100 @@ exec sleep 30
         let kinds = kinds(&events.lock().unwrap());
         assert!(!kinds.is_empty() && kinds.iter().all(|k| k == "delta"), "events: {kinds:?}");
         assert!(started.elapsed() < Duration::from_secs(10), "took {:?}", started.elapsed());
+    }
+}
+
+#[cfg(test)]
+mod args {
+    use super::*;
+    use crate::ai::ChatMessage;
+
+    fn request(folder: Option<&str>, web_access: bool) -> AiRequest {
+        AiRequest {
+            provider: "anthropic".into(),
+            auth: Some("subscription".into()),
+            model: "haiku".into(),
+            base_url: None,
+            system: Some("Answer briefly.".into()),
+            messages: vec![ChatMessage { role: "user".into(), content: "What carries the sequence?".into() }],
+            max_tokens: None,
+            folder: folder.map(String::from),
+            roots: vec![],
+            excluded: vec![],
+            web_access,
+            kind: None,
+        }
+    }
+
+    /// The value that follows `flag`, or `None` when the flag is not there.
+    fn after<'a>(args: &'a [String], flag: &str) -> Option<&'a str> {
+        args.iter().position(|a| a == flag).map(|i| args[i + 1].as_str())
+    }
+
+    fn web_tools(tools: &[Value]) -> usize {
+        tools.iter().filter(|t| t["name"] == "web_search").count()
+    }
+
+    #[test]
+    fn web_tools_only_when_settings_allow_the_web() {
+        for folder in [None, Some("/tmp/notes")] {
+            let off = request(folder, false);
+            let claude = claude_args(&off);
+            assert!(!claude.iter().any(|a| a.contains("Web")), "{claude:?}");
+            assert_eq!(after(&claude, "--tools"), Some(if folder.is_some() { "Read,Grep,Glob" } else { "" }));
+            assert_eq!(after(&codex_args(&off), "-c"), Some(r#"web_search="disabled""#));
+            assert_eq!(web_tools(&crate::ai::anthropic_request_tools(&off)), 0);
+
+            let on = request(folder, true);
+            let claude = claude_args(&on);
+            let want = if folder.is_some() { "Read,Grep,Glob,WebSearch,WebFetch" } else { "WebSearch,WebFetch" };
+            // Offered and approved: print mode cannot ask, so a tool missing from --allowedTools stalls.
+            assert_eq!(after(&claude, "--tools"), Some(want));
+            assert_eq!(after(&claude, "--allowedTools"), Some(want));
+            assert_eq!(after(&claude, "--max-turns"), Some("12"));
+            assert_eq!(after(&codex_args(&on), "-c"), Some(r#"web_search="live""#));
+            let http = crate::ai::anthropic_request_tools(&on);
+            assert_eq!(web_tools(&http), 1);
+            // Alongside the three folder tools when there is a folder, not instead of them.
+            assert_eq!(http.len(), if folder.is_some() { 4 } else { 1 });
+        }
+    }
+
+    #[test]
+    fn without_a_folder_or_the_web_claude_gets_one_turn_and_no_tools() {
+        let claude = claude_args(&request(None, false));
+        assert_eq!(after(&claude, "--max-turns"), Some("1"));
+        assert_eq!(after(&claude, "--allowedTools"), None);
+        assert_eq!(after(&claude, "--add-dir"), None);
+        // The web alone reaches no folder.
+        assert_eq!(after(&claude_args(&request(None, true)), "--add-dir"), None);
+        assert_eq!(after(&claude_args(&request(Some("/tmp/notes"), true)), "--add-dir"), Some("/tmp/notes"));
+    }
+
+    /// The user's own Codex setup brings tools that reach the web (a browser, ChatGPT
+    /// connectors, rules that run `curl` outside the sandbox), so it stays out whether or not
+    /// the web is allowed.
+    #[test]
+    fn codex_runs_without_the_users_config_rules_plugins_or_connectors() {
+        for web in [false, true] {
+            let codex = codex_args(&request(None, web));
+            assert!(codex.contains(&"--ignore-user-config".to_string()), "{codex:?}");
+            assert!(codex.contains(&"--ignore-rules".to_string()), "{codex:?}");
+            let disabled: Vec<&str> = codex.windows(2).filter(|w| w[0] == "--disable").map(|w| w[1].as_str()).collect();
+            assert_eq!(disabled, ["apps", "plugins"]);
+            assert_eq!(after(&codex, "--sandbox"), Some("read-only"));
+        }
+    }
+
+    /// A Codex too old for those flags says why, not just clap's closing line.
+    #[test]
+    fn an_old_codex_is_told_to_update() {
+        let too_old = "This Codex CLI is too old for Nested. Update it to version 0.122 or later.";
+        let clap = "error: unexpected argument '--ignore-user-config' found\n\n  tip: to pass '--ignore-user-config' as a value, use '-- --ignore-user-config'\n\nUsage: codex exec [OPTIONS] [PROMPT]\n\nFor more information, try '--help'.\n";
+        assert_eq!(codex_exit_error(clap), too_old);
+        assert_eq!(codex_exit_error("Error: Unknown feature flag: plugins\n"), too_old);
+        assert_eq!(codex_exit_error("Error: Not logged in\n"), "Error: Not logged in");
+        assert_eq!(codex_exit_error(""), "Codex exited with an error");
     }
 }
 
@@ -563,6 +721,7 @@ mod live {
             folder: None,
             roots: vec![],
             excluded: vec![],
+            web_access: false,
             kind: None,
         };
         tauri::async_runtime::block_on(crate::ai::stream(req, channel, CancelToken::default()));
@@ -578,11 +737,11 @@ mod live {
         assert!(matches!(events.last(), Some(StreamEvent::Done { .. })), "events: {}", events.len());
     }
 
-    /// Uses the model configured in ~/.codex/config.toml (no `-m`), so it runs on whatever
-    /// the local Codex setup routes to; the point is the event parsing, not the model.
+    /// Uses Codex's own default model (no `-m`, and the user's config.toml is left out), so it
+    /// runs on whatever Codex picks; the point is the event parsing, not the model.
     #[test]
     #[ignore]
-    fn codex_streams_with_its_configured_default_model() {
+    fn codex_streams_with_its_default_model() {
         let (channel, events) = collect();
         let req = AiRequest {
             provider: "openai".into(),
@@ -595,6 +754,7 @@ mod live {
             folder: None,
             roots: vec![],
             excluded: vec![],
+            web_access: false,
             kind: None,
         };
         tauri::async_runtime::block_on(crate::ai::stream(req, channel, CancelToken::default()));
@@ -616,6 +776,74 @@ mod live {
         assert!(errors.is_empty(), "errors: {errors:?}");
         assert!(text.to_lowercase().contains("blue"), "got: {text:?}");
         assert!(matches!(events.last(), Some(StreamEvent::Done { .. })));
+    }
+
+    /// Runs a request the way the app sends it and returns the tool names it reported and its text.
+    fn run(req: AiRequest) -> (Vec<String>, String) {
+        let (channel, events) = collect();
+        tauri::async_runtime::block_on(crate::ai::stream(req, channel, CancelToken::default()));
+        let events = events.lock().unwrap();
+        let mut tools = Vec::new();
+        let mut text = String::new();
+        for e in events.iter() {
+            match e {
+                StreamEvent::Tool { name, detail } => tools.push(format!("{name}: {detail}")),
+                StreamEvent::Delta { text: t } => text.push_str(t),
+                StreamEvent::Error { message } => panic!("error: {message}"),
+                StreamEvent::Done { .. } => {}
+            }
+        }
+        assert!(matches!(events.last(), Some(StreamEvent::Done { .. })), "no done event");
+        eprintln!("tools: {tools:?}\ntext: {text}");
+        (tools, text)
+    }
+
+    /// A question only the web can answer, with the web allowed in Settings.
+    fn web_question(provider: &str, model: &str) -> AiRequest {
+        AiRequest {
+            provider: provider.into(),
+            auth: Some("subscription".into()),
+            model: model.into(),
+            base_url: None,
+            system: Some("Answer in one line.".into()),
+            messages: vec![ChatMessage { role: "user".into(), content: "Search the web: what is the newest stable Rust version? Answer in one line.".into() }],
+            max_tokens: Some(300),
+            folder: None,
+            roots: vec![],
+            excluded: vec![],
+            web_access: true,
+            kind: None,
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn claude_searches_the_web_when_allowed() {
+        let (tools, text) = run(web_question("anthropic", "haiku"));
+        assert!(tools.iter().any(|t| t.starts_with("WebSearch")), "tools: {tools:?}");
+        assert!(text.contains("1."), "got: {text:?}");
+    }
+
+    #[test]
+    #[ignore]
+    fn codex_searches_the_web_when_allowed() {
+        let (tools, text) = run(web_question("openai", "gpt-5.6-luna"));
+        assert!(tools.iter().any(|t| t.starts_with("web_search")), "tools: {tools:?}");
+        assert!(text.contains("1."), "got: {text:?}");
+    }
+
+    /// Without the user's config, Codex still reads the session folder with its own shell.
+    #[test]
+    #[ignore]
+    fn codex_reads_the_folder() {
+        let dir = tempfile::Builder::new().prefix("nested-").tempdir().unwrap();
+        std::fs::write(dir.path().join("replay.md"), "# Replay\n\nRipples carry the sequence.\n").unwrap();
+        let mut req = web_question("openai", "gpt-5.6-luna");
+        req.web_access = false;
+        req.folder = Some(dir.path().to_str().unwrap().into());
+        req.messages[0].content = "Read replay.md: what carries the sequence? Answer in a few words.".into();
+        let (_tools, text) = run(req);
+        assert!(text.to_lowercase().contains("ripple"), "got: {text:?}");
     }
 
     #[test]
