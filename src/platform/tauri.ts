@@ -113,12 +113,20 @@ export const tauriPlatform: Platform = {
       onEvent(e);
     };
     const id = crypto.randomUUID();
-    invoke("ai_stream", { id, req, channel }).catch((err: unknown) => {
-      if (!finished) {
-        finished = true;
-        onEvent({ type: "error", message: String(err) });
-      }
-    });
+    const fail = (message: string) => {
+      if (finished) return;
+      finished = true;
+      onEvent({ type: "error", message });
+    };
+    // Resolves to whether Rust sent a `done` or `error`. One it did send may still be on its way
+    // (channel messages and the invoke result arrive in either order), so it is left to arrive;
+    // a stream that ended with none, and that this side did not cancel, is settled here instead.
+    invoke<boolean>("ai_stream", { id, req, channel }).then(
+      (sent) => {
+        if (!sent) fail("The stream stopped without finishing. Try again.");
+      },
+      (err: unknown) => fail(String(err)),
+    );
     return {
       cancel() {
         finished = true;

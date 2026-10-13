@@ -1,4 +1,4 @@
-import type { Auth, ModelSlot, Provider, Settings } from "../platform";
+import type { AiRequest, Auth, ModelSlot, Provider, Settings } from "../platform";
 
 /** Which account mode applies to a provider (only OpenAI and Anthropic have a plan option). */
 export function authFor(settings: Pick<Settings, "auth">, provider: Provider): Auth | undefined {
@@ -40,4 +40,19 @@ export function pickDefaultModel(provider: Provider, auth: Auth | undefined, lis
     if (hit) return hit;
   }
   return usable[0];
+}
+
+/**
+ * The `maxTokens` for rewriting a whole page of `chars` characters: the page again with half as much
+ * to spare, at about four characters a token, and never less than 4000. A plan's CLI takes no output
+ * limit (the app only scales its own runaway-output backstop from this), so it gets the estimate as
+ * is. Over an API some models refuse a large `max_tokens` outright (gpt-4o stops at 16,384, older
+ * Haikus at 8192), so 8192 is the ceiling there, except for Claude 4 and later — named
+ * `claude-<tier>-<version>` — which all take at least 32,000.
+ */
+export function pageRewriteTokens(chars: number, req: Pick<AiRequest, "provider" | "auth" | "model">): number {
+  const estimate = Math.max(4000, Math.ceil((chars / 4) * 1.5));
+  if (req.auth === "subscription") return estimate;
+  const cap = req.provider === "anthropic" && /^claude-[a-z]+-\d/.test(req.model) ? 32_000 : 8192;
+  return Math.min(estimate, cap);
 }

@@ -21,9 +21,9 @@ import {
   type VersionInfo,
 } from "../platform";
 import { diffBodies, revertChange, type Change, type PageDiff } from "../lib/diff";
-import { unmaskDataUris } from "../lib/dataUris";
+import { createDataUriMask, maskDataUris, unmaskDataUris } from "../lib/dataUris";
 import { findWikiLink, joinBlocks, lexBlocks, linkTextInRaw, replaceFlexible, resolveWikiTarget } from "../lib/markdown";
-import { authFor, modelSlot } from "../lib/models";
+import { authFor, modelSlot, pageRewriteTokens } from "../lib/models";
 import { serializePage, titleFromBody } from "../lib/frontmatter";
 import { slugify, titleFromQuestion, uniquePath } from "../lib/slug";
 import { nowIso } from "../lib/time";
@@ -2441,7 +2441,11 @@ export class ReaderStore {
         if (this.cancelledRefines.has(id)) return finish();
         const { system, messages, mask } = refineMessages({ ...ctx, page: { meta: this.state.pages[path], body } }, instruction, selection ? "selection" : "page", target);
         let out = "";
-        this.stream(key, this.request(system, messages, selection ? 800 : 4000, "refine"), {
+        const req = this.request(system, messages, undefined, "refine");
+        // A whole page has to come back whole, so its room grows with the page as the model sees it
+        // (images masked); a fixed ceiling cut every long page off and refused it.
+        req.maxTokens = selection ? 800 : pageRewriteTokens(maskDataUris(createDataUriMask(), target).length, req);
+        this.stream(key, req, {
           delta: (t) => {
             out += t;
           },

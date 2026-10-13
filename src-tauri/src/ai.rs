@@ -92,10 +92,12 @@ fn openai_base(req_base: Option<&str>, provider: &str) -> String {
     base
 }
 
+/// A read timeout rather than an overall one, so a long answer that keeps streaming (a whole-page
+/// refine can run for minutes) is not cut off; a server that goes quiet for three minutes still is.
 fn client() -> Result<reqwest::Client> {
     Ok(reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(15))
-        .timeout(Duration::from_secs(180))
+        .read_timeout(Duration::from_secs(180))
         .build()?)
 }
 
@@ -130,7 +132,9 @@ fn ollama_error(base: &str, e: reqwest::Error) -> AppError {
 }
 
 /// Emits deltas on the channel until the stream ends, the token cancels or an error occurs.
-pub async fn stream(req: AiRequest, channel: Channel<StreamEvent>, cancel: CancelToken) -> Result<()> {
+/// Returns whether it sent the stream's last event (`Done` or `Error`), which it always does
+/// unless the stream was cancelled; the UI uses that to settle a stream that ended without one.
+pub async fn stream(req: AiRequest, channel: Channel<StreamEvent>, cancel: CancelToken) -> bool {
     let subscription = req.auth.as_deref() == Some("subscription");
     let result = match (req.provider.as_str(), subscription) {
         ("anthropic", true) => crate::cli::stream_claude(&req, &channel, &cancel).await,
@@ -146,17 +150,14 @@ pub async fn stream(req: AiRequest, channel: Channel<StreamEvent>, cancel: Cance
     // A cancelled stream (the UI moved on, or the app is quitting) must not push any more IPC
     // events: on quit in particular, the webview may already be tearing down, and sending into
     // it then is a likely cause of the "closed unexpectedly" crash report on macOS.
-    if !cancel.is_cancelled() {
-        match result {
-            Ok(truncated) => {
-                let _ = channel.send(StreamEvent::Done { truncated });
-            }
-            Err(e) => {
-                let _ = channel.send(StreamEvent::Error { message: e.to_string() });
-            }
-        }
+    if cancel.is_cancelled() {
+        return false;
     }
-    Ok(())
+    let last = match result {
+        Ok(truncated) => StreamEvent::Done { truncated },
+        Err(e) => StreamEvent::Error { message: e.to_string() },
+    };
+    channel.send(last).is_ok()
 }
 
 async fn read_error_body(resp: reqwest::Response) -> String {
@@ -826,7 +827,7 @@ mod ollama_live {
             excluded: vec![],
             kind: None,
         };
-        tauri::async_runtime::block_on(stream(req, channel, CancelToken::default())).unwrap();
+        tauri::async_runtime::block_on(stream(req, channel, CancelToken::default()));
         let events = events.lock().unwrap();
         let text: String = events
             .iter()
@@ -956,7 +957,7 @@ data: {\"type\":\"message_stop\"}\n\n";
         let dir = folder();
         let (base, seen) = serve(vec![(200, ANTHROPIC_TOOL_TURN), (200, ANTHROPIC_ANSWER)]).await;
         let (channel, events) = collect();
-        stream(request("anthropic", &base, dir.path().to_str().unwrap()), channel, CancelToken::default()).await.unwrap();
+        stream(request("anthropic", &base, dir.path().to_str().unwrap()), channel, CancelToken::default()).await;
 
         let seen = seen.lock().unwrap();
         assert_eq!(seen.len(), 2);
@@ -996,7 +997,7 @@ data: [DONE]\n\n";
         let dir = folder();
         let (base, seen) = serve(vec![(200, OPENAI_TOOL_TURN), (200, OPENAI_ANSWER)]).await;
         let (channel, events) = collect();
-        stream(request("custom", &base, dir.path().to_str().unwrap()), channel, CancelToken::default()).await.unwrap();
+        stream(request("custom", &base, dir.path().to_str().unwrap()), channel, CancelToken::default()).await;
 
         let seen = seen.lock().unwrap();
         assert_eq!(seen.len(), 2);
@@ -1029,7 +1030,7 @@ data: [DONE]\n\n";
         let dir = folder();
         let (base, seen) = serve(vec![(200, OLLAMA_TOOL_TURN), (200, OLLAMA_ANSWER)]).await;
         let (channel, events) = collect();
-        stream(request("ollama", &base, dir.path().to_str().unwrap()), channel, CancelToken::default()).await.unwrap();
+        stream(request("ollama", &base, dir.path().to_str().unwrap()), channel, CancelToken::default()).await;
 
         let seen = seen.lock().unwrap();
         assert_eq!(seen.len(), 2);
@@ -1054,7 +1055,7 @@ data: [DONE]\n\n";
         let refusal = "{\"error\":\"registry.ollama.ai/library/gemma3:4b does not support tools\"}";
         let (base, seen) = serve(vec![(400, refusal), (200, OLLAMA_ANSWER)]).await;
         let (channel, events) = collect();
-        stream(request("ollama", &base, dir.path().to_str().unwrap()), channel, CancelToken::default()).await.unwrap();
+        stream(request("ollama", &base, dir.path().to_str().unwrap()), channel, CancelToken::default()).await;
 
         let seen = seen.lock().unwrap();
         assert_eq!(seen.len(), 2);
@@ -1090,7 +1091,7 @@ data: [DONE]\n\n";
             let dir = folder();
             let (base, _seen) = serve(vec![(200, body)]).await;
             let (channel, events) = collect();
-            stream(request(provider, &base, dir.path().to_str().unwrap()), channel, CancelToken::default()).await.unwrap();
+            stream(request(provider, &base, dir.path().to_str().unwrap()), channel, CancelToken::default()).await;
 
             let events = events.lock().unwrap();
             // The part that arrived still streams, so the reader sees what the model managed.
@@ -1111,7 +1112,7 @@ data: [DONE]\n\n";
             let dir = folder();
             let (base, _seen) = serve(vec![(200, body)]).await;
             let (channel, events) = collect();
-            stream(request(provider, &base, dir.path().to_str().unwrap()), channel, CancelToken::default()).await.unwrap();
+            stream(request(provider, &base, dir.path().to_str().unwrap()), channel, CancelToken::default()).await;
 
             let events = events.lock().unwrap();
             assert_eq!(events.last().unwrap()["truncated"], false, "{provider} finished cleanly");
@@ -1124,7 +1125,7 @@ data: [DONE]\n\n";
         let (channel, _events) = collect();
         let mut req = request("ollama", &base, "");
         req.folder = None;
-        stream(req, channel, CancelToken::default()).await.unwrap();
+        stream(req, channel, CancelToken::default()).await;
         let seen = seen.lock().unwrap();
         assert_eq!(seen.len(), 1);
         assert!(seen[0].get("tools").is_none());
