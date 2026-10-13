@@ -379,16 +379,17 @@ fn relaunch(app: AppHandle) {
 
 // ---------- AI ----------
 
+/// Resolves to whether the stream's last event (`done` or `error`) was sent on `channel`.
 #[tauri::command]
-async fn ai_stream(app: AppHandle, id: String, req: AiRequest, channel: Channel<StreamEvent>, streams: State<'_, Streams>) -> Result<()> {
+async fn ai_stream(app: AppHandle, id: String, req: AiRequest, channel: Channel<StreamEvent>, streams: State<'_, Streams>) -> Result<bool> {
     let token = CancelToken::default();
     streams.0.lock().unwrap().insert(id.clone(), token.clone());
     if let Some(kind) = &req.kind {
         analytics::track_ai_ask(&app, kind);
     }
-    let result = ai::stream(req, channel, token).await;
+    let sent = ai::stream(req, channel, token).await;
     streams.0.lock().unwrap().remove(&id);
-    result
+    Ok(sent)
 }
 
 #[tauri::command]

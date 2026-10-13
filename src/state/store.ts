@@ -21,9 +21,9 @@ import {
   type VersionInfo,
 } from "../platform";
 import { diffBodies, revertChange, type Change, type PageDiff } from "../lib/diff";
-import { unmaskDataUris } from "../lib/dataUris";
+import { createDataUriMask, maskDataUris, unmaskDataUris } from "../lib/dataUris";
 import { findWikiLink, joinBlocks, lexBlocks, linkTextInRaw, replaceFlexible, resolveWikiTarget } from "../lib/markdown";
-import { authFor, modelSlot } from "../lib/models";
+import { authFor, modelSlot, pageRewriteTokens } from "../lib/models";
 import { serializePage, titleFromBody } from "../lib/frontmatter";
 import { slugify, titleFromQuestion, uniquePath } from "../lib/slug";
 import { nowIso } from "../lib/time";
@@ -2387,7 +2387,14 @@ export class ReaderStore {
       ),
     );
     this.cancelledRefines.delete(id);
-    const message = failures.find((m) => m);
+    let message = failures.find((m) => m);
+    // A corpus run that rewrote some pages and not others names the ones it left, by reason, so
+    // "the page is unchanged" is not read as the whole run.
+    if (message && scope === "corpus" && failures.some((m) => !m)) {
+      const left = new Map<string, string[]>();
+      failures.forEach((m, i) => m && left.set(m, [...(left.get(m) ?? []), this.state.pages[this.livePath(targets[i])]?.title ?? targets[i]]));
+      message = [...left].map(([m, titles]) => `${titles.join(", ")}: ${m}`).join(" ");
+    }
     const held = this.state.ui.refines[id];
     const refines = { ...this.state.ui.refines };
     // The failure is shown where the refine box was, with the text kept for a retry. A card dismissed
@@ -2441,7 +2448,11 @@ export class ReaderStore {
         if (this.cancelledRefines.has(id)) return finish();
         const { system, messages, mask } = refineMessages({ ...ctx, page: { meta: this.state.pages[path], body } }, instruction, selection ? "selection" : "page", target);
         let out = "";
-        this.stream(key, this.request(system, messages, selection ? 800 : 4000, "refine"), {
+        const req = this.request(system, messages, undefined, "refine");
+        // A whole page has to come back whole, so its room grows with the page as the model sees it
+        // (images masked); a fixed ceiling cut every long page off and refused it.
+        req.maxTokens = selection ? 800 : pageRewriteTokens(maskDataUris(createDataUriMask(), target).length, req);
+        this.stream(key, req, {
           delta: (t) => {
             out += t;
           },

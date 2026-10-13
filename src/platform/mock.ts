@@ -280,7 +280,8 @@ export const mockPlatform: Platform = {
   },
 
   aiStream(req, onEvent): StreamHandle {
-    // Dev hooks: "__fail__" in the request fails the first attempt (so retries can succeed); "__fail_always__" always fails.
+    // Dev hooks: "__fail__" in the request fails the first attempt (so retries can succeed); "__fail_always__" always fails;
+    // "__cut_off__" stops half way with `truncated`, as a stream that runs out of room does.
     const last = [...req.messages].reverse().find((m) => m.role === "user")?.content ?? "";
     const always = last.includes("__fail_always__");
     if (always || (last.includes("__fail__") && !failedOnce.has(last))) {
@@ -290,12 +291,13 @@ export const mockPlatform: Platform = {
     }
     const text = fakeAnswer(req);
     const words = text.split(/(?<=\s)/);
+    const end = last.includes("__cut_off__") ? Math.ceil(words.length / 2) : words.length;
     let i = 0;
     let cancelled = false;
     const tick = () => {
       if (cancelled) return;
-      if (i >= words.length) {
-        onEvent({ type: "done" });
+      if (i >= end) {
+        onEvent({ type: "done", truncated: end < words.length });
         return;
       }
       onEvent({ type: "delta", text: words[i++] });

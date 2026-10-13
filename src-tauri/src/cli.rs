@@ -19,6 +19,10 @@ pub const CODEX_MODELS: &[&str] = &["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.5"];
 
 /// Finds a CLI even when the app was opened from Finder, where PATH is nearly empty.
 fn find_bin(name: &str) -> Result<PathBuf> {
+    #[cfg(test)]
+    if let Some(bin) = fake::BIN.with(|b| b.borrow().clone()) {
+        return Ok(bin);
+    }
     let mut dirs: Vec<PathBuf> = std::env::var_os("PATH")
         .map(|p| std::env::split_paths(&p).collect())
         .unwrap_or_default();
@@ -127,13 +131,23 @@ fn feed_stdin(child: &mut Child, prompt: String) {
     });
 }
 
-/// Feeds each JSON line of stdout to `on_line` until it returns `false` or the process ends.
+/// What `run_lines` does once `on_line` has handled a line.
+enum Next {
+    /// Read the next line.
+    Line,
+    /// Stop reading and let the process finish on its own: its last line has come.
+    Wait,
+    /// Stop reading and kill the process now: it has written more than the caller will take.
+    Kill,
+}
+
+/// Feeds each JSON line of stdout to `on_line` until it says to stop or the process ends.
 /// Returns whether the process exited cleanly, plus everything it wrote to stderr. Cancellation is
 /// raced against the stdout read, not just checked between lines, so a child that has gone quiet
 /// (stalled, or streaming too slowly to matter) is killed as soon as it is asked to stop.
 async fn run_lines<F>(mut child: Child, cancel: &CancelToken, mut on_line: F) -> Result<(bool, String)>
 where
-    F: FnMut(&Value) -> Result<bool>,
+    F: FnMut(&Value) -> Result<Next>,
 {
     let stdout = child.stdout.take().ok_or("no stdout")?;
     let stderr = child.stderr.take();
@@ -145,25 +159,28 @@ where
         s
     });
     let mut lines = BufReader::new(stdout).lines();
-    loop {
+    let kill = loop {
         let line = tokio::select! {
-line = lines.next_line() => line?,
+            line = lines.next_line() => line?,
             // Races the read so a child that has gone quiet (a stalled tool call, a hung
             // subscription CLI) is killed as soon as the caller cancels, rather than lingering
             // until it next writes a line. Prefer CancelToken::cancelled() (Notify) over polling.
-            _ = cancel.cancelled() => {
-                let _ = child.kill().await;
-                return Ok((true, String::new()));
-            }
+            _ = cancel.cancelled() => break true,
         };
-        let Some(line) = line else { break };
+        let Some(line) = line else { break false };
         let v: Value = match serde_json::from_str(line.trim()) {
             Ok(v) => v,
             Err(_) => continue,
         };
-        if !on_line(&v)? {
-            break;
+        match on_line(&v)? {
+            Next::Line => {}
+            Next::Wait => break false,
+            Next::Kill => break true,
         }
+    };
+    if kill {
+        let _ = child.kill().await;
+        return Ok((true, String::new()));
     }
     let status = child.wait().await?;
     let err = stderr_task.await.unwrap_or_default();
@@ -234,11 +251,14 @@ pub async fn stream_claude(req: &AiRequest, channel: &Channel<StreamEvent>, canc
                 if v["event"]["delta"]["type"] == "text_delta" {
                     if let Some(t) = v["event"]["delta"]["text"].as_str() {
                         streamed = true;
-                        total_len += t.len();
+                        total_len += t.chars().count();
                         let _ = channel.send(StreamEvent::Delta { text: t.to_string() });
+                        // Killed here rather than through `cancel`, which belongs to the caller: a
+                        // cancelled stream sends no last event, and this one has to end with
+                        // `Done { truncated: true }`.
                         if total_len > budget_chars {
                             budget_exceeded = true;
-                            cancel.cancel();
+                            return Ok(Next::Kill);
                         }
                     }
                 } else if let Some(r) = v["event"]["delta"]["stop_reason"].as_str() {
@@ -275,11 +295,11 @@ pub async fn stream_claude(req: &AiRequest, channel: &Channel<StreamEvent>, canc
                         msg.to_string()
                     });
                 }
-                return Ok(false);
+                return Ok(Next::Wait);
             }
             _ => {}
         }
-        Ok(true)
+        Ok(Next::Line)
     })
     .await?;
     if let Some(f) = failure {
@@ -350,18 +370,18 @@ pub async fn stream_codex(req: &AiRequest, channel: &Channel<StreamEvent>, cance
                     let _ = channel.send(StreamEvent::Delta { text: t.to_string() });
                 }
             }
-            Some("turn.completed") => return Ok(false),
+            Some("turn.completed") => return Ok(Next::Wait),
             Some("turn.failed") | Some("error") => {
                 let msg = v["error"]["message"]
                     .as_str()
                     .or_else(|| v["message"].as_str())
                     .unwrap_or("Codex returned an error");
                 failure = Some(msg.to_string());
-                return Ok(false);
+                return Ok(Next::Wait);
             }
             _ => {}
         }
-        Ok(true)
+        Ok(Next::Line)
     })
     .await?;
     if let Some(f) = failure {
@@ -389,6 +409,109 @@ pub async fn ping_codex() -> Result<Vec<String>> {
         Err(AppError::Message(
             last_line(&text).unwrap_or_else(|| "Not signed in to Codex. Run `codex login` in a terminal.".into()),
         ))
+    }
+}
+
+/// How a subscription stream ends, against a stand-in `claude` that streams a little text and then
+/// goes quiet. `find_bin` hands out `BIN` ahead of anything installed. It is per thread, so each
+/// test sets its own and awaits the stream on that same thread (no `tokio::spawn`).
+#[cfg(test)]
+mod fake {
+    use super::*;
+    use crate::ai::ChatMessage;
+    use std::cell::RefCell;
+    use std::os::unix::fs::PermissionsExt;
+    use std::sync::{Arc, Mutex};
+    use std::time::{Duration, Instant};
+
+    thread_local! {
+        pub static BIN: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
+    }
+
+    /// Three deltas of about fifty characters, then thirty seconds of silence that only a kill cuts short.
+    const SCRIPT: &str = r#"#!/bin/sh
+cat > /dev/null
+for i in 1 2 3; do
+  echo '{"type":"stream_event","event":{"delta":{"type":"text_delta","text":"Ripples carry the daily sequence out to the cortex."}}}'
+done
+exec sleep 30
+"#;
+
+    fn install() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("claude");
+        std::fs::write(&bin, SCRIPT).unwrap();
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        BIN.with(|b| *b.borrow_mut() = Some(bin));
+        dir
+    }
+
+    fn collect() -> (Channel<StreamEvent>, Arc<Mutex<Vec<Value>>>) {
+        let events: Arc<Mutex<Vec<Value>>> = Arc::default();
+        let sink = events.clone();
+        let channel = Channel::new(move |body: tauri::ipc::InvokeResponseBody| {
+            if let tauri::ipc::InvokeResponseBody::Json(json) = body {
+                sink.lock().unwrap().push(serde_json::from_str(&json).unwrap());
+            }
+            Ok(())
+        });
+        (channel, events)
+    }
+
+    fn request(max_tokens: u32) -> AiRequest {
+        AiRequest {
+            provider: "anthropic".into(),
+            auth: Some("subscription".into()),
+            model: String::new(),
+            base_url: None,
+            system: None,
+            messages: vec![ChatMessage { role: "user".into(), content: "Rewrite the page.".into() }],
+            max_tokens: Some(max_tokens),
+            folder: None,
+            roots: vec![],
+            excluded: vec![],
+            kind: None,
+        }
+    }
+
+    fn kinds(events: &[Value]) -> Vec<String> {
+        events.iter().map(|e| e["type"].as_str().unwrap_or("").to_string()).collect()
+    }
+
+    #[tokio::test]
+    async fn output_past_the_budget_ends_as_truncated() {
+        let _dir = install();
+        let (channel, events) = collect();
+        let started = Instant::now();
+        // 10 tokens is an 80-character budget, which the second delta passes.
+        let sent = crate::ai::stream(request(10), channel, CancelToken::default()).await;
+        let events = events.lock().unwrap();
+        assert!(sent);
+        assert_eq!(kinds(&events), ["delta", "delta", "done"]);
+        assert_eq!(events[0]["text"], "Ripples carry the daily sequence out to the cortex.");
+        assert_eq!(events[2]["truncated"], true);
+        // Killed, not waited for: the stand-in would otherwise sit silent for thirty seconds.
+        assert!(started.elapsed() < Duration::from_secs(10), "took {:?}", started.elapsed());
+    }
+
+    #[tokio::test]
+    async fn a_cancelled_stream_sends_no_last_event() {
+        let _dir = install();
+        let (channel, events) = collect();
+        let cancel = CancelToken::default();
+        let started = Instant::now();
+        // Cancels once text has arrived, while the stand-in sits silent.
+        let stop = async {
+            while events.lock().unwrap().is_empty() {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            cancel.cancel();
+        };
+        let (sent, ()) = tokio::join!(crate::ai::stream(request(4000), channel, cancel.clone()), stop);
+        assert!(!sent);
+        let kinds = kinds(&events.lock().unwrap());
+        assert!(!kinds.is_empty() && kinds.iter().all(|k| k == "delta"), "events: {kinds:?}");
+        assert!(started.elapsed() < Duration::from_secs(10), "took {:?}", started.elapsed());
     }
 }
 
@@ -442,7 +565,7 @@ mod live {
             excluded: vec![],
             kind: None,
         };
-        tauri::async_runtime::block_on(crate::ai::stream(req, channel, CancelToken::default())).unwrap();
+        tauri::async_runtime::block_on(crate::ai::stream(req, channel, CancelToken::default()));
         let events = events.lock().unwrap();
         let text: String = events
             .iter()
@@ -474,7 +597,7 @@ mod live {
             excluded: vec![],
             kind: None,
         };
-        tauri::async_runtime::block_on(crate::ai::stream(req, channel, CancelToken::default())).unwrap();
+        tauri::async_runtime::block_on(crate::ai::stream(req, channel, CancelToken::default()));
         let events = events.lock().unwrap();
         let text: String = events
             .iter()
