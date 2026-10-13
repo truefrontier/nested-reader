@@ -102,6 +102,8 @@ The "Built in" provider is in the design but not connected to a service in this 
 
 Link clicks follow browser habits: click opens here, ⌘-click loads in the background, ⌘⇧-click opens here, ⌥-click opens beside.
 
+Drag the tree's right edge, or the line between the two panes, to resize them; double-click puts it back. The sizes are kept with your settings.
+
 ## Layout
 
 See [docs/architecture.md](docs/architecture.md) for how the pieces fit, what is written to disk, and how refine, review and versions work. The Claude Design source files the app implements are in `design/`.

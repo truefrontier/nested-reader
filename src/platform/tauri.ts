@@ -96,6 +96,7 @@ export const tauriPlatform: Platform = {
       models: { ...DEFAULT_SETTINGS.models, ...(stored?.models ?? {}) },
       context: { ...DEFAULT_SETTINGS.context, ...(stored?.context ?? {}) },
       readingWidth: { ...DEFAULT_SETTINGS.readingWidth, ...(stored?.readingWidth ?? {}) },
+      splitShare: { ...DEFAULT_SETTINGS.splitShare, ...(stored?.splitShare ?? {}) },
     };
   },
   saveSettings: (settings) => invoke("save_settings", { settings }),

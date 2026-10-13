@@ -35,7 +35,9 @@
   --page-inset-end: 16px;
   /* The page's box sits against the pane's left edge; centred, the auto margins split the slack. */
   --page-margin: 0;
-  --split-share: 26%;
+  /* The split pane's share of `.main`, beside and below; `applyTheme` writes the dragged `splitShare`. */
+  --split-beside: 26%;
+  --split-below: 50%;
   color-scheme: light;
 }
 :root[data-theme="dark"] {
@@ -295,7 +297,8 @@ button {
   z-index: 5;
   touch-action: none;
 }
-.side-grip::after {
+.side-grip::after,
+.split-grip::after {
   content: "";
   position: absolute;
   top: 0;
@@ -307,7 +310,9 @@ button {
   transition: opacity 0.12s ease-out;
 }
 .side-grip:hover::after,
-.side-grip:active::after {
+.side-grip:active::after,
+.split-grip:hover::after,
+.split-grip:active::after {
   opacity: 0.7;
 }
 .side-head {
@@ -747,26 +752,60 @@ button {
 }
 .pane.split {
   --pane-bg: var(--split-bg);
-  flex: 0 0 var(--split-share);
+  flex: 0 0 var(--split-beside);
+  /* The same limits `useSplitGrip` drags between, held again when the window narrows after a drag.
+     Too narrow for both, `min-width` wins and the split keeps its 260px. */
   min-width: 260px;
+  max-width: calc(100% - 320px);
   border-left: 1px solid var(--hair);
   animation: rise 0.2s ease-out;
+}
+/* The edge between the main and split panes: drag it to resize the split, double-click to go back to
+   the default share. Its negative margins give back its own size, so it overlaps both panes by a few
+   px and moves nothing. */
+.split-grip {
+  flex: none;
+  width: 7px;
+  margin: 0 -4px 0 -3px;
+  position: relative;
+  z-index: 1;
+  cursor: col-resize;
+  touch-action: none;
+}
+.main.below .split-grip {
+  width: auto;
+  height: 7px;
+  margin: -3px 0 -4px;
+  cursor: row-resize;
+}
+.main.below .split-grip::after {
+  top: 3px;
+  bottom: auto;
+  left: 0;
+  right: 0;
+  width: auto;
+  height: 1px;
 }
 .pane.split::before {
   height: 84px;
   margin-bottom: -84px;
   background: linear-gradient(var(--pane-bg) 0, var(--pane-bg) 56px, transparent);
 }
-/* Stacked, a quarter of the height would be unreadable, so the halves stand. */
+/* Stacked, the default is half: a quarter of the height would be unreadable. */
 .main.below .pane.split {
-  flex: 1;
+  flex: 0 0 var(--split-below);
   min-width: 0;
+  max-width: none;
+  min-height: 160px;
+  max-height: calc(100% - 160px);
   border-left: 0;
   border-top: 1px solid var(--hair);
 }
 /* ⌘⇧F hides the main pane, so the split takes the whole width rather than its share of nothing. */
 .main.fullscreen .pane.split {
   flex: 1;
+  max-width: none;
+  max-height: none;
   border-left: 0;
 }
 .pane.hidden {

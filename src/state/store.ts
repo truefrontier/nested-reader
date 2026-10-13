@@ -6,6 +6,7 @@ import {
   platform,
   readingWidthCss,
   sidebarWidthPx,
+  splitSharePct,
   type AiRequest,
   type Ask,
   type Attachment,
@@ -17,6 +18,7 @@ import {
   type Session,
   type SessionRoot,
   type Settings,
+  type SplitDirection,
   type StreamHandle,
   type VersionInfo,
 } from "../platform";
@@ -468,6 +470,7 @@ export class ReaderStore {
     root.style.setProperty("--text-size", `${s.textSize}px`);
     root.style.setProperty("--reading-width", readingWidthCss(s.readingWidth));
     root.style.setProperty("--side-width", `${sidebarWidthPx(s.sidebarWidth)}px`);
+    for (const dir of ["beside", "below"] as const) root.style.setProperty(`--split-${dir}`, `${splitSharePct(s.splitShare, dir)}%`);
     root.dataset.font = s.readingFont;
     // A hand-edited settings file can hold anything, so `data-align` is kept to the two values the CSS knows.
     root.dataset.align = s.pageAlign === "center" ? "center" : "left";
@@ -1374,6 +1377,18 @@ export class ReaderStore {
     } catch (e) {
       this.fail(e);
     }
+  }
+
+  /** Shows the split pane at `pct` of the panes while the edge between them is dragged; nothing is saved until `setSplitShare`. */
+  previewSplitShare(dir: SplitDirection, pct: number) {
+    document.documentElement.style.setProperty(`--split-${dir}`, `${splitSharePct({ [dir]: pct }, dir)}%`);
+  }
+
+  /** Keeps a dragged split share, clamped to its range, with the other settings. */
+  async setSplitShare(dir: SplitDirection, pct: number) {
+    const splitShare = { ...this.state.settings.splitShare, [dir]: splitSharePct({ [dir]: pct }, dir) };
+    this.applyTheme({ ...this.state.settings, splitShare });
+    await this.saveSettings({ splitShare });
   }
 
   private async saveSettings(patch: Partial<Settings>) {

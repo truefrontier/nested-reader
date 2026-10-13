@@ -134,6 +134,8 @@ export type Settings = {
   pageAlign: "left" | "center";
   /** Width of the sidebar in px, set by dragging its edge. */
   sidebarWidth: number;
+  /** The split pane's share of the panes in %, set by dragging the edge between them: of their width beside, their height below. */
+  splitShare: Record<SplitDirection, number>;
   newPageOpens: Placement;
   deepDiveOpens: Placement;
   provider: Provider;
@@ -196,6 +198,7 @@ export const DEFAULT_SETTINGS: Settings = {
   readingWidth: { unit: "em", em: 33, percent: 70 },
   pageAlign: "left",
   sidebarWidth: 224,
+  splitShare: { beside: 26, below: 50 },
   newPageOpens: "beside",
   deepDiveOpens: "background",
   provider: "anthropic",
@@ -228,6 +231,16 @@ export const SIDEBAR_WIDTH_RANGE = { min: 180, max: 480 };
 export function sidebarWidthPx(w: unknown): number {
   const n = typeof w === "number" && Number.isFinite(w) ? w : DEFAULT_SETTINGS.sidebarWidth;
   return Math.round(Math.min(SIDEBAR_WIDTH_RANGE.max, Math.max(SIDEBAR_WIDTH_RANGE.min, n)));
+}
+
+/** Only a guard against a hand-edited file; the drag itself keeps both panes to a size in px. */
+export const SPLIT_SHARE_RANGE = { min: 5, max: 95 };
+
+/** The split pane's share for `dir`, in %: the setting clamped to its range, or the default when it is missing or not a number. */
+export function splitSharePct(share: unknown, dir: SplitDirection): number {
+  const v = (share as Partial<Record<SplitDirection, unknown>> | null | undefined)?.[dir];
+  const n = typeof v === "number" && Number.isFinite(v) ? v : DEFAULT_SETTINGS.splitShare[dir];
+  return Math.round(Math.min(SPLIT_SHARE_RANGE.max, Math.max(SPLIT_SHARE_RANGE.min, n)) * 10) / 10;
 }
 
 /**
