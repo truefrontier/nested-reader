@@ -768,6 +768,12 @@
 - The CLI path in `cli.rs` has no stall timeout: a `claude -p` that never writes and never exits leaves the stream open with nothing to clear it. The HTTP paths cap a request at 180 s.
 - A plan opened from `~/.claude/plans` only reaches that folder — `--add-dir` covers the session folder and its added roots, so the project the plan is about stays invisible unless it is added with ⌘⇧O.
 
+### Follow-up — 2026-11-01: the CLIs get an idle cap
+- The stall timeout above now exists. `run_lines` kills a child that writes no line for `idle_cap` and ends the stream with an `error`: ten minutes, or for a long page the time to write `maxTokens` at 50 tokens/s.
+- Not the HTTP paths' three minutes, because the CLIs go quiet while working. Codex's JSON mode writes nothing until a message is whole (`map_started_item` and `collect_thread_events` in openai/codex `event_processor_with_jsonl_output.rs`), and Claude Code passes on nothing during hidden thinking (read from CLI 2.1.316 and the API docs, not timed).
+- The trade-off: a tool call that stays silent past the cap now fails. `docs/architecture.md` used to give that as the reason for having no cap.
+- Found on the way, not fixed: `stream_codex`'s `!ok && !sent` lets a crash after an interim message end as `done`; a CLI that exits 0 with no last line also ends as `done`; a `done` with no text writes a blank page in a whole-page refine (`store.ts`, after `stripFences`); Codex `error` events stop the read although Codex keeps running; and a kill reaches only the direct child, so an npm wrapper's native binary could outlive it.
+
 ## Session: 2026-09-16 — Add to Session… takes more than one path at once
 
 ### Leading assumptions
