@@ -26,6 +26,8 @@ import { EXTRA_FILES, EXTRA_FOLDER, SAMPLE_FILES, SAMPLE_FOLDER } from "./sample
  */
 const files = new Map<string, { raw: string; modified: string; created: string }>();
 const versions = new Map<string, { n: number; at: string; content: string }[]>();
+/** Deleted pages by the name `deletePage` gave back, like `.reader/trash` on disk. */
+const trash = new Map<string, { file: { raw: string; modified: string; created: string }; versions?: { n: number; at: string; content: string }[] }>();
 /** One saved session per folder path, like `.reader/session.json` on disk. */
 const sessions = new Map<string, Session>();
 const maps = new Map<string, Record<string, { about: string; for: string }>>();
@@ -185,10 +187,25 @@ export const mockPlatform: Platform = {
     files.set(key(folder, path), { raw: content, modified: now, created: prev?.created ?? now });
   },
 
-  /** The in-memory backend has no trash to park a page in, so it simply forgets it. */
   async deletePage(folder, path) {
-    if (!files.delete(key(folder, path))) throw new Error(`No such page: ${path}`);
-    versions.delete(key(folder, path));
+    const k = key(folder, path);
+    const file = files.get(k);
+    if (!file) throw new Error(`No such page: ${path}`);
+    const trashed = crypto.randomUUID();
+    trash.set(trashed, { file, versions: versions.get(k) });
+    files.delete(k);
+    versions.delete(k);
+    return trashed;
+  },
+
+  async restorePage(folder, path, trashed) {
+    const k = key(folder, path);
+    const parked = trash.get(trashed);
+    if (!parked) throw new Error("The deleted page is no longer in .reader/trash.");
+    if (files.has(k)) throw new Error(`${path} already exists, so the deleted page stays in .reader/trash.`);
+    files.set(k, parked.file);
+    if (parked.versions) versions.set(k, parked.versions);
+    trash.delete(trashed);
   },
 
   async loadSession(folder, file) {

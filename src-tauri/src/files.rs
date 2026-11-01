@@ -151,9 +151,9 @@ pub fn write_page(folder: &str, rel: &str, content: &str) -> Result<()> {
 }
 
 /// Takes a page out of the folder: its file and its version snapshots are moved into
-/// `.reader/trash/`, rather than removed, so a delete can still be undone by hand in Finder.
-/// A name already sitting in the trash gets `-2`, `-3`, and so on.
-pub fn delete_page(folder: &str, rel: &str) -> Result<()> {
+/// `.reader/trash/`, rather than removed, so a delete can be undone (`restore_page`, or by hand in
+/// Finder). A name already sitting in the trash gets `-2`, `-3`, and so on. Returns the name used.
+pub fn delete_page(folder: &str, rel: &str) -> Result<String> {
     let full = safe_join(folder, rel)?;
     if !full.is_file() {
         return Err(AppError::Message(format!("No such page: {rel}")));
@@ -174,6 +174,39 @@ pub fn delete_page(folder: &str, rel: &str) -> Result<()> {
     if versions.is_dir() {
         // The page is already out of the way; snapshots left behind are stale, not a failure.
         let _ = fs::rename(&versions, trash.join(format!("{name}-versions")));
+    }
+    Ok(name)
+}
+
+/// Undoes `delete_page`: moves the page parked as `trashed` back to `rel`, with its snapshots. If
+/// anything has since appeared at `rel` it refuses, and the page stays in the trash.
+pub fn restore_page(folder: &str, rel: &str, trashed: &str) -> Result<()> {
+    let full = safe_join(folder, rel)?;
+    let trash = reader_dir(folder).join("trash");
+    let ext = full.extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_else(|| "md".into());
+    let parked = safe_join(&trash.to_string_lossy(), &format!("{trashed}.{ext}"))?;
+    if !parked.is_file() {
+        return Err(AppError::Message("The deleted page is no longer in .reader/trash.".into()));
+    }
+    if let Some(parent) = full.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    // `rename` would replace whatever is there. `hard_link` fails if the path is taken, atomically, so
+    // a file that has appeared is never overwritten.
+    // ponytail: a volume without hard links (exFAT) can't undo, and says so; add a fallback if that comes up.
+    fs::hard_link(&parked, &full).map_err(|e| match e.kind() {
+        std::io::ErrorKind::AlreadyExists => AppError::Message(format!("{rel} already exists, so the deleted page stays in .reader/trash.")),
+        _ => AppError::Message(format!("Couldn't put the page back ({e}). It's still in .reader/trash.")),
+    })?;
+    fs::remove_file(&parked)?;
+    let versions = versions_dir(folder, rel)?;
+    let parked_versions = trash.join(format!("{trashed}-versions"));
+    if parked_versions.is_dir() && !versions.exists() {
+        // The page is already back; snapshots that can't follow stay in the trash, not a failure.
+        if let Some(parent) = versions.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let _ = fs::rename(&parked_versions, &versions);
     }
     Ok(())
 }
@@ -914,6 +947,106 @@ mod tests {
             fs::create_dir_all(parent).unwrap();
         }
         fs::write(dir.join(name), body).unwrap();
+    }
+
+    #[test]
+    fn restore_page_puts_the_page_and_its_snapshots_back() {
+        let dir = folder();
+        write_md(dir.path(), "notes/a.md", "# A\n");
+        let folder = dir.path().to_str().unwrap();
+        let n = snapshot_version(folder, "notes/a.md").unwrap();
+        let trashed = delete_page(folder, "notes/a.md").unwrap();
+        assert_eq!(trashed, "a");
+        assert!(!dir.path().join("notes/a.md").exists());
+
+        // Back even if its folder went away in the meantime.
+        fs::remove_dir(dir.path().join("notes")).unwrap();
+        restore_page(folder, "notes/a.md", &trashed).unwrap();
+
+        assert_eq!(fs::read_to_string(dir.path().join("notes/a.md")).unwrap(), "# A\n");
+        assert_eq!(read_version(folder, "notes/a.md", n).unwrap(), "# A\n");
+        assert_eq!(fs::read_dir(dir.path().join(".reader/trash")).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn restore_page_refuses_to_overwrite_a_file_that_has_since_appeared() {
+        let dir = folder();
+        write_md(dir.path(), "a.md", "# Old\n");
+        let folder = dir.path().to_str().unwrap();
+        snapshot_version(folder, "a.md").unwrap();
+        let trashed = delete_page(folder, "a.md").unwrap();
+        write_md(dir.path(), "a.md", "# New\n");
+
+        let err = restore_page(folder, "a.md", &trashed).unwrap_err().to_string();
+
+        assert_eq!(err, "a.md already exists, so the deleted page stays in .reader/trash.");
+        assert_eq!(fs::read_to_string(dir.path().join("a.md")).unwrap(), "# New\n");
+        assert_eq!(fs::read_to_string(dir.path().join(".reader/trash/a.md")).unwrap(), "# Old\n");
+        // Its snapshots stay with it, ready for a later try.
+        assert!(dir.path().join(".reader/trash/a-versions").is_dir());
+        assert!(list_versions(folder, "a.md").unwrap().is_empty());
+    }
+
+    #[test]
+    fn restore_page_brings_back_the_delete_it_was_asked_for() {
+        let dir = folder();
+        let folder = dir.path().to_str().unwrap();
+        write_md(dir.path(), "a.md", "# First\n");
+        assert_eq!(delete_page(folder, "a.md").unwrap(), "a");
+        write_md(dir.path(), "a.md", "# Second\n");
+        assert_eq!(delete_page(folder, "a.md").unwrap(), "a-2");
+
+        restore_page(folder, "a.md", "a-2").unwrap();
+
+        assert_eq!(fs::read_to_string(dir.path().join("a.md")).unwrap(), "# Second\n");
+        assert_eq!(fs::read_to_string(dir.path().join(".reader/trash/a.md")).unwrap(), "# First\n");
+    }
+
+    /// Snapshots already there belong to a newer page of that name, so the old ones stay parked.
+    #[test]
+    fn restore_page_leaves_its_snapshots_parked_if_newer_ones_are_in_the_way() {
+        let dir = folder();
+        write_md(dir.path(), "a.md", "# Old\n");
+        let folder = dir.path().to_str().unwrap();
+        snapshot_version(folder, "a.md").unwrap();
+        let trashed = delete_page(folder, "a.md").unwrap();
+        write_md(dir.path(), "a.md", "# New\n");
+        let n = snapshot_version(folder, "a.md").unwrap();
+        fs::remove_file(dir.path().join("a.md")).unwrap();
+
+        restore_page(folder, "a.md", &trashed).unwrap();
+
+        assert_eq!(fs::read_to_string(dir.path().join("a.md")).unwrap(), "# Old\n");
+        assert_eq!(read_version(folder, "a.md", n).unwrap(), "# New\n");
+        assert!(dir.path().join(".reader/trash/a-versions").is_dir());
+    }
+
+    /// Both names come over IPC, so neither may reach out of its folder.
+    #[test]
+    fn restore_page_refuses_paths_that_leave_the_folder_or_the_trash() {
+        let outer = folder();
+        let session = outer.path().join("session");
+        write_md(outer.path(), "secret.md", "# Secret\n");
+        write_md(&session, "a.md", "# A\n");
+        let folder = session.to_str().unwrap();
+        let trashed = delete_page(folder, "a.md").unwrap();
+
+        assert!(restore_page(folder, "b.md", "../../../secret").is_err());
+        assert!(restore_page(folder, "../b.md", &trashed).is_err());
+
+        assert!(outer.path().join("secret.md").exists());
+        assert!(!outer.path().join("b.md").exists());
+        assert!(!session.join("b.md").exists());
+        assert!(session.join(".reader/trash/a.md").exists());
+    }
+
+    #[test]
+    fn restore_page_says_so_when_the_trash_no_longer_holds_it() {
+        let dir = folder();
+        let folder = dir.path().to_str().unwrap();
+        let err = restore_page(folder, "a.md", "a").unwrap_err().to_string();
+        assert_eq!(err, "The deleted page is no longer in .reader/trash.");
+        assert!(!dir.path().join("a.md").exists());
     }
 
     #[test]

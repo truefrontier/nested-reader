@@ -343,8 +343,10 @@ export interface Platform {
   readPage(folder: string, path: string): Promise<Page>;
   /** Writes the full file content (front matter included). */
   writePage(folder: string, path: string, content: string): Promise<void>;
-  /** Takes a page out of the folder; the desktop backend parks it in `.reader/trash` rather than removing it. */
-  deletePage(folder: string, path: string): Promise<void>;
+  /** Takes a page out of the folder, parking it in `.reader/trash` rather than removing it. Resolves to the name `restorePage` needs. */
+  deletePage(folder: string, path: string): Promise<string>;
+  /** Puts back a page `deletePage` parked, with its snapshots. Rejects, leaving it parked, if anything has since appeared at `path`. */
+  restorePage(folder: string, path: string, trashed: string): Promise<void>;
   /** A folder's session, or with `file`, the separate session kept for a single-file session in that folder. */
   loadSession(folder: string, file?: string): Promise<Session | null>;
   saveSession(folder: string, session: Session, file?: string): Promise<void>;

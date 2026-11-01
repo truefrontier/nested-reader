@@ -217,7 +217,12 @@ export default function App() {
         </>
       )}
       <UpdateBar />
-      {s.ui.error && <div className="toast">{s.ui.error}</div>}
+      {s.ui.error && (
+        <div className="toast" role="status">
+          {s.ui.error}
+          {s.ui.toastAction && <button onClick={s.ui.toastAction.run}>{s.ui.toastAction.label}</button>}
+        </div>
+      )}
       {mockSettings && (
         <div className="modal-back" onMouseDown={(e) => e.target === e.currentTarget && setMockSettings(false)}>
           <SettingsApp embedded onClose={() => setMockSettings(false)} />
