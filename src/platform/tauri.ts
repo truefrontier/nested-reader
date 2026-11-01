@@ -20,7 +20,6 @@ import {
   type Session,
   type Settings,
   type StreamEvent,
-  type StreamHandle,
   type UpdateCheck,
   type UpdateProgress,
   type VersionInfo,
@@ -29,6 +28,7 @@ import {
 type RawPage = { path: string; raw: string; modified?: string; created?: string };
 
 import { metaFromRaw } from "../lib/frontmatter";
+import { trackStream } from "./stream";
 
 function toMeta(p: RawPage): PageMeta {
   const { meta } = metaFromRaw(p.path, p.raw, p.modified);
@@ -104,37 +104,17 @@ export const tauriPlatform: Platform = {
   setApiKey: (provider, key) => invoke("set_api_key", { provider, key }),
   hasApiKey: (provider) => invoke<boolean>("has_api_key", { provider }),
 
-  aiStream(req: AiRequest, onEvent): StreamHandle {
-    const channel = new Channel<StreamEvent>();
-    let finished = false;
-    channel.onmessage = (e) => {
-      if (finished) return;
-      // Only `done` and `error` end the stream; `tool` lines keep arriving while the model looks things up.
-      if (e.type === "done" || e.type === "error") finished = true;
-      onEvent(e);
-    };
-    const id = crypto.randomUUID();
-    const fail = (message: string) => {
-      if (finished) return;
-      finished = true;
-      onEvent({ type: "error", message });
-    };
-    // Resolves to whether Rust sent a `done` or `error`. One it did send may still be on its way
-    // (channel messages and the invoke result arrive in either order), so it is left to arrive;
-    // a stream that ended with none, and that this side did not cancel, is settled here instead.
-    invoke<boolean>("ai_stream", { id, req, channel }).then(
-      (sent) => {
-        if (!sent) fail("The stream stopped without finishing. Try again.");
-      },
-      (err: unknown) => fail(String(err)),
-    );
-    return {
-      cancel() {
-        finished = true;
-        invoke("ai_cancel", { id }).catch(() => undefined);
-      },
-    };
-  },
+  aiStream: (req: AiRequest, onEvent) =>
+    trackStream(onEvent, (send) => {
+      const channel = new Channel<StreamEvent>();
+      channel.onmessage = send;
+      const id = crypto.randomUUID();
+      return {
+        // Resolves to whether Rust sent a `done` or `error`.
+        ended: invoke<boolean>("ai_stream", { id, req, channel }),
+        cancel: () => void invoke("ai_cancel", { id }).catch(() => undefined),
+      };
+    }),
 
   aiPing: (provider: Provider, auth: Auth | undefined, baseUrl: string, model: string) =>
     invoke<PingResult>("ai_ping", { provider, auth, baseUrl, model }),
