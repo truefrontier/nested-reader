@@ -147,8 +147,17 @@ export function Sidebar() {
   useEffect(() => {
     if (s.session.current) store.revealInTree(s.session.current);
   }, [s.session.current]);
-  // Esc clears the filter, then leaves the box.
+  // Esc clears the filter, then leaves the box. Enter opens the top row, as clicking it would.
   const onFilterKey = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      // While an input method composes, Enter confirms the text. WebKit reports that as keyCode 229.
+      if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const first = firstShown(root);
+      if (first) void store.openPage(first, store.placementFor(e));
+      return;
+    }
     if (e.key !== "Escape") return;
     e.preventDefault();
     e.stopPropagation();
@@ -180,6 +189,11 @@ export function Sidebar() {
     // With both dots on, a page showing either mark is listed.
     if (unreadOnly || changesOnly) return (unreadOnly && unreadMark(it.path)) || (changesOnly && changesMark(it.path));
     return true;
+  };
+  // The top row of the tree, in the order `folder` below draws it: subfolders, then the folder's own pages.
+  const firstShown = (f: FolderNode): string | undefined => {
+    if (!filtering && collapsed.includes(f.path)) return undefined;
+    return f.folders.map(firstShown).find(Boolean) ?? f.items.find(shows)?.path;
   };
   // Dragging the right edge resizes the sidebar; double-click resets it to the default width.
   const { onGripDown, onGripMove, onGripUp } = useSidebarGrip(s.settings.sidebarWidth);

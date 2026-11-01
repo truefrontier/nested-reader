@@ -92,7 +92,7 @@ The "Built in" provider is in the design but not connected to a service in this 
 | ⌘F | Find in the page; a fresh selection becomes the search |
 | ↵ in the find box | Select the match: the ask box opens on it, ready to type |
 | ⌘G / ⌘⇧G | Next / previous match, selected the same way (⌘R switches to refine) |
-| / or ⌘/ | Filter the tree (shows it if hidden); Esc clears, then leaves the box |
+| / or ⌘/ | Filter the tree (shows it if hidden); ↵ opens the top row, Esc clears, then leaves the box |
 | ⌘B | Toggle the tree |
 | ⌘K | Session map |
 | ⌘⇧F | Fullscreen the split pane |
