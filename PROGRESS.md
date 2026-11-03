@@ -660,6 +660,9 @@
 - Carry the typed question across ⌘G steps instead of resetting it with each new selection, if that turns out to be wanted.
 - Enter in the Filter box could open the first visible page.
 
+### Follow-up — 2026-11-01: Enter in the Filter box
+- Enter now opens the tree's top row (`firstShown` in `Sidebar.tsx`, in the order the tree draws its rows) and does nothing when no page matches. It takes the same modifiers as a click on the row, and leaves an input method's Enter alone.
+
 ## Session: 2026-09-11 — ⌘N: a new page written from the whole session
 
 ### Leading assumptions
