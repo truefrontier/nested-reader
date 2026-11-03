@@ -8,6 +8,7 @@ use crate::error::{AppError, Result};
 use serde_json::Value;
 use std::path::PathBuf;
 use std::process::Stdio;
+use std::time::Duration;
 use tauri::ipc::Channel;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
@@ -139,6 +140,18 @@ fn feed_stdin(child: &mut Child, prompt: String) {
     });
 }
 
+/// How long a CLI may go without writing a line before it counts as hung. Neither writes steadily:
+/// `codex exec --json` writes a message only once it is whole, and Claude Code passes on nothing
+/// during hidden thinking, so the three minutes the HTTP clients allow would kill good answers.
+/// Ten minutes, or for a long page the time to write `max_tokens` at 50 tokens/s.
+fn idle_cap(req: &AiRequest) -> Duration {
+    #[cfg(test)]
+    if let Some(cap) = fake::IDLE_CAP.with(|c| c.get()) {
+        return cap;
+    }
+    Duration::from_secs((req.max_tokens.unwrap_or(0) as u64 / 50).max(600))
+}
+
 /// What `run_lines` does once `on_line` has handled a line.
 enum Next {
     /// Read the next line.
@@ -150,13 +163,16 @@ enum Next {
 }
 
 /// Feeds each JSON line of stdout to `on_line` until it says to stop or the process ends.
-/// Returns whether the process exited cleanly, plus everything it wrote to stderr. Cancellation is
-/// raced against the stdout read, not just checked between lines, so a child that has gone quiet
-/// (stalled, or streaming too slowly to matter) is killed as soon as it is asked to stop.
-async fn run_lines<F>(mut child: Child, cancel: &CancelToken, mut on_line: F) -> Result<(bool, String)>
+/// Returns whether the process exited cleanly (true for one killed here), plus everything it wrote
+/// to stderr. Cancellation is raced against the stdout read, not just checked between lines, so a
+/// child that has gone quiet (stalled, or streaming too slowly to matter) is killed as soon as it is
+/// asked to stop. One that nobody cancels is killed after `idle_cap` of silence, which is an error
+/// unless its last line has already come.
+async fn run_lines<F>(mut child: Child, name: &str, idle_cap: Duration, cancel: &CancelToken, mut on_line: F) -> Result<(bool, String)>
 where
     F: FnMut(&Value) -> Result<Next>,
 {
+    let stalled = || AppError::Message(format!("{name} went quiet for too long, so Nested stopped it. Try again."));
     let stdout = child.stdout.take().ok_or("no stdout")?;
     let stderr = child.stderr.take();
     let stderr_task = tokio::spawn(async move {
@@ -167,6 +183,7 @@ where
         s
     });
     let mut lines = BufReader::new(stdout).lines();
+    let mut last_line_came = false;
     let kill = loop {
         let line = tokio::select! {
             line = lines.next_line() => line?,
@@ -174,6 +191,11 @@ where
             // subscription CLI) is killed as soon as the caller cancels, rather than lingering
             // until it next writes a line. Prefer CancelToken::cancelled() (Notify) over polling.
             _ = cancel.cancelled() => break true,
+            // A new timer for each read, so this limits a silence and not the whole run.
+            _ = tokio::time::sleep(idle_cap) => {
+                let _ = child.kill().await;
+                return Err(stalled());
+            }
         };
         let Some(line) = line else { break false };
         let v: Value = match serde_json::from_str(line.trim()) {
@@ -182,7 +204,10 @@ where
         };
         match on_line(&v)? {
             Next::Line => {}
-            Next::Wait => break false,
+            Next::Wait => {
+                last_line_came = true;
+                break false;
+            }
             Next::Kill => break true,
         }
     };
@@ -190,9 +215,20 @@ where
         let _ = child.kill().await;
         return Ok((true, String::new()));
     }
-    let status = child.wait().await?;
-    let err = stderr_task.await.unwrap_or_default();
-    Ok((status.success(), err))
+    // Reading is over, but a child can still hold the stream open by never exiting.
+    tokio::select! {
+        (status, err) = async { (child.wait().await, stderr_task.await.unwrap_or_default()) } => Ok((status?.success(), err)),
+        _ = cancel.cancelled() => {
+            let _ = child.kill().await;
+            Ok((true, String::new()))
+        }
+        _ = tokio::time::sleep(idle_cap) => {
+            let _ = child.kill().await;
+            // After its last line the answer is whole, so only the exit is missing. Without one,
+            // nothing says the answer finished, and `done` would let a refine overwrite the page.
+            if last_line_came { Ok((true, String::new())) } else { Err(stalled()) }
+        }
+    }
 }
 
 fn last_line(text: &str) -> Option<String> {
@@ -268,7 +304,7 @@ pub async fn stream_claude(req: &AiRequest, channel: &Channel<StreamEvent>, canc
     // a blunt, app-side backstop: a rough chars-per-token estimate, generous enough not to cut off
     // a real answer, that kills the child rather than waiting for it to finish on its own.
     let budget_chars = req.max_tokens.map(|t| t as usize * 8).unwrap_or(32_000);
-    let (ok, stderr) = run_lines(child, cancel, |v| {
+    let (ok, stderr) = run_lines(child, "Claude Code", idle_cap(req), cancel, |v| {
         match v["type"].as_str() {
             Some("stream_event") => {
                 if v["event"]["delta"]["type"] == "text_delta" {
@@ -406,7 +442,7 @@ pub async fn stream_codex(req: &AiRequest, channel: &Channel<StreamEvent>, cance
     let child = spawn(cmd, req.folder.as_deref(), Stdio::null())?;
     let mut sent = false;
     let mut failure: Option<String> = None;
-    let (ok, stderr) = run_lines(child, cancel, |v| {
+    let (ok, stderr) = run_lines(child, "Codex", idle_cap(req), cancel, |v| {
         match v["type"].as_str() {
             Some("item.started") if v["item"]["type"] == "command_execution" => {
                 let command = v["item"]["command"].as_str().unwrap_or("").trim().replace('\n', " ");
@@ -482,13 +518,15 @@ pub async fn ping_codex() -> Result<Vec<String>> {
 mod fake {
     use super::*;
     use crate::ai::ChatMessage;
-    use std::cell::RefCell;
+    use std::cell::{Cell, RefCell};
     use std::os::unix::fs::PermissionsExt;
     use std::sync::{Arc, Mutex};
     use std::time::{Duration, Instant};
 
     thread_local! {
         pub static BIN: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
+        /// Stands in for `idle_cap`, so a test does not wait out minutes of silence.
+        pub static IDLE_CAP: Cell<Option<Duration>> = const { Cell::new(None) };
     }
 
     /// Three deltas of about fifty characters, then thirty seconds of silence that only a kill cuts short.
@@ -500,13 +538,32 @@ done
 exec sleep 30
 "#;
 
+    /// Writes nothing and never exits on its own. It notes its pid first, to prove it was killed.
+    const SILENT: &str = "#!/bin/sh\necho $$ > \"$0.pid\"\nexec sleep 30\n";
+
+    const RESULT: &str = r#"{"type":"result","is_error":false}"#;
+
+    /// Generous for a limit in a test: on a busy Mac a brand-new script can take over 300 ms to start.
+    const SHORT_CAP: Duration = Duration::from_secs(3);
+
     fn install() -> tempfile::TempDir {
+        install_script(SCRIPT, None)
+    }
+
+    fn install_script(script: &str, idle_cap: Option<Duration>) -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
         let bin = dir.path().join("claude");
-        std::fs::write(&bin, SCRIPT).unwrap();
+        std::fs::write(&bin, script).unwrap();
         std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
         BIN.with(|b| *b.borrow_mut() = Some(bin));
+        IDLE_CAP.with(|c| c.set(idle_cap));
         dir
+    }
+
+    /// Whether the process that `SILENT` noted is still running.
+    fn still_running(dir: &tempfile::TempDir) -> bool {
+        let pid = std::fs::read_to_string(dir.path().join("claude.pid")).unwrap();
+        std::process::Command::new("kill").args(["-0", pid.trim()]).stderr(Stdio::null()).status().unwrap().success()
     }
 
     fn collect() -> (Channel<StreamEvent>, Arc<Mutex<Vec<Value>>>) {
@@ -575,6 +632,104 @@ exec sleep 30
         assert!(!sent);
         let kinds = kinds(&events.lock().unwrap());
         assert!(!kinds.is_empty() && kinds.iter().all(|k| k == "delta"), "events: {kinds:?}");
+        assert!(started.elapsed() < Duration::from_secs(10), "took {:?}", started.elapsed());
+    }
+
+    #[tokio::test]
+    async fn a_silent_cli_ends_in_an_error_and_is_killed() {
+        for (provider, name) in [("anthropic", "Claude Code"), ("openai", "Codex")] {
+            let dir = install_script(SILENT, Some(SHORT_CAP));
+            let (channel, events) = collect();
+            let started = Instant::now();
+            let mut req = request(4000);
+            req.provider = provider.into();
+            let sent = crate::ai::stream(req, channel, CancelToken::default()).await;
+            let events = events.lock().unwrap();
+            assert!(sent);
+            assert_eq!(kinds(&events), ["error"]);
+            assert_eq!(events[0]["message"], format!("{name} went quiet for too long, so Nested stopped it. Try again."));
+            assert!(started.elapsed() < Duration::from_secs(10), "took {:?}", started.elapsed());
+            assert!(!still_running(&dir), "{name} was left running");
+        }
+    }
+
+    #[test]
+    fn a_long_page_gets_longer_than_the_ten_minutes() {
+        IDLE_CAP.with(|c| c.set(None));
+        assert_eq!(idle_cap(&request(4000)), Duration::from_secs(600));
+        assert_eq!(idle_cap(&request(60_000)), Duration::from_secs(1200));
+    }
+
+    /// Half an answer must not pass for a finished one: `done` would let a refine overwrite the page.
+    #[tokio::test]
+    async fn a_cli_that_stalls_after_some_text_ends_in_an_error_not_done() {
+        let _dir = install_script(SCRIPT, Some(SHORT_CAP));
+        let (channel, events) = collect();
+        let started = Instant::now();
+        assert!(crate::ai::stream(request(4000), channel, CancelToken::default()).await);
+        assert_eq!(kinds(&events.lock().unwrap()), ["delta", "delta", "delta", "error"]);
+        assert!(started.elapsed() < Duration::from_secs(10), "took {:?}", started.elapsed());
+    }
+
+    /// The cap is on silence, not on the run: this one lasts far longer than the cap, but no gap does.
+    #[tokio::test]
+    async fn a_cli_that_keeps_writing_is_not_killed() {
+        let script = format!(
+            "#!/bin/sh\ncat > /dev/null\nfor i in 1 2 3 4 5 6 7 8 9 10; do\n  echo '{{\"type\":\"stream_event\",\"event\":{{\"delta\":{{\"type\":\"text_delta\",\"text\":\"x\"}}}}}}'\n  sleep 0.4\ndone\necho '{RESULT}'\n"
+        );
+        let _dir = install_script(&script, Some(SHORT_CAP));
+        let (channel, events) = collect();
+        let started = Instant::now();
+        assert!(crate::ai::stream(request(4000), channel, CancelToken::default()).await);
+        let events = events.lock().unwrap();
+        assert_eq!(kinds(&events).iter().filter(|k| *k == "delta").count(), 10);
+        assert_eq!(kinds(&events).last().unwrap(), "done");
+        assert_eq!(events.last().unwrap()["truncated"], false);
+        assert!(started.elapsed() > SHORT_CAP, "took {:?}", started.elapsed());
+    }
+
+    /// Its last line has come, so the answer is whole and is kept, though the process won't leave.
+    #[tokio::test]
+    async fn a_cli_that_wont_exit_after_its_last_line_still_finishes() {
+        let script = format!("#!/bin/sh\ncat > /dev/null\necho '{RESULT}'\necho $$ > \"$0.pid\"\nexec sleep 30\n");
+        let dir = install_script(&script, Some(SHORT_CAP));
+        let (channel, events) = collect();
+        let started = Instant::now();
+        assert!(crate::ai::stream(request(4000), channel, CancelToken::default()).await);
+        assert_eq!(kinds(&events.lock().unwrap()), ["done"]);
+        assert!(started.elapsed() < Duration::from_secs(10), "took {:?}", started.elapsed());
+        assert!(!still_running(&dir));
+    }
+
+    /// No last line, so this is no finished answer; closing stdout must not get round the cap.
+    #[tokio::test]
+    async fn a_cli_that_closes_stdout_and_hangs_ends_in_an_error() {
+        let _dir = install_script("#!/bin/sh\ncat > /dev/null\nexec 1>&-\nexec sleep 30\n", Some(SHORT_CAP));
+        let (channel, events) = collect();
+        let started = Instant::now();
+        assert!(crate::ai::stream(request(4000), channel, CancelToken::default()).await);
+        assert_eq!(kinds(&events.lock().unwrap()), ["error"]);
+        assert!(started.elapsed() < Duration::from_secs(10), "took {:?}", started.elapsed());
+    }
+
+    /// Cancelling still works once reading is over and only the exit is being waited for.
+    #[tokio::test]
+    async fn a_cancel_reaches_a_cli_that_wont_exit_after_its_last_line() {
+        let script = "#!/bin/sh\ncat > /dev/null\necho '{\"type\":\"stream_event\",\"event\":{\"delta\":{\"type\":\"text_delta\",\"text\":\"x\"}}}'\necho '{\"type\":\"result\",\"is_error\":false}'\nexec sleep 30\n";
+        let _dir = install_script(script, None);
+        let (channel, events) = collect();
+        let cancel = CancelToken::default();
+        let started = Instant::now();
+        let stop = async {
+            while events.lock().unwrap().is_empty() {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            cancel.cancel();
+        };
+        let (sent, ()) = tokio::join!(crate::ai::stream(request(4000), channel, cancel.clone()), stop);
+        assert!(!sent);
+        assert_eq!(kinds(&events.lock().unwrap()), ["delta"]);
         assert!(started.elapsed() < Duration::from_secs(10), "took {:?}", started.elapsed());
     }
 }
