@@ -188,7 +188,11 @@ export type UiState = {
   findSelect: number;
   /** Bumped each time the tree's Filter box should take focus. */
   filterFocus: number;
+  /** Something the toast offers to do, beside its sentence in `error`. */
+  toastAction?: ToastAction;
 };
+
+export type ToastAction = { label: string; run: () => void };
 
 export type ReviewBase = { path: string; n: number; body: string };
 
@@ -382,12 +386,15 @@ export class ReaderStore {
     this.notify(err instanceof Error ? err.message : String(err));
   }
 
-  /** A sentence in the toast at the bottom of the window, for six seconds. */
-  notify(message: string) {
-    this.setUi({ error: message });
-    window.setTimeout(() => {
-      if (this.state.ui.error === message) this.setUi({ error: undefined });
-    }, 6000);
+  /** A sentence in the toast at the bottom of the window, for six seconds, or ten with an action to take. */
+  notify(message: string, action?: ToastAction) {
+    this.setUi({ error: message, toastAction: action });
+    window.setTimeout(
+      () => {
+        if (this.state.ui.error === message && this.state.ui.toastAction === action) this.setUi({ error: undefined, toastAction: undefined });
+      },
+      action ? 10_000 : 6000,
+    );
   }
 
   // ---------- lifecycle ----------
@@ -400,9 +407,11 @@ export class ReaderStore {
       this.set({ settings, recents });
       this.applyTheme(settings);
       platform.onSettingsChanged((s) => {
+        // Only a change of folder opens one, or saving any other setting would drag this window back to it.
+        const moved = s.folder !== this.state.settings.folder;
         this.set({ settings: s });
         this.applyTheme(s);
-        if (s.folder && s.folder !== (this.opening?.folder ?? this.state.folder)) void this.openFolder(s.folder);
+        if (moved && s.folder && s.folder !== (this.opening?.folder ?? this.state.folder)) void this.openFolder(s.folder);
       });
       platform.onCommand((id) => this.command(id));
       platform.onDragDrop((e) => {
@@ -876,6 +885,8 @@ export class ReaderStore {
     let { file } = opts;
     const target = { folder, file };
     this.opening = target;
+    // What the toast offers belongs to the session being left, and can't be done part way through a load.
+    if (this.state.ui.toastAction) this.setUi({ error: undefined, toastAction: undefined });
     try {
       const recentHint = this.findRecent(folder, file);
       const ids = { ...idsFromRecent(recentHint), ...opts.ids };
@@ -1119,6 +1130,9 @@ export class ReaderStore {
         lastPopoverMode: ui.lastPopoverMode,
         feedbackMessage: ui.feedbackMessage,
         feedbackEmail: ui.feedbackEmail,
+        // A toast offering an action stays, so a delete can be undone after moving to another page.
+        error: ui.toastAction ? ui.error : undefined,
+        toastAction: ui.toastAction,
       });
       await this.refreshVersions(path);
       await this.refreshReview(path);
@@ -1198,20 +1212,24 @@ export class ReaderStore {
   }
 
   /**
-   * Deletes a page. The desktop backend parks its file and its snapshots in `.reader/trash` inside the
-   * folder the page lives in, rather than removing them, so the delete can still be undone by hand.
-   * `dontAskAgain` is the confirmation's checkbox: it turns the confirmation off for good.
+   * Deletes a page. The backend parks its file and its snapshots in `.reader/trash` inside the folder
+   * the page lives in, rather than removing them, and the toast offers Undo for a moment. After that
+   * it can still be put back by hand. `dontAskAgain` is the confirmation's checkbox: it turns the
+   * confirmation off for good.
    */
   async deletePage(path: string, dontAskAgain = false) {
-    if (!this.state.pages[path] || !this.state.folder) return;
+    const { folder: primary, rootFile } = this.state;
+    const meta = this.state.pages[path];
+    if (!meta || !primary) return;
     // A page still being written, or with a write waiting behind its timer, would put the file straight back.
     this.stopStream(`page:${path}`);
     this.stopStream(`refine:${path}`);
     window.clearTimeout(this.writeTimers.get(path));
     this.writeTimers.delete(path);
     const { folder, rel } = this.loc(path);
+    let trashed: string;
     try {
-      await platform.deletePage(folder, rel);
+      trashed = await platform.deletePage(folder, rel);
     } catch (e) {
       // The write in flight is stopped either way; with the file still there, the page is simply idle now.
       const s = this.state.session;
@@ -1220,11 +1238,98 @@ export class ReaderStore {
     }
     // The checkbox only counts once the delete itself has gone through.
     if (dontAskAgain && this.state.settings.confirmDelete) void this.saveSettings({ confirmDelete: false });
+    // Another session opened meanwhile, so this one's page has already left the screen.
+    if (this.state.folder !== primary || this.state.rootFile !== rootFile) return;
+    const before = this.state.session;
     // The page a session, or an added root, was opened from takes that root with it.
-    if (this.state.rootFile === path) return this.endFileSession();
-    const root = (this.state.session.roots ?? []).find((r) => this.rootKey(r) === path);
-    if (root) return this.dropRoots((r) => r !== root);
-    this.forgetPage(path);
+    const root = (before.roots ?? []).find((r) => this.rootKey(r) === path);
+    if (rootFile === path) this.endFileSession();
+    else if (root) await this.dropRoots((r) => r !== root);
+    else this.forgetPage(path);
+    // Stopping the refine above let the next one queued on this page start. It goes too, and any
+    // behind it now find the page gone, so nothing rewrites the page if Undo brings it back.
+    this.stopStream(`refine:${path}`);
+    this.notify(`Deleted “${meta.title}”.`, {
+      label: "Undo",
+      run: () => void this.undoDelete({ path, folder, rel, trashed, primary, rootFile, root, before, meta }),
+    });
+  }
+
+  /** The toast's Undo: the file and its snapshots first, then the page's place in the session. */
+  private async undoDelete(d: {
+    path: string;
+    folder: string;
+    rel: string;
+    trashed: string;
+    primary: string;
+    rootFile?: string;
+    root?: SessionRoot;
+    before: Session;
+    meta: PageMeta;
+  }) {
+    this.setUi({ error: undefined, toastAction: undefined });
+    const { primary, rootFile, before } = d;
+    try {
+      await platform.restorePage(d.folder, d.rel, d.trashed);
+      // Deleting it ended the session, and its session file is still on disk, so this picks up where it was.
+      if (rootFile === d.path && !this.state.folder) return await this.openFolder(primary, { file: rootFile });
+      // A load has started or another session is open, so there's nothing here to put it back into.
+      if (this.opening || this.state.folder !== primary || this.state.rootFile !== rootFile) return this.notify(`“${d.meta.title}” is back in its folder.`);
+      if (d.root) return await this.putRootBack(d.path, d.meta, d.root, before, primary, rootFile);
+      await this.putPageBack(d.path, d.meta, before);
+    } catch (e) {
+      this.fail(e);
+    }
+  }
+
+  /**
+   * An added root back on the session. Dropping it took the marks of every page it brought, so those
+   * return with it, while everything else stays as it is now, since work may have landed since. The
+   * page and the root go into memory first: a link clicked during the reload then finds the page and
+   * can't start a new one over it, and a save firing during the reload can't take the root back out.
+   */
+  private async putRootBack(path: string, meta: PageMeta, root: SessionRoot, before: Session, primary: string, rootFile: string | undefined) {
+    const { session: s, pages } = this.state;
+    const session: Session = {
+      ...s,
+      roots: [...(s.roots ?? []), root],
+      excluded: before.excluded,
+      pending: { ...Object.fromEntries(Object.entries(before.pending).filter(([p]) => !pages[p])), ...s.pending },
+      unread: [...s.unread, ...before.unread.filter((p) => !pages[p])],
+    };
+    this.set({ pages: { ...pages, [path]: meta }, session });
+    window.clearTimeout(this.saveTimer);
+    // Where the reader was goes only in the file, because those pages aren't listed until the reload lands.
+    const { current, split, splitDirection, trail, trailIndex } = before;
+    await platform.saveSession(primary, { ...session, current, split, splitDirection, trail, trailIndex }, rootFile);
+    await this.openFolder(primary, { file: rootFile });
+  }
+
+  /**
+   * Back into the open session in place, because a reload would take every refine's card with it. It
+   * goes into `pages` as soon as the file is back, so a link to it can't start a new page over it.
+   */
+  private async putPageBack(path: string, meta: PageMeta, before: Session) {
+    const pages = { ...this.state.pages, [path]: meta };
+    this.set({ pages });
+    // Stopped part way by the delete, so it says so, and offers to write it again.
+    if (before.loading.includes(path)) this.set({ pageErrors: { ...this.state.pageErrors, [path]: "This page was still being written when it was deleted, so it stops before the end." } });
+    const s = this.state.session;
+    this.setSession({
+      read: before.read[path] ? { ...s.read, [path]: before.read[path] } : s.read,
+      unread: before.unread.includes(path) ? [...s.unread, path] : s.unread,
+      pending: before.pending[path] ? { ...s.pending, [path]: before.pending[path] } : s.pending,
+      asks: before.asks?.[path] ? { ...s.asks, [path]: before.asks[path] } : s.asks,
+    });
+    if (before.split === path && !s.split) await this.openPage(path, before.splitDirection);
+    if (before.current !== path) return;
+    // It was being read, so the back and forward history goes back to how it stood.
+    const exists = (p: string) => !!pages[p];
+    this.setSession({
+      trail: before.trail.filter(exists),
+      trailIndex: before.trail.slice(0, before.trailIndex + 1).filter(exists).length - 1,
+    });
+    await this.navigate(path, { push: false });
   }
 
   /** Drops every trace of a page from the open session, once its file is gone. */
@@ -2455,7 +2560,7 @@ export class ReaderStore {
         // Cancelled before its turn came up: no model call, no write, and it does not hold the
         // page's chain for anyone else waiting behind it.
         if (this.cancelledRefines.has(id)) return finish();
-        if (!this.state.folder) return finish();
+        if (!this.state.folder || !this.state.pages[this.livePath(path)]) return finish();
         const body = await this.loadBody(path);
         const blocks = lexBlocks(body);
         const target = selection ? selection.text : body;

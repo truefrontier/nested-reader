@@ -1921,6 +1921,12 @@ button {
   max-width: 70%;
   animation: rise-centered 0.15s ease-out;
 }
+.toast button {
+  margin-left: 10px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
 .empty-state {
   flex: 1;
   display: flex;

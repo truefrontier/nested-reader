@@ -755,6 +755,12 @@
 - Re-ran the checks on the merged tree: 18 store checks and 9 UI checks in headless Chromium, including that main's Updates row survived. `tsc` and `pnpm build` pass.
 - `main` is now at `36732a3`; the branch `claude/zen-hamilton-hn1mfa` is pushed and matches it.
 
+### Follow-up — 2026-11-01: Undo for a delete
+- The delete toast now offers Undo for ten seconds (`ToastAction` on `notify`, `undoDelete` and `putPageBack` in the store), backed by `files::restore_page`, which refuses to overwrite anything that has appeared at the old path.
+- Two small fixes it needed. The `settings-changed` handler only opens a folder when the folder setting changed, or ticking "Do not ask again" on a file session's own page reopened the folder and wiped the toast; the cost is that re-picking the same folder in Settings from Home now does nothing. A refine queued behind a deleted page is cancelled too, and any behind that one no longer start.
+- `delete_page` now returns the name it parked the page under, because `-2`, `-3` names mean the path alone can't say which delete to undo.
+- Found on the way, not fixed: `openFolder` doesn't stop running streams, so a refine that finishes after another session opens can write a same-named page there (the snapshot makes it recoverable); `createPage` can write over a file added outside the app since the last listing.
+
 ## Session: 2026-09-15 — the answer stream stopped at the model's first tool call
 
 ### What was wrong

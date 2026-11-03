@@ -214,8 +214,13 @@ fn write_page(folder: String, path: String, content: String) -> Result<()> {
 }
 
 #[tauri::command]
-fn delete_page(folder: String, path: String) -> Result<()> {
+fn delete_page(folder: String, path: String) -> Result<String> {
     files::delete_page(&folder, &path)
+}
+
+#[tauri::command]
+fn restore_page(folder: String, path: String, trashed: String) -> Result<()> {
+    files::restore_page(&folder, &path, &trashed)
 }
 
 #[tauri::command]
@@ -610,6 +615,7 @@ pub fn run() {
             read_page,
             write_page,
             delete_page,
+            restore_page,
             confirm,
             load_map,
             save_map,
