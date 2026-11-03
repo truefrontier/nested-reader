@@ -13,12 +13,12 @@ import {
   type Session,
   type Settings,
   type StreamEvent,
-  type StreamHandle,
   type VersionInfo,
 } from "./types";
 import { metaFromRaw } from "../lib/frontmatter";
 import { webSearchFor } from "../lib/models";
 import { EXTRA_FILES, EXTRA_FOLDER, SAMPLE_FILES, SAMPLE_FOLDER } from "./sample";
+import { trackStream } from "./stream";
 
 /**
  * Browser-only backend. Keeps two folders in memory (keyed `<folder>/<page>`) so the reader can be
@@ -280,51 +280,60 @@ export const mockPlatform: Platform = {
     return keys.has(provider);
   },
 
-  aiStream(req, onEvent): StreamHandle {
-    // Dev hooks: "__fail__" in the request fails the first attempt (so retries can succeed); "__fail_always__" always fails;
-    // "__cut_off__" stops half way with `truncated`, as a stream that runs out of room does.
-    const last = [...req.messages].reverse().find((m) => m.role === "user")?.content ?? "";
-    const always = last.includes("__fail_always__");
-    if (always || (last.includes("__fail__") && !failedOnce.has(last))) {
-      failedOnce.add(last);
-      const t = setTimeout(() => onEvent({ type: "error", message: "Simulated provider error: 429 rate limited" }), 400);
-      return { cancel: () => clearTimeout(t) };
-    }
-    const text = fakeAnswer(req);
-    const words = text.split(/(?<=\s)/);
-    const end = last.includes("__cut_off__") ? Math.ceil(words.length / 2) : words.length;
-    let i = 0;
-    let cancelled = false;
-    const tick = () => {
-      if (cancelled) return;
-      if (i >= end) {
-        onEvent({ type: "done", truncated: end < words.length });
-        return;
-      }
-      onEvent({ type: "delta", text: words[i++] });
-      setTimeout(tick, 22 + Math.random() * 40);
-    };
-    // With tools on, the model looks at the folder first: two tool events, then the answer.
-    const tools: StreamEvent[] = req.folder
-      ? [
-          { type: "tool", name: "search_pages", detail: "Searching for “ripple”" },
-          { type: "tool", name: "read_page", detail: "Reading sharp-wave-ripples.md" },
-        ]
-      : [];
-    // With the web allowed, and a provider that has a web tool, it searches as well.
-    if (req.webAccess && webSearchFor(req.provider, req.auth)) tools.push({ type: "tool", name: "web_search", detail: "Searching the web" });
-    let at = 350;
-    for (const t of tools) {
-      setTimeout(() => !cancelled && onEvent(t), at);
-      at += 700;
-    }
-    setTimeout(tick, at);
-    return {
-      cancel() {
+  aiStream: (req, onEvent) =>
+    trackStream(onEvent, (send) => {
+      // Dev hooks: "__fail__" in the request fails the first attempt (so retries can succeed); "__fail_always__" always fails;
+      // "__cut_off__" stops half way with `truncated`, as a stream that runs out of room does; "__no_end__" stops half way
+      // with no last event at all, as a backend that dies does.
+      const last = [...req.messages].reverse().find((m) => m.role === "user")?.content ?? "";
+      let settle: (sent: boolean) => void = () => undefined;
+      const ended = new Promise<boolean>((resolve) => (settle = resolve));
+      let cancelled = false;
+      const cancel = () => {
         cancelled = true;
-      },
-    };
-  },
+        settle(false);
+      };
+      const always = last.includes("__fail_always__");
+      if (always || (last.includes("__fail__") && !failedOnce.has(last))) {
+        failedOnce.add(last);
+        setTimeout(() => {
+          send({ type: "error", message: "Simulated provider error: 429 rate limited" });
+          settle(true);
+        }, 400);
+        return { ended, cancel };
+      }
+      const text = fakeAnswer(req);
+      const words = text.split(/(?<=\s)/);
+      const dies = last.includes("__no_end__");
+      const end = dies || last.includes("__cut_off__") ? Math.ceil(words.length / 2) : words.length;
+      let i = 0;
+      const tick = () => {
+        if (cancelled) return;
+        if (i >= end) {
+          if (!dies) send({ type: "done", truncated: end < words.length });
+          settle(!dies);
+          return;
+        }
+        send({ type: "delta", text: words[i++] });
+        setTimeout(tick, 22 + Math.random() * 40);
+      };
+      // With tools on, the model looks at the folder first: two tool events, then the answer.
+      const tools: StreamEvent[] = req.folder
+        ? [
+            { type: "tool", name: "search_pages", detail: "Searching for “ripple”" },
+            { type: "tool", name: "read_page", detail: "Reading sharp-wave-ripples.md" },
+          ]
+        : [];
+      // With the web allowed, and a provider that has a web tool, it searches as well.
+      if (req.webAccess && webSearchFor(req.provider, req.auth)) tools.push({ type: "tool", name: "web_search", detail: "Searching the web" });
+      let at = 350;
+      for (const t of tools) {
+        setTimeout(() => send(t), at);
+        at += 700;
+      }
+      setTimeout(tick, at);
+      return { ended, cancel };
+    }),
 
   async aiPing(provider, auth): Promise<PingResult> {
     await new Promise((r) => setTimeout(r, 400));

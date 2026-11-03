@@ -766,6 +766,10 @@
 ### The fix
 - Only `done` and `error` end the stream — an allowlist, not `!== "delta" && !== "tool"`, so the next event type cannot bring the bug back. Released as 0.2.4.
 
+### Follow-up — 2026-11-01: the mock takes the same stream path
+- `trackStream` in `src/platform/stream.ts` now holds the stream's lifecycle, and both platforms' `aiStream` go through it, so the browser mock would catch this bug. Each platform only starts its backend and sends it events.
+- The mock has a new dev hook: `__no_end__` in the request stops half way with no last event, to exercise the "stopped without finishing" error.
+
 ### Possible next steps
 - Route the mock through the same channel wrapper, so the browser mock exercises the real stream lifecycle.
 - The CLI path in `cli.rs` has no stall timeout: a `claude -p` that never writes and never exits leaves the stream open with nothing to clear it. The HTTP paths cap a request at 180 s.
