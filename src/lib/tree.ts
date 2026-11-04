@@ -177,7 +177,8 @@ export type MapEdge = { from: string; to: string };
 export function layoutWeb(pages: Record<string, PageMeta>, focus: string | undefined): { nodes: MapNode[]; edges: MapEdge[] } {
   const all = Object.values(pages);
   if (!all.length) return { nodes: [], edges: [] };
-  // A focus that has since gone from the folder (deleted, renamed) is no centre to draw around.
+  // The centre is always a root: the focus's, or with no focus (or one since deleted or renamed out
+  // of the folder) the first page's, so a child page never sits in the middle with its parent outside.
   const root = rootOf(focus && pages[focus] ? focus : all.map((p) => p.path).sort()[0], pages);
   const children = new Map<string, PageMeta[]>();
   for (const p of all) {
