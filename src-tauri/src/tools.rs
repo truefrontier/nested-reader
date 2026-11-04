@@ -420,6 +420,17 @@ fn clip(s: &str, max: usize) -> String {
 mod tests {
     use super::*;
 
+    #[test]
+    fn words_are_cut_the_way_rank_ts_cuts_them() {
+        // The same lines as the `words` tests in src/lib/rank.test.ts: both sides must agree.
+        let stop: HashSet<&str> = STOP.iter().copied().collect();
+        assert_eq!(words("किताबें 𝔸 ok", &stop), vec!["किताबें", "ok"]);
+        assert_eq!(
+            words("The Ripples of Classes and Studies, glasses: a boss's gas I x", &stop),
+            vec!["ripple", "class", "study", "glass", "boss", "gas"]
+        );
+    }
+
     fn folder() -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("replay.md"), "---\ntitle: Replay into cortex\n---\n\n# Replay\n\nRipples carry the sequence.\n").unwrap();

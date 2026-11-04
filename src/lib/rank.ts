@@ -7,7 +7,9 @@
  *
  * `search_pages` in `src-tauri/src/tools.rs` scores the same way for the same reason. The two
  * have to agree on what a word is, so both lowercase, split on anything that is not a letter or
- * a digit, drop the stop words below and keep what is left of two characters or more.
+ * a digit (Unicode's Alphabetic, which keeps vowel signs such as Hindi's inside their word, as Rust's
+ * `char::is_alphanumeric` does), drop the stop words below and keep what is left of two characters or
+ * more. Characters, not UTF-16 units: Rust counts a letter outside the BMP as one.
  */
 
 /** Words too common to say anything about which page is wanted. */
@@ -40,10 +42,11 @@ const TITLE_WEIGHT = 1.0;
  * (-ing, -ed) starts changing words that meant different things. Mirrored in `tools.rs`.
  */
 function stem(w: string): string {
-  if (w.length > 4 && w.endsWith("sses")) return w.slice(0, -2);
-  if (w.length > 4 && w.endsWith("ies")) return w.slice(0, -3) + "y";
+  const n = [...w].length;
+  if (n > 4 && w.endsWith("sses")) return w.slice(0, -2);
+  if (n > 4 && w.endsWith("ies")) return w.slice(0, -3) + "y";
   if (w.endsWith("ss")) return w;
-  if (w.length > 3 && w.endsWith("s")) return w.slice(0, -1);
+  if (n > 3 && w.endsWith("s")) return w.slice(0, -1);
   return w;
 }
 
@@ -51,8 +54,8 @@ function stem(w: string): string {
 export function words(text: string): string[] {
   return text
     .toLowerCase()
-    .split(/[^\p{L}\p{N}]+/u)
-    .filter((w) => w.length >= 2 && !STOP.has(w))
+    .split(/[^\p{Alphabetic}\p{N}]+/u)
+    .filter((w) => [...w].length >= 2 && !STOP.has(w))
     .map(stem);
 }
 
@@ -74,7 +77,7 @@ export function rankByRelevance<T>(
   textOf: (item: T) => string,
   titleOf: (item: T) => string,
 ): T[] {
-  if (!terms.length || items.length < 2) return items;
+  if (!terms.length) return items;
 
   const docs = items.map((item) => words(textOf(item)));
   const titles = items.map((item) => new Set(words(titleOf(item))));
