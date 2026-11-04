@@ -57,4 +57,22 @@ test("a deleted word goes back between the words that pin it, keeping a second e
   assert.equal(revertDeletion("One **alpha** beta gamma end.\n", "One **alpha** gamma END.\n"), "One **alpha** beta gamma END.\n");
   assert.equal(revertDeletion("Start here now please.\n", "here now PLEASE.\n"), "Start here now PLEASE.\n");
   assert.equal(revertDeletion("It ends here today.\n", "IT ends here.\n"), "IT ends here today.\n");
+  // The word after is in markup, so only the words before pin it.
+  assert.equal(revertDeletion("One end gamma **delta** x.\n", "One end **delta** X.\n"), "One end gamma **delta** X.\n");
+  // "a dog" is there twice once "big" is gone, so the anchor grows until it names the right one.
+  assert.equal(revertDeletion("a dog. a big dog. end\n", "a dog. a dog. END\n"), "a dog. a big dog. END\n");
+});
+
+test("a deleted word is never put back after a later copy of a word hidden in markup", () => {
+  const diff = diffBodies("A [cat](u) big sat on cat mat, OK.\n", "A [cat](u) sat on cat mat, ok.\n");
+  const deletion = diff.changes.find((c) => c.after === "");
+  if (!deletion) throw new Error("expected a pure deletion");
+  assert.equal(revertChange(diff, deletion), "A [cat](u) big sat on cat mat, ok.\n");
+});
+
+test("undoing a deleted link brings the link back, not just its words", () => {
+  const diff = diffBodies("See [the docs](https://x) for more on this topic.\n", "See for more on this TOPIC.\n");
+  const deletion = diff.changes.find((c) => c.after === "");
+  if (!deletion) throw new Error("expected a pure deletion");
+  assert.match(revertChange(diff, deletion), /^See \[the docs\]\(https:\/\/x\) for more/);
 });
