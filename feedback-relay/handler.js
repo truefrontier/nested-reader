@@ -2,6 +2,9 @@
 // worker's `Response` back. server.mjs serves it on Fly; the tests serve it on a local port.
 import worker from "./worker.js";
 
+/** More than any note can be: the worker's 5 MB screenshot cap is about 6.7 MB as base64, plus the text. */
+const MAX_BODY = 8 * 1024 * 1024;
+
 export function nodeHandler(env) {
   return async (req, res) => {
     if (req.method === "GET" && (req.url === "/healthz" || req.url === "/")) {
@@ -21,7 +24,18 @@ export function nodeHandler(env) {
     }
 
     const chunks = [];
-    for await (const chunk of req) chunks.push(chunk);
+    let size = 0;
+    try {
+      for await (const chunk of req) {
+        size += chunk.length;
+        // Whoever sends this much is not the app; hanging up keeps it from filling the machine's memory.
+        if (size > MAX_BODY) return void req.destroy();
+        chunks.push(chunk);
+      }
+    } catch {
+      // The client hung up mid-upload. Left to reject, this loop would end the whole process.
+      return;
+    }
     const body = chunks.length ? Buffer.concat(chunks) : null;
 
     const request = new Request(url, {
