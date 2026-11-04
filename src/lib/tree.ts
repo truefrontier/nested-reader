@@ -157,7 +157,10 @@ export function sessionPages(path: string, pages: Record<string, PageMeta>): Pag
   const dist = (p: PageMeta) => {
     let d = 0;
     let cur: string | undefined = path;
-    while (cur && cur !== p.path && pages[cur]?.source) {
+    // Sources can loop (a page naming itself, or two naming each other), as `buildTree` allows for.
+    const seen = new Set<string>();
+    while (cur && cur !== p.path && pages[cur]?.source && !seen.has(cur)) {
+      seen.add(cur);
       cur = pages[cur].source;
       d++;
     }
@@ -174,7 +177,8 @@ export type MapEdge = { from: string; to: string };
 export function layoutWeb(pages: Record<string, PageMeta>, focus: string | undefined): { nodes: MapNode[]; edges: MapEdge[] } {
   const all = Object.values(pages);
   if (!all.length) return { nodes: [], edges: [] };
-  const root = focus ? rootOf(focus, pages) : all.map((p) => p.path).sort()[0];
+  // A focus that has since gone from the folder (deleted, renamed) is no centre to draw around.
+  const root = rootOf(focus && pages[focus] ? focus : all.map((p) => p.path).sort()[0], pages);
   const children = new Map<string, PageMeta[]>();
   for (const p of all) {
     if (p.source && pages[p.source]) {
@@ -185,8 +189,13 @@ export function layoutWeb(pages: Record<string, PageMeta>, focus: string | undef
   }
   for (const list of children.values()) list.sort((a, b) => stamp(a) - stamp(b));
   const size = new Map<string, number>();
+  // Each page is reached once. Sources that loop back would otherwise recurse until the stack runs
+  // out, so a child already on the way down is cut from `children` here, before anything else walks it.
+  const reached = new Set<string>();
   const measure = (path: string): number => {
-    const kids = children.get(path) ?? [];
+    reached.add(path);
+    const kids = (children.get(path) ?? []).filter((k) => !reached.has(k.path));
+    children.set(path, kids);
     const s = 1 + kids.reduce((acc, k) => acc + measure(k.path), 0);
     size.set(path, s);
     return s;
