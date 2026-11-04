@@ -460,7 +460,10 @@ fn open_page_window(app: AppHandle, folder: String, path: String, version: Optio
 /// The first `page-N` no open window has. A count of the open windows is not enough: once an earlier
 /// page window closes, the count lands on a label still in use, and Tauri refuses a second window with it.
 fn free_page_label(open: impl Fn(&str) -> bool) -> String {
-    (1..).map(|n| format!("page-{n}")).find(|l| !open(l)).expect("some page-N is free")
+    (1..)
+        .map(|n| format!("page-{n}"))
+        .find(|l| !open(l))
+        .expect("some page-N is free")
 }
 
 fn urlencode(s: &str) -> String {
@@ -693,7 +696,10 @@ mod tests {
 
     #[test]
     fn urlencode_keeps_path_characters_and_escapes_the_rest() {
-        assert_eq!(urlencode("notes/Sleep replay.md"), "notes/Sleep%20replay.md");
+        assert_eq!(
+            urlencode("notes/Sleep replay.md"),
+            "notes/Sleep%20replay.md"
+        );
         assert_eq!(urlencode("a&b#c?d+e"), "a%26b%23c%3Fd%2Be");
         assert_eq!(urlencode("café"), "caf%C3%A9");
     }

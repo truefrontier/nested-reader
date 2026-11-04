@@ -426,7 +426,10 @@ mod tests {
         let stop: HashSet<&str> = STOP.iter().copied().collect();
         assert_eq!(words("किताबें 𝔸 ok", &stop), vec!["किताबें", "ok"]);
         assert_eq!(
-            words("The Ripples of Classes and Studies, glasses: a boss's gas I x", &stop),
+            words(
+                "The Ripples of Classes and Studies, glasses: a boss's gas I x",
+                &stop
+            ),
             vec!["ripple", "class", "study", "glass", "boss", "gas"]
         );
     }

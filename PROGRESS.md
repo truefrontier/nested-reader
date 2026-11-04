@@ -827,7 +827,7 @@
 - Smaller: `rank.ts` cut words differently from `tools.rs` (vowel signs, astral letters); `rankByRelevance` kept a lone unrelated page; a one-page summary lost a leading "1." of "1.5 GB"; "Another 1 page are"; `titleFromBody` took a `# comment` from a code block; "yesterday" was 24 h back, wrong just after the clocks go forward.
 
 ### Verification
-- Before → after: frontend tests none → 87 pass (the same 87 on the unchanged source: 67 pass, 18 fail, and the 2 `sessionPages` cycle tests never finish); `cargo test` 68 → 71 pass (12 live tests ignored both times); clippy 7 warnings → 0; relay `node --test` 18 → 21; `pnpm build` passes both times. `cargo fmt --check` was not clean before (292 hunks in 12 files) and was left alone.
+- Before → after: frontend tests none → 87 pass (the same 87 on the unchanged source: 67 pass, 18 fail, and the 2 `sessionPages` cycle tests never finish); `cargo test` 68 → 71 pass (12 live tests ignored both times); clippy 7 warnings → 0; relay `node --test` 18 → 21; `pnpm build` passes both times. `cargo fmt --check` was not clean before (292 hunks in 12 files) and is left alone; the new Rust code is formatted, so it is 291 after.
 - Browser mock (vite on 127.0.0.1:1477): sample session loads, a loaded body starts at its heading, and the Web map draws every page with a source cycle injected into the store, with no console errors.
 - Not run: the desktop app (page windows, a real new page over a case-twin), the relay on Fly.
 
