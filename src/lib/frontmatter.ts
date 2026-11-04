@@ -47,9 +47,17 @@ export function serializeFrontMatter(meta: Record<string, string | undefined>): 
 export function titleFromBody(body: string, fallback: string): string {
   let fence = "";
   for (const line of body.split(/\r?\n/)) {
-    const f = /^\s*(```|~~~)/.exec(line)?.[1];
-    if (f && (!fence || f === fence)) fence = fence ? "" : f;
-    if (f || fence) continue;
+    // As CommonMark has it: a block closes on a bare run of its own character at least as long as the
+    // one that opened it, and a run of backticks followed by another backtick is inline code.
+    const f = /^\s{0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (fence) {
+      if (f && f[1][0] === fence[0] && f[1].length >= fence.length && !f[2].trim()) fence = "";
+      continue;
+    }
+    if (f && !(f[1][0] === "`" && f[2].includes("`"))) {
+      fence = f[1];
+      continue;
+    }
     const m = /^\s*#[ \t]+(.+?)\s*$/.exec(line);
     if (m) return m[1].trim();
   }

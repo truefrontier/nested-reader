@@ -43,6 +43,9 @@ test("titleFromBody takes the first level-1 heading", () => {
 test("titleFromBody skips a shell comment inside a code fence", () => {
   assert.equal(titleFromBody("Intro\n\n```bash\n# install deps\nnpm i\n```\n\n# Real title\n", "fb"), "Real title");
   assert.equal(titleFromBody("~~~\n# not this\n~~~\n", "fb"), "fb");
+  // Inline code at the start of a line opens no block, and a longer fence holds a shorter one.
+  assert.equal(titleFromBody("```x``` is inline\n\n# Real title\n", "fb"), "Real title");
+  assert.equal(titleFromBody("````md\n```\n# not this\n```\n````\n# After\n", "fb"), "After");
 });
 
 test("titleFromBody does not take the next line as the text of an empty heading", () => {
