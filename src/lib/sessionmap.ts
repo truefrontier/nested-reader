@@ -121,7 +121,7 @@ export function sessionMapForPrompt(
     const tail = named.length
       ? `## Also in the session\n${named.join("\n")}${dropped ? `\n…and ${dropped} more; the tools can list them all.` : ""}`
       : dropped
-        ? `Another ${dropped} page${dropped === 1 ? "" : "s"} are in the session; the tools can list them.`
+        ? `Another ${dropped === 1 ? "1 page is" : `${dropped} pages are`} in the session; the tools can list ${dropped === 1 ? "it" : "them"}.`
         : "";
     const note = named.length ? " The ones below the line are named only; read any of them with the tools if it would help." : "";
     return [head + note, ...detailed.values(), tail].filter(Boolean).join("\n\n");
