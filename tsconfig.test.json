@@ -1,0 +1,7 @@
+{
+  // The tests run under `node --test`, so they get Node's types; the app build never sees them.
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "types": ["node"] },
+  "include": ["src/**/*.test.ts", "src/vite-env.d.ts"],
+  "exclude": []
+}
