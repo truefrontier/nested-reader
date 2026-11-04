@@ -821,15 +821,16 @@
 - **Every save of a page loaded from disk added a blank line** after the front matter (`FENCE` took one newline, `serializeFrontMatter` writes two). `stripFrontMatter` in the store had the same regex and now calls `parseFrontMatter`.
 - **Source cycles**: `layoutWeb` overflowed the stack and `sessionPages` looped forever. `layoutWeb` also centred on the first path alphabetically, or on a focus no longer in the folder.
 - **Half an emoji at a clip point** made serde_json 1.0.151 refuse the whole request.
-- **Undoing a deleted word restored the whole paragraph**, undoing its other edits too.
+- **Undoing a deleted word restored the whole paragraph**, undoing its other edits too. `reinsert` now pins the spot by the words around it in both the old and the new source and copies the old source back verbatim; markup in the way falls back to the whole block. (A first version anchored on the new source only; review showed it could misplace the word or drop a link, and both cases are now tests.)
 - **The relay process exited** when a client hung up mid-upload (unhandled rejection), and buffered any body size.
 - **Page windows**: `page-{window count}` reused a live label after a window closed; Tauri refuses duplicates.
 - Smaller: `rank.ts` cut words differently from `tools.rs` (vowel signs, astral letters); `rankByRelevance` kept a lone unrelated page; a one-page summary lost a leading "1." of "1.5 GB"; "Another 1 page are"; `titleFromBody` took a `# comment` from a code block; "yesterday" was 24 h back, wrong just after the clocks go forward.
 
 ### Verification
-- Before → after: frontend tests none → 87 pass (the same 87 on the unchanged source: 67 pass, 18 fail, and the 2 `sessionPages` cycle tests never finish); `cargo test` 68 → 71 pass (12 live tests ignored both times); clippy 7 warnings → 0; relay `node --test` 18 → 21; `pnpm build` passes both times. `cargo fmt --check` was not clean before (292 hunks in 12 files) and is left alone; the new Rust code is formatted, so it is 291 after.
+- Before → after: frontend tests none → 89 pass (the same 89 on the unchanged source: 68 pass, 19 fail, and the 2 `sessionPages` cycle tests never finish); `cargo test` 68 → 71 pass (12 live tests ignored both times); clippy 7 warnings → 0; relay `node --test` 18 → 21; `pnpm build` passes both times. `cargo fmt --check` was not clean before (292 hunks in 12 files) and is left alone; the new Rust code is formatted, so it is 291 after.
 - Browser mock (vite on 127.0.0.1:1477): sample session loads, a loaded body starts at its heading, and the Web map draws every page with a source cycle injected into the store, with no console errors.
 - Not run: the desktop app (page windows, a real new page over a case-twin), the relay on Fly.
+- Side effect of the front-matter fix: a page the app wrote now parses without its leading newline, so its `fingerprint` changes once and its map line counts as stale one time (re-adding a folder offers to describe those pages again).
 
 ### Possible next steps
 - `lexBlocks` normalises CRLF, so linking one word in a CRLF file rewrites every line ending (`joinBlocks` writes LF).
