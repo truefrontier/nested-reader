@@ -15,7 +15,7 @@ src/                     React app (both windows)
     tauri.ts             invoke() bridge to the Rust commands
     mock.ts              in-memory backend for the browser (pnpm dev)
   state/store.ts         the reader store: every action lives here
-  lib/                   pure helpers: markdown, diff, front matter, tree, prompts
+  lib/                   pure helpers: markdown, diff, front matter, tree, prompts (each with a *.test.ts)
   reader/                Home, TopBar, Sidebar, Page, TopStrip, Popovers, SplitPane, MapOverlay
   settings/              the Settings window (General / Appearance / AI)
   styles/                design tokens, fonts, reader and settings CSS
@@ -29,6 +29,7 @@ src-tauri/src/
   tauri.release.conf.json  overlay for CI builds: turns on the signed updater bundle
 feedback-relay/          relay (Cloudflare Worker or Fly): files feedback as GitHub issues, serves app updates
 scripts/release.mjs      pnpm release: bump the version everywhere, commit, tag, push
+scripts/test-hooks.mjs   pnpm test: lets node --test load the TypeScript as Vite does (DOMPurify stubbed)
 .github/workflows/       Claude on GitHub: @claude replies, PR review, feedback triage; release.yml builds and publishes tags
 examples/sleep-memory/   sample corpus used by the mock backend
 design/                  Claude Design source files this app implements
@@ -185,7 +186,7 @@ The store keeps `working[key]` per stream (`lookup:<id>`, `page:<path>`, `refine
 
 The **Send feedback** link at the foot of the sidebar (`.side-foot`) opens `FeedbackPopover`, the same bottom-of-pane box as ⌘N and ⌘R (`ui.panePopover = "feedback"`, so Esc and the other popovers treat it alike). It holds a note, an optional email, and one status line; ↵ makes a new line and ⌘↵ sends. The store's `sendFeedback` hands the note to the platform. In the browser the mock logs it (a note starting with `fail:` is refused, to see the error state). In the app, `send_feedback` in `lib.rs` builds the payload in `src-tauri/src/feedback.rs` (the trimmed note, the email when given, the app version, OS and architecture) and posts it as JSON to the relay URL compiled in from `NESTED_FEEDBACK_URL` in `src-tauri/.cargo/config.toml`; an empty URL makes the box say feedback is not set up in this build. A refusal from the relay is plain text and is shown as is; a timeout or a lost connection gets its own sentence. The note is capped at 5000 characters on both sides.
 
-The relay (`feedback-relay/worker.js`, on Fly through `server.mjs`) is a dependency-free Cloudflare Worker holding a fine-grained GitHub token with Issues: write (and, for updates, Contents: read) on this repository. It files the note as an issue labelled `feedback`: the first line as the title, the note quoted in the body, a contact line with the email or "none given", and the app line. The repository is private, so the email is visible to collaborators only. `node --test` in that folder runs its tests against a stubbed `fetch`.
+The relay (`feedback-relay/worker.js`, on Fly through `server.mjs` and `handler.js`) is a dependency-free Cloudflare Worker holding a fine-grained GitHub token with Issues: write (and, for updates, Contents: read) on this repository. It files the note as an issue labelled `feedback`: the first line as the title, the note quoted in the body, a contact line with the email or "none given", and the app line. The repository is private, so the email is visible to collaborators only. `node --test` in that folder runs its tests against a stubbed `fetch`.
 
 `.github/workflows/feedback-triage.yml` runs on a new issue carrying that label (or when the label is added by hand): Claude reads it, labels it bug, enhancement or question (and needs-info when it is too thin), looks for an earlier issue about the same thing, and leaves one comment saying where in the code it lands and a likely cause. `claude.yml` answers @claude mentions on issues and pull requests and `claude-code-review.yml` reviews each pull request with a sticky comment. All three need the Claude GitHub App installed and an `ANTHROPIC_API_KEY` repository secret.
 
@@ -221,6 +222,7 @@ Settings is its own window in the app (⌘, or the app menu) and a panel over th
 pnpm install
 pnpm tauri dev        # the app
 pnpm dev              # browser-only preview with the mock backend
+pnpm test             # unit tests beside src/lib and src/platform/stream.ts (node --test)
 pnpm tauri build      # .app and .dmg in src-tauri/target/release/bundle
 ```
 
