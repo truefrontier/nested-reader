@@ -28,7 +28,8 @@ export function relTime(iso: string | undefined, now = new Date(), style: "short
     const h = Math.floor(diff / HOUR);
     return style === "long" ? `${h}h ago` : `${h}h`;
   }
-  const yesterday = new Date(now.getTime() - DAY);
+  // The calendar day before, not 24 hours back: the day the clocks go forward is 23 hours long.
+  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
   if (sameDay(d, yesterday)) return "yesterday";
   if (diff < 6 * DAY) {
     const wd = d.toLocaleDateString(undefined, { weekday: "short" });
