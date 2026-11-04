@@ -1,5 +1,5 @@
 import { diffArrays, diffWordsWithSpace } from "diff";
-import { lexBlocks, replaceFlexible, type Block } from "./markdown";
+import { flexiblePattern, lexBlocks, replaceFlexible, type Block } from "./markdown";
 
 /**
  * One changed span between two versions of a page.
@@ -190,6 +190,10 @@ export function revertChange(diff: PageDiff, change: Change): string {
   let replaced: string | null = null;
   if (change.after.trim()) {
     replaced = replaceFlexible(raw, change.after, change.before);
+  } else if (!change.after && change.oldBlock >= 0) {
+    // A pure deletion leaves nothing to swap back, and restoring the whole block would also undo
+    // every other change in it.
+    replaced = reinsert(raw, diff.newBlocks[change.block].text, change.start, change.before);
   }
   if (replaced === null) {
     replaced = change.oldBlock >= 0 ? diff.oldBlocks[change.oldBlock].raw : "";
@@ -197,6 +201,34 @@ export function revertChange(diff: PageDiff, change: Change): string {
   }
   blocks[change.block] = replaced;
   return blocks.join("");
+}
+
+/**
+ * Puts `deleted` back into the block source `raw` at offset `at` of the block's plain text. Only the
+ * plain text knows where that is, so the nearest words before it, or failing that after it, that occur
+ * exactly once in the source pin the spot. Null when nothing pins it.
+ */
+function reinsert(raw: string, text: string, at: number, deleted: string): string | null {
+  const before = text.slice(0, at).match(/\S+\s*/g) ?? [];
+  const after = text.slice(at).match(/\s*\S+/g) ?? [];
+  for (let k = 1; k <= Math.max(before.length, after.length); k++) {
+    const left = k <= before.length ? onlyMatch(raw, before.slice(-k).join("")) : null;
+    if (left) return splice(raw, left.index + left[0].length, deleted);
+    const right = k <= after.length ? onlyMatch(raw, after.slice(0, k).join("")) : null;
+    if (right) return splice(raw, right.index, deleted);
+  }
+  return null;
+}
+
+function onlyMatch(raw: string, text: string): RegExpExecArray | null {
+  const re = flexiblePattern(text);
+  if (!re) return null;
+  const all = [...raw.matchAll(new RegExp(re.source, "g"))];
+  return all.length === 1 ? (all[0] as RegExpExecArray) : null;
+}
+
+function splice(s: string, at: number, insert: string): string {
+  return s.slice(0, at) + insert + s.slice(at);
 }
 
 function nextSurvivingIndex(diff: PageDiff, oldBlock: number): number {
