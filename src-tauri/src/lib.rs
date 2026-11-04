@@ -50,7 +50,7 @@ async fn pick_folder(app: AppHandle) -> Result<Option<String>> {
     app.dialog().file().pick_folder(move |p| {
         let _ = tx.send(p.map(|p| p.to_string()));
     });
-    Ok(rx.await.map_err(|_| AppError::Message("dialog closed".into()))?)
+    rx.await.map_err(|_| AppError::Message("dialog closed".into()))
 }
 
 /// A yes/no the reader has to answer before something costly happens, asked the way the Open panel
@@ -66,7 +66,7 @@ async fn confirm(app: AppHandle, message: String, detail: Option<String>, ok_lab
     dialog.show(move |ok| {
         let _ = tx.send(ok);
     });
-    Ok(rx.await.map_err(|_| AppError::Message("dialog closed".into()))?)
+    rx.await.map_err(|_| AppError::Message("dialog closed".into()))
 }
 
 /// ⌘O and ⌘⇧O: one Open panel for folders or Markdown files, worded for starting a session
@@ -86,7 +86,7 @@ async fn pick_path(app: AppHandle, purpose: Option<String>) -> Result<Vec<String
             let _ = tx.send(open_panel::folder_or_markdown(message, add));
         })
         .map_err(|e| AppError::Message(e.to_string()))?;
-        Ok(rx.await.map_err(|_| AppError::Message("dialog closed".into()))?)
+        rx.await.map_err(|_| AppError::Message("dialog closed".into()))
     }
     // Other platforms have no panel that takes both, so they get the (single-selection) folder picker.
     #[cfg(not(target_os = "macos"))]

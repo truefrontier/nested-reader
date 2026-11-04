@@ -232,7 +232,7 @@ where
 }
 
 fn last_line(text: &str) -> Option<String> {
-    text.lines().map(str::trim).filter(|l| !l.is_empty()).last().map(|l| l.chars().take(200).collect())
+    text.lines().map(str::trim).rfind(|l| !l.is_empty()).map(|l| l.chars().take(200).collect())
 }
 
 // ---------- Claude Code ----------

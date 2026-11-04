@@ -1,11 +1,11 @@
-/// PDF text post-processing for Markdown structure and paragraph consolidation
-///
-/// This module takes raw text from pdf-extract and applies:
-/// 1. Heading inference based on typography (ALL CAPS, short lines, spacing)
-/// 2. Paragraph consolidation (joins mid-paragraph line breaks into flowing prose)
-///
-/// Input: flat text with hard line breaks from PDF visual layout
-/// Output: Markdown with # headings and natural paragraph flow
+//! PDF text post-processing for Markdown structure and paragraph consolidation
+//!
+//! This module takes raw text from pdf-extract and applies:
+//! 1. Heading inference based on typography (ALL CAPS, short lines, spacing)
+//! 2. Paragraph consolidation (joins mid-paragraph line breaks into flowing prose)
+//!
+//! Input: flat text with hard line breaks from PDF visual layout
+//! Output: Markdown with # headings and natural paragraph flow
 
 /// Apply Markdown structure inference and paragraph consolidation to extracted PDF text
 pub fn add_structure_and_reflow(raw_text: &str) -> String {
@@ -140,15 +140,14 @@ fn detect_heading(trimmed: &str, line: &str, i: usize, lines: &[&str]) -> Option
     
     // H3: Questions or "What/How/Where" patterns followed by blank line
     if is_short && trimmed.len() > 15 && trimmed.len() < 100 && 
-       preceded_by_empty && followed_by_empty && ends_naturally {
-        if trimmed.ends_with('?') || 
+       preceded_by_empty && followed_by_empty && ends_naturally &&
+       (trimmed.ends_with('?') || 
            (trimmed.starts_with("What ") || 
             trimmed.starts_with("How ") ||
             trimmed.starts_with("Where ") ||
             trimmed.starts_with("Why ") ||
-            trimmed.starts_with("When ")) && trimmed.contains(" ") {
-            return Some(format!("### {}", trimmed));
-        }
+            trimmed.starts_with("When ")) && trimmed.contains(" ")) {
+        return Some(format!("### {}", trimmed));
     }
     
     None
