@@ -2,7 +2,11 @@ import type { PageMeta } from "../platform/types";
 
 export type ParsedPage = { meta: Record<string, string>; body: string };
 
-const FENCE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
+/**
+ * Takes the blank line after the closing fence with it, since `serializeFrontMatter` writes one: left
+ * in the body, it would be written back with another in front of it, one more line on every save.
+ */
+const FENCE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?(?:\r?\n)?/;
 
 export function parseFrontMatter(raw: string): ParsedPage {
   const m = FENCE.exec(raw);
@@ -39,9 +43,25 @@ export function serializeFrontMatter(meta: Record<string, string | undefined>): 
   return lines.length ? `---\n${lines.join("\n")}\n---\n\n` : "";
 }
 
+/** The first level-1 heading, passing over code blocks, where `# ` starts a shell comment. */
 export function titleFromBody(body: string, fallback: string): string {
-  const m = /^\s*#\s+(.+?)\s*$/m.exec(body);
-  return m ? m[1].trim() : fallback;
+  let fence = "";
+  for (const line of body.split(/\r?\n/)) {
+    // As CommonMark has it: a block closes on a bare run of its own character at least as long as the
+    // one that opened it, and a run of backticks followed by another backtick is inline code.
+    const f = /^\s{0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (fence) {
+      if (f && f[1][0] === fence[0] && f[1].length >= fence.length && !f[2].trim()) fence = "";
+      continue;
+    }
+    if (f && !(f[1][0] === "`" && f[2].includes("`"))) {
+      fence = f[1];
+      continue;
+    }
+    const m = /^\s*#[ \t]+(.+?)\s*$/.exec(line);
+    if (m) return m[1].trim();
+  }
+  return fallback;
 }
 
 export function titleFromPath(path: string): string {

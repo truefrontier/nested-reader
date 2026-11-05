@@ -26,7 +26,7 @@ import { diffBodies, revertChange, type Change, type PageDiff } from "../lib/dif
 import { createDataUriMask, maskDataUris, unmaskDataUris } from "../lib/dataUris";
 import { findWikiLink, joinBlocks, lexBlocks, linkTextInRaw, replaceFlexible, resolveWikiTarget } from "../lib/markdown";
 import { authFor, modelSlot, pageRewriteTokens } from "../lib/models";
-import { serializePage, titleFromBody } from "../lib/frontmatter";
+import { parseFrontMatter, serializePage, titleFromBody } from "../lib/frontmatter";
 import { slugify, titleFromQuestion, uniquePath } from "../lib/slug";
 import { nowIso } from "../lib/time";
 import { newFileMessages, newPageMessages, parseSummaries, quickAnswerMessages, refineMessages, summaryMessages, SUMMARY_BATCH_CHARS, SUMMARY_PAGE_CHARS, type AskContext, type RefineScope } from "../lib/prompts";
@@ -2652,7 +2652,7 @@ export class ReaderStore {
     try {
       const { folder, rel } = this.loc(path);
       const raw = await platform.readVersion(folder, rel, n);
-      this.set({ reviewBases: { ...this.state.reviewBases, [path]: { path, n, body: stripFrontMatter(raw) } } });
+      this.set({ reviewBases: { ...this.state.reviewBases, [path]: { path, n, body: parseFrontMatter(raw).body } } });
     } catch {
       const pending = { ...this.state.session.pending };
       delete pending[path];
@@ -2789,7 +2789,7 @@ export class ReaderStore {
       if (this.state.versionBodies[path]?.[n] === undefined) {
         const { folder: root, rel } = this.loc(path);
         const raw = await platform.readVersion(root, rel, n);
-        const forPage = { ...(this.state.versionBodies[path] ?? {}), [n]: stripFrontMatter(raw) };
+        const forPage = { ...(this.state.versionBodies[path] ?? {}), [n]: parseFrontMatter(raw).body };
         this.set({ versionBodies: { ...this.state.versionBodies, [path]: forPage } });
       }
       // Both menus close: the click may have come from the other pane's menu. The pane's answer cards
@@ -2969,11 +2969,6 @@ function flipPlacement(p: Placement): Placement {
 function stripFences(s: string): string {
   const m = /^\s*```[a-z]*\n([\s\S]*?)\n```\s*$/i.exec(s);
   return m ? m[1] : s;
-}
-
-function stripFrontMatter(raw: string): string {
-  const m = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/.exec(raw);
-  return m ? raw.slice(m[0].length) : raw;
 }
 
 export const store = new ReaderStore();

@@ -37,8 +37,17 @@ const FOLDER_RESERVE = 15_000;
  */
 const MAP_MAX = 6_000;
 
+/**
+ * The first `max` code units of `s`, one fewer when the cut would split an emoji: half a surrogate
+ * pair makes the backend's JSON parser (serde_json) refuse the whole request.
+ */
+function cut(s: string, max: number): string {
+  const code = s.charCodeAt(max - 1);
+  return s.slice(0, code >= 0xd800 && code <= 0xdbff ? max - 1 : max);
+}
+
 function clip(s: string, max: number): string {
-  return s.length <= max ? s : s.slice(0, max) + "\n…";
+  return s.length <= max ? s : cut(s, max) + "\n…";
 }
 
 /**
@@ -172,7 +181,7 @@ export function summaryMessages(pages: { title: string; body: string }[]): { sys
       ? "Reply with that one sentence and nothing else: no preamble, no title, no quotation marks."
       : "Reply with one numbered line per page, in the order given, as \u201c1. sentence\u201d. Nothing else: no preamble, no titles, no quotation marks, no blank lines.");
   const content = pages
-    .map((p, i) => `Page ${i + 1}: ${p.title}\n${p.body.slice(0, SUMMARY_PAGE_CHARS)}`)
+    .map((p, i) => `Page ${i + 1}: ${p.title}\n${cut(p.body, SUMMARY_PAGE_CHARS)}`)
     .join("\n\n---\n\n");
   return { system, messages: [{ role: "user", content }] };
 }
@@ -189,7 +198,8 @@ export const SUMMARY_BATCH_CHARS = 24_000;
 export function parseSummaries(text: string, count: number): (string | undefined)[] {
   const out: (string | undefined)[] = Array.from({ length: count }, () => undefined);
   if (count === 1) {
-    const only = text.trim().replace(/^\s*1[.)]\s*/, "").replace(/\s+/g, " ").trim();
+    // `(?!\d)`: a sentence may open with a number of its own, "1.5 GB of recordings…".
+    const only = text.trim().replace(/^\s*1[.)](?!\d)\s*/, "").replace(/\s+/g, " ").trim();
     if (only) out[0] = only;
     return out;
   }

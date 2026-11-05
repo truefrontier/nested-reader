@@ -1,5 +1,5 @@
 import { diffArrays, diffWordsWithSpace } from "diff";
-import { lexBlocks, replaceFlexible, type Block } from "./markdown";
+import { flexiblePattern, lexBlocks, replaceFlexible, type Block } from "./markdown";
 
 /**
  * One changed span between two versions of a page.
@@ -190,6 +190,10 @@ export function revertChange(diff: PageDiff, change: Change): string {
   let replaced: string | null = null;
   if (change.after.trim()) {
     replaced = replaceFlexible(raw, change.after, change.before);
+  } else if (!change.after && change.oldBlock >= 0) {
+    // A pure deletion leaves nothing to swap back, and restoring the whole block would also undo
+    // every other change in it.
+    replaced = reinsert(diff.oldBlocks[change.oldBlock].raw, raw, diff.newBlocks[change.block].text, change.start, change.before);
   }
   if (replaced === null) {
     replaced = change.oldBlock >= 0 ? diff.oldBlocks[change.oldBlock].raw : "";
@@ -197,6 +201,36 @@ export function revertChange(diff: PageDiff, change: Change): string {
   }
   blocks[change.block] = replaced;
   return blocks.join("");
+}
+
+/**
+ * Puts deleted text back into the new block source `raw`, where `at` in the block's plain text says it
+ * was. Only the plain text knows that spot, so it is pinned by the words around it: the old source must
+ * hold those words with the deleted text between them exactly once, and the new source the same words
+ * without it exactly once. That stretch of the old source then goes back verbatim, markup and line
+ * breaks included. Null when no words pin it, as when markup sits in the way.
+ */
+function reinsert(oldRaw: string, raw: string, text: string, at: number, deleted: string): string | null {
+  const before = text.slice(0, at).match(/\S+\s*/g) ?? [];
+  const after = text.slice(at).match(/\s*\S+/g) ?? [];
+  for (let k = 1; k <= Math.max(before.length, after.length); k++) {
+    const left = before.slice(-k).join("");
+    const right = after.slice(0, k).join("");
+    for (const [l, r] of [[left, right], ["", right], [left, ""]]) {
+      if (!l && !r) continue;
+      const was = onlyMatch(oldRaw, l + deleted + r);
+      const now = was && onlyMatch(raw, l + r);
+      if (now) return raw.slice(0, now.index) + was[0] + raw.slice(now.index + now[0].length);
+    }
+  }
+  return null;
+}
+
+function onlyMatch(raw: string, text: string): RegExpExecArray | null {
+  const re = flexiblePattern(text);
+  if (!re) return null;
+  const all = [...raw.matchAll(new RegExp(re.source, "g"))];
+  return all.length === 1 ? (all[0] as RegExpExecArray) : null;
 }
 
 function nextSurvivingIndex(diff: PageDiff, oldBlock: number): number {

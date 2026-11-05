@@ -17,11 +17,16 @@ export function titleFromQuestion(q: string): string {
   return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
+/**
+ * A free `.md` path for `base` in `dir`. Free ignores case: macOS volumes do, so `sleep.md` is the
+ * same file as a reader's own `Sleep.md`, and writing it would replace that note.
+ */
 export function uniquePath(base: string, taken: Set<string>, dir = ""): string {
   const prefix = dir ? dir.replace(/\/+$/, "") + "/" : "";
+  const lower = new Set([...taken].map((p) => p.toLowerCase()));
   let candidate = `${prefix}${base}.md`;
   let i = 2;
-  while (taken.has(candidate)) {
+  while (lower.has(candidate.toLowerCase())) {
     candidate = `${prefix}${base}-${i}.md`;
     i += 1;
   }

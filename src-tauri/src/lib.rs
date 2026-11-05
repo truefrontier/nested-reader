@@ -50,7 +50,7 @@ async fn pick_folder(app: AppHandle) -> Result<Option<String>> {
     app.dialog().file().pick_folder(move |p| {
         let _ = tx.send(p.map(|p| p.to_string()));
     });
-    Ok(rx.await.map_err(|_| AppError::Message("dialog closed".into()))?)
+    rx.await.map_err(|_| AppError::Message("dialog closed".into()))
 }
 
 /// A yes/no the reader has to answer before something costly happens, asked the way the Open panel
@@ -66,7 +66,7 @@ async fn confirm(app: AppHandle, message: String, detail: Option<String>, ok_lab
     dialog.show(move |ok| {
         let _ = tx.send(ok);
     });
-    Ok(rx.await.map_err(|_| AppError::Message("dialog closed".into()))?)
+    rx.await.map_err(|_| AppError::Message("dialog closed".into()))
 }
 
 /// ⌘O and ⌘⇧O: one Open panel for folders or Markdown files, worded for starting a session
@@ -86,7 +86,7 @@ async fn pick_path(app: AppHandle, purpose: Option<String>) -> Result<Vec<String
             let _ = tx.send(open_panel::folder_or_markdown(message, add));
         })
         .map_err(|e| AppError::Message(e.to_string()))?;
-        Ok(rx.await.map_err(|_| AppError::Message("dialog closed".into()))?)
+        rx.await.map_err(|_| AppError::Message("dialog closed".into()))
     }
     // Other platforms have no panel that takes both, so they get the (single-selection) folder picker.
     #[cfg(not(target_os = "macos"))]
@@ -438,7 +438,7 @@ fn open_settings(app: AppHandle) -> Result<()> {
 
 #[tauri::command]
 fn open_page_window(app: AppHandle, folder: String, path: String, version: Option<u32>) -> Result<()> {
-    let label = format!("page-{}", app.webview_windows().len());
+    let label = free_page_label(|l| app.get_webview_window(l).is_some());
     let mut url = format!("index.html?page={}", urlencode(&path));
     if let Some(n) = version {
         url.push_str(&format!("&version={}", n));
@@ -455,6 +455,15 @@ fn open_page_window(app: AppHandle, folder: String, path: String, version: Optio
         .traffic_light_position(tauri::Position::Logical(tauri::LogicalPosition::new(12.0, 16.0)));
     builder.build()?;
     Ok(())
+}
+
+/// The first `page-N` no open window has. A count of the open windows is not enough: once an earlier
+/// page window closes, the count lands on a label still in use, and Tauri refuses a second window with it.
+fn free_page_label(open: impl Fn(&str) -> bool) -> String {
+    (1..)
+        .map(|n| format!("page-{n}"))
+        .find(|l| !open(l))
+        .expect("some page-N is free")
 }
 
 fn urlencode(s: &str) -> String {
@@ -669,4 +678,29 @@ pub fn run() {
             #[cfg(not(target_os = "macos"))]
             let _ = (app, event);
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_page_window_label_is_one_no_open_window_has() {
+        // Two page windows were opened, then the first was closed: three windows would have counted
+        // out "page-2" again, which the second one still holds.
+        let open = ["main", "page-2"];
+        assert_eq!(free_page_label(|l| open.contains(&l)), "page-1");
+        let open = ["main", "settings", "page-1", "page-2"];
+        assert_eq!(free_page_label(|l| open.contains(&l)), "page-3");
+    }
+
+    #[test]
+    fn urlencode_keeps_path_characters_and_escapes_the_rest() {
+        assert_eq!(
+            urlencode("notes/Sleep replay.md"),
+            "notes/Sleep%20replay.md"
+        );
+        assert_eq!(urlencode("a&b#c?d+e"), "a%26b%23c%3Fd%2Be");
+        assert_eq!(urlencode("café"), "caf%C3%A9");
+    }
 }
