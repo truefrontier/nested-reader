@@ -94,6 +94,17 @@ export function joinBlocks(blocks: Block[]): string {
   return blocks.map((b) => b.raw).join("");
 }
 
+/**
+ * `text` with the line endings of `like`, the body it was made from. `lexBlocks` hands every block
+ * back with LF, so without this, linking one word in a CRLF file would rewrite every line of it. A
+ * file that mixes the two comes back all in whichever it uses more, LF on a tie.
+ */
+export function withLineEndings(text: string, like: string): string {
+  const crlf = like.split("\r\n").length - 1;
+  const lf = like.split("\n").length - 1 - crlf;
+  return crlf > lf ? text.replace(/\r?\n/g, "\r\n") : text;
+}
+
 /** Render a whole body at once (used for lightweight views). */
 export function renderMarkdown(body: string): string {
   const rendered = marked.parse(normalizeBody(body)) as string;

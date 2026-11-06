@@ -93,7 +93,7 @@ The sidebar also shows the folder's directories. `buildFolders` in `src/lib/tree
 
 A value that needs quoting (a title with a colon or a quote in it) is written as a JSON string and parsed back the same way, so quotes inside a title survive the round trip instead of showing as `\"`.
 
-When a page is created from a highlight, the highlighted words in the source are wrapped as `[[slug|highlighted words]]`. The display text is unchanged, Obsidian understands the link, and the reader renders it underlined with a dot while the target is loading or unread.
+When a page is created from a highlight, the highlighted words in the source are wrapped as `[[slug|highlighted words]]`. The source keeps its own line endings: `lexBlocks` hands blocks back with LF, so the store puts CRLF back with `withLineEndings` when the page uses it more (the refine and undo writes do the same). The display text is unchanged, Obsidian understands the link, and the reader renders it underlined with a dot while the target is loading or unread.
 
 A link to the web (`http:` or `https:`) gets `target="_blank"` from a DOMPurify hook in `src/lib/markdown.ts`, so it covers pages, answer cards and raw HTML alike. The opener plugin's click handler opens such a link in the browser (under `opener:default`); without it a plain click would take the whole window to the site, with no way back.
 
