@@ -29,7 +29,7 @@ import { authFor, modelSlot, pageRewriteTokens } from "../lib/models";
 import { parseFrontMatter, serializePage, titleFromBody } from "../lib/frontmatter";
 import { slugify, titleFromQuestion, uniquePath } from "../lib/slug";
 import { nowIso } from "../lib/time";
-import { newFileMessages, newPageMessages, parseSummaries, quickAnswerMessages, refineMessages, summaryMessages, SUMMARY_BATCH_CHARS, SUMMARY_PAGE_CHARS, type AskContext, type RefineScope } from "../lib/prompts";
+import { newFileMessages, newPageMessages, parseSummaries, quickAnswerMessages, refineMessages, summaryMessages, SUMMARY_BATCH_CHARS, SUMMARY_PAGE_CHARS, wholePageRewrite, type AskContext, type RefineScope } from "../lib/prompts";
 import { fingerprint, sessionMap, summaryIsCurrent, type SummaryCache } from "../lib/sessionmap";
 import { dirOf, folderChain, growsFrom, rootDirs, sessionPages } from "../lib/tree";
 
@@ -2608,7 +2608,7 @@ export class ReaderStore {
                   blocks[at] = { ...blocks[at], raw };
                   next = joinBlocks(blocks);
                 } else {
-                  next = cleaned.endsWith("\n") ? cleaned : cleaned + "\n";
+                  next = wholePageRewrite(cleaned);
                 }
                 if (next.trim() === body.trim()) return finish();
                 const { folder: root, rel } = this.loc(path);

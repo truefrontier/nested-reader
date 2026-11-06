@@ -440,7 +440,6 @@ pub async fn stream_codex(req: &AiRequest, channel: &Channel<StreamEvent>, cance
     // With the folder as its working directory, Codex's read-only sandbox lets it look at the
     // pages with its own shell; from the neutral folder it has nothing to read.
     let child = spawn(cmd, req.folder.as_deref(), Stdio::null())?;
-    let mut sent = false;
     let mut failure: Option<String> = None;
     let (ok, stderr) = run_lines(child, "Codex", idle_cap(req), cancel, |v| {
         match v["type"].as_str() {
@@ -455,7 +454,6 @@ pub async fn stream_codex(req: &AiRequest, channel: &Channel<StreamEvent>, cance
             }
             Some("item.completed") if v["item"]["type"] == "agent_message" => {
                 if let Some(t) = v["item"]["text"].as_str() {
-                    sent = true;
                     let _ = channel.send(StreamEvent::Delta { text: t.to_string() });
                 }
             }
@@ -476,7 +474,9 @@ pub async fn stream_codex(req: &AiRequest, channel: &Channel<StreamEvent>, cance
     if let Some(f) = failure {
         return Err(AppError::Message(f));
     }
-    if !ok && !sent {
+    // A non-zero exit is a failure even after a message: Codex can send one ("Let me look at the
+    // page") before its answer, and `done` would let a whole-page refine write it in the page's place.
+    if !ok {
         return Err(AppError::Message(codex_exit_error(&stderr)));
     }
     Ok(false)
@@ -710,6 +710,43 @@ exec sleep 30
         assert!(crate::ai::stream(request(4000), channel, CancelToken::default()).await);
         assert_eq!(kinds(&events.lock().unwrap()), ["error"]);
         assert!(started.elapsed() < Duration::from_secs(10), "took {:?}", started.elapsed());
+    }
+
+    fn codex(script: &str) -> (tempfile::TempDir, AiRequest) {
+        let dir = install_script(script, Some(SHORT_CAP));
+        let mut req = request(4000);
+        req.provider = "openai".into();
+        (dir, req)
+    }
+
+    const INTERIM: &str = r#"{"type":"item.completed","item":{"type":"agent_message","text":"Let me look at the page first."}}"#;
+
+    /// Codex sends a message before it is done, so a crash after one is no answer: `done` would let a
+    /// whole-page refine replace the page with that one sentence.
+    #[tokio::test]
+    async fn a_codex_that_crashes_after_an_interim_message_ends_in_an_error() {
+        let (_dir, req) = codex(&format!("#!/bin/sh\necho '{INTERIM}'\necho 'stream disconnected before completion' >&2\nexit 1\n"));
+        let (channel, events) = collect();
+        assert!(crate::ai::stream(req, channel, CancelToken::default()).await);
+        let events = events.lock().unwrap();
+        assert_eq!(kinds(&events), ["delta", "error"]);
+        assert_eq!(
+            events[1]["message"],
+            "stream disconnected before completion"
+        );
+    }
+
+    /// The other side of the crash above: a run that finishes its turn and exits cleanly is done.
+    #[tokio::test]
+    async fn a_codex_that_finishes_its_turn_is_done() {
+        let (_dir, req) = codex(&format!(
+            "#!/bin/sh\necho '{INTERIM}'\necho '{{\"type\":\"turn.completed\"}}'\n"
+        ));
+        let (channel, events) = collect();
+        assert!(crate::ai::stream(req, channel, CancelToken::default()).await);
+        let events = events.lock().unwrap();
+        assert_eq!(kinds(&events), ["delta", "done"]);
+        assert_eq!(events[1]["truncated"], false);
     }
 
     /// Cancelling still works once reading is over and only the exit is being waited for.
