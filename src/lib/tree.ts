@@ -143,7 +143,12 @@ export function rootOf(path: string, pages: Record<string, PageMeta>): string {
     seen.add(cur);
     cur = pages[cur].source as string;
   }
-  return cur;
+  if (!seen.has(cur)) return cur;
+  // `cur` came round again, so the sources loop. Stopping wherever the walk began would give each
+  // member of the loop a root of its own, so the loop's first path in sort order stands for all of it.
+  let first = cur;
+  for (let p = pages[cur].source as string; p !== cur; p = pages[p].source as string) if (p < first) first = p;
+  return first;
 }
 
 /** Every page that shares a root with `path`, excluding `path` itself, nearest first. */

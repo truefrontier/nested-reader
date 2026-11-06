@@ -84,7 +84,42 @@ test("sessionPages returns on a page that names itself as its source", () => {
 
 test("sessionPages returns when the session's sources form a cycle", () => {
   const p = pages(["a.md", "b.md"], ["b.md", "a.md"], ["c.md", "a.md"], ["d.md", "a.md"]);
-  assert.deepEqual(sessionPages("c.md", p).map((x) => x.path), ["a.md", "d.md"]);
+  assert.deepEqual(sessionPages("c.md", p).map((x) => x.path), ["a.md", "b.md", "d.md"]);
+});
+
+test("rootOf gives both pages of a two-page loop the same root", () => {
+  const p = pages(["b.md", "a.md"], ["a.md", "b.md"]);
+  assert.deepEqual([rootOf("a.md", p), rootOf("b.md", p)], ["a.md", "a.md"]);
+  assert.deepEqual(sessionPages("a.md", p).map((x) => x.path), ["b.md"]);
+  assert.deepEqual(sessionPages("b.md", p).map((x) => x.path), ["a.md"]);
+});
+
+test("rootOf gives a page that names itself, and its children, that page as root", () => {
+  const p = pages(["self.md", "self.md"], ["kid.md", "self.md"]);
+  assert.deepEqual([rootOf("self.md", p), rootOf("kid.md", p)], ["self.md", "self.md"]);
+});
+
+test("rootOf gives a three-page loop and a page hanging off it one root", () => {
+  // b → c → a → b, and d hangs off c. The loop's first path in sort order is the root for all four.
+  const p = pages(["b.md", "c.md"], ["c.md", "a.md"], ["a.md", "b.md"], ["d.md", "c.md"]);
+  assert.deepEqual(["a.md", "b.md", "c.md", "d.md"].map((x) => rootOf(x, p)), ["a.md", "a.md", "a.md", "a.md"]);
+  for (const x of ["a.md", "b.md", "c.md", "d.md"]) {
+    assert.deepEqual(sessionPages(x, p).map((y) => y.path).sort(), ["a.md", "b.md", "c.md", "d.md"].filter((y) => y !== x), `from ${x}`);
+  }
+});
+
+test("rootOf leaves a plain chain, and a source missing from the folder, as they were", () => {
+  const p = pages(["root.md"], ["mid.md", "root.md"], ["leaf.md", "mid.md"], ["orphan.md", "gone.md"]);
+  assert.deepEqual(["root.md", "mid.md", "leaf.md", "orphan.md"].map((x) => rootOf(x, p)), ["root.md", "root.md", "root.md", "orphan.md"]);
+});
+
+test("layoutWeb still draws a loop, centred on its root whichever member has focus", () => {
+  const p = pages(["a.md", "b.md", DAY1], ["b.md", "a.md", DAY2], ["c.md", "b.md", DAY3]);
+  for (const focus of ["a.md", "b.md", "c.md"]) {
+    const { nodes, edges } = layoutWeb(p, focus);
+    assert.deepEqual(nodes[0], { path: "a.md", x: 0.5, y: 0.5, depth: 0 }, `focus ${focus}`);
+    assert.deepEqual(edges, [{ from: "a.md", to: "b.md" }, { from: "b.md", to: "c.md" }], `focus ${focus}`);
+  }
 });
 
 test("layoutWeb puts the focused page's root at the centre with an edge to each child", () => {
