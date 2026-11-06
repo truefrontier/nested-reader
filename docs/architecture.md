@@ -276,4 +276,6 @@ Delete is not a removal: `files::delete_page` moves the page and its snapshot fo
 
 `generatePage` then uses `newFileMessages` instead of `newPageMessages`: the current page plus the session and folder pages the Context toggles allow, and the brief as "New page: …". A retry tells the two apart by whether the source page holds a `[[slug|text]]` link to the page; a page with no link was started from the session.
 
+Creating the file never replaces one. The name comes from the store's list of pages, which can be behind the folder, so `createPage` writes through `files::write_new_page` (`create_new`, `false` if anything is at the path, in any case where the volume ignores case), and `createUnique` (`src/lib/slug.ts`) moves on to the next `-2`, `-3` name, five tries in all before a plain error. Edits to a page go through `write_page` as before.
+
 Page generation is `generatePage` in the store, separate from creating the file. A failed stream leaves the page with its heading, records the message in `pageErrors`, and toasts if the page is not on screen. The page then shows a card with Try again (↵), and so does any page that holds only its heading. `retryPage` rebuilds the context from the source page by finding the `[[slug|text]]` link to the page, then streams again.

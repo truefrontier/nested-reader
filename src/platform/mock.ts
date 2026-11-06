@@ -187,6 +187,12 @@ export const mockPlatform: Platform = {
     files.set(key(folder, path), { raw: content, modified: now, created: prev?.created ?? now });
   },
 
+  async writeNewPage(folder, path, content) {
+    if (files.has(key(folder, path))) return false;
+    await this.writePage(folder, path, content);
+    return true;
+  },
+
   async deletePage(folder, path) {
     const k = key(folder, path);
     const file = files.get(k);

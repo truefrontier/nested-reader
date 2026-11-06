@@ -27,7 +27,7 @@ import { createDataUriMask, maskDataUris, unmaskDataUris } from "../lib/dataUris
 import { findWikiLink, joinBlocks, lexBlocks, linkTextInRaw, replaceFlexible, resolveWikiTarget } from "../lib/markdown";
 import { authFor, modelSlot, pageRewriteTokens } from "../lib/models";
 import { parseFrontMatter, serializePage, titleFromBody } from "../lib/frontmatter";
-import { slugify, titleFromQuestion, uniquePath } from "../lib/slug";
+import { createUnique, slugify, titleFromQuestion } from "../lib/slug";
 import { nowIso } from "../lib/time";
 import { newFileMessages, newPageMessages, parseSummaries, quickAnswerMessages, refineMessages, summaryMessages, SUMMARY_BATCH_CHARS, SUMMARY_PAGE_CHARS, type AskContext, type RefineScope } from "../lib/prompts";
 import { fingerprint, sessionMap, summaryIsCurrent, type SummaryCache } from "../lib/sessionmap";
@@ -2285,12 +2285,15 @@ export class ReaderStore {
     const sourceText = opts.sourceText?.trim();
     const question = opts.question.trim() || (sourceText ? sourceText : "");
     const title = titleFromQuestion(question || pages[current].title);
-    const path = uniquePath(slugify(title), new Set(Object.keys(pages)), settings.newPagesSubfolder);
-    const slug = path.replace(/\.md$/, "").split("/").pop() ?? path;
-    const meta: PageMeta = { path, title, source: current, question: question || undefined, created: nowIso(), mode: opts.mode };
+    const fields = { title, source: current, question: question || undefined, created: nowIso(), mode: opts.mode };
     const heading = `# ${title}\n\n`;
     try {
-      await platform.writePage(folder, path, serializePage(meta, heading));
+      // The list can be behind the folder, so a name already on disk is skipped, never written over.
+      const path = await createUnique(slugify(title), new Set(Object.keys(pages)), settings.newPagesSubfolder, (p) =>
+        platform.writeNewPage(folder, p, serializePage({ ...fields, path: p }, heading)),
+      );
+      const slug = path.replace(/\.md$/, "").split("/").pop() ?? path;
+      const meta: PageMeta = { ...fields, path };
       this.set({ pages: { ...this.state.pages, [path]: meta }, bodies: { ...this.state.bodies, [path]: heading } });
       // Link the source text to the new page so the file itself remembers the branch.
       if (sourceText && opts.block !== undefined) await this.linkSelection(current, opts.block, sourceText, slug);
