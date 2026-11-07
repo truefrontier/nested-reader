@@ -32,3 +32,24 @@ export function uniquePath(base: string, taken: Set<string>, dir = ""): string {
   }
   return candidate;
 }
+
+/**
+ * Writes a new page under the first free name for `base` and gives back its path. The app's list
+ * can be behind the folder, so `create` must refuse, with `false`, a name already on disk. That
+ * name is then skipped for the next one, a few times, before giving up.
+ */
+export async function createUnique(
+  base: string,
+  taken: Set<string>,
+  dir: string,
+  create: (path: string) => Promise<boolean>,
+  tries = 5,
+): Promise<string> {
+  const skip = new Set(taken);
+  for (let i = 0; i < tries; i++) {
+    const path = uniquePath(base, skip, dir);
+    if (await create(path)) return path;
+    skip.add(path);
+  }
+  throw new Error(`Couldn't make the page: ${uniquePath(base, taken, dir)} and the next ${tries - 1} names after it are already in the folder.`);
+}

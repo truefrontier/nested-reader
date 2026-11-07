@@ -759,7 +759,14 @@
 - The delete toast now offers Undo for ten seconds (`ToastAction` on `notify`, `undoDelete` and `putPageBack` in the store), backed by `files::restore_page`, which refuses to overwrite anything that has appeared at the old path.
 - Two small fixes it needed. The `settings-changed` handler only opens a folder when the folder setting changed, or ticking "Do not ask again" on a file session's own page reopened the folder and wiped the toast; the cost is that re-picking the same folder in Settings from Home now does nothing. A refine queued behind a deleted page is cancelled too, and any behind that one no longer start.
 - `delete_page` now returns the name it parked the page under, because `-2`, `-3` names mean the path alone can't say which delete to undo.
-- Found on the way, not fixed: `openFolder` doesn't stop running streams, so a refine that finishes after another session opens can write a same-named page there (the snapshot makes it recoverable); `createPage` can write over a file added outside the app since the last listing.
+- Found on the way, not fixed: `openFolder` doesn't stop running streams, so a refine that finishes after another session opens can write a same-named page there (the snapshot makes it recoverable); `createPage` can write over a file added outside the app since the last listing (fixed 2026-11-06, below).
+
+### Follow-up — 2026-11-06: a new page never writes over a note
+- `createPage` picked its name from the app's own list of pages, then wrote with `write_page`, which renames over whatever is at the path. A note of the same name saved from another editor, or synced in, since the last listing became a one-line heading, with no snapshot to bring it back.
+- New pages now go through `files::write_new_page` (command `write_new_page`, `Platform.writeNewPage`). It opens the file with `create_new`, so it fails in the same step if anything is there, in any case on a volume that ignores case. It returns `false` rather than an error, so the store can tell a taken name from a real failure without reading error text.
+- `createUnique` in `src/lib/slug.ts` tries `uniquePath`'s name, then the next `-2`, `-3` names, five tries in all, then fails with "Couldn't make the page: x.md and the next 4 names after it are already in the folder." Edits to existing pages still use `write_page`. Two new pages with the same title started at once now get two names, where the second used to replace the first.
+- The write is no longer temp file and rename. A new page's first write is only its heading, and a write that fails half way removes its own file.
+- Checks: `cargo test --lib` 71 → 75 (12 live tests ignored), including a note left byte for byte; `pnpm test` 89 → 92; clippy clean; `pnpm build` passes. In the browser mock, with `why-do-we-dream.md` and `-2.md` added behind the store's back, a new page for "why do we dream" went to `-3.md` and both notes were unchanged. With five names taken, the toast gave the error above and no file was written. Not run: the desktop app.
 
 ## Session: 2026-09-15 — the answer stream stopped at the model's first tool call
 

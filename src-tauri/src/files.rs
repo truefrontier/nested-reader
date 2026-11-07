@@ -150,6 +150,34 @@ pub fn write_page(folder: &str, rel: &str, content: &str) -> Result<()> {
     write_atomic(&full, content)
 }
 
+/// Writes a page that must be new. If anything is already at `rel` (in any case, on a volume that
+/// ignores case) it is left untouched and this returns `false`, so the caller can try another name.
+/// `write_page` would replace it, and a note the app hasn't listed yet has no snapshot to restore.
+pub fn write_new_page(folder: &str, rel: &str, content: &str) -> Result<bool> {
+    use std::io::Write;
+    let full = safe_join(folder, rel)?;
+    if let Some(parent) = full.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    // `create_new` fails if the path exists, in the same step that creates it.
+    let mut file = match fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&full)
+    {
+        Ok(f) => f,
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => return Ok(false),
+        Err(e) => return Err(e.into()),
+    };
+    if let Err(e) = file.write_all(content.as_bytes()) {
+        // The file is ours from `create_new`, so a half-written one can go.
+        drop(file);
+        let _ = fs::remove_file(&full);
+        return Err(e.into());
+    }
+    Ok(true)
+}
+
 /// Takes a page out of the folder: its file and its version snapshots are moved into
 /// `.reader/trash/`, rather than removed, so a delete can be undone (`restore_page`, or by hand in
 /// Finder). A name already sitting in the trash gets `-2`, `-3`, and so on. Returns the name used.
@@ -1334,6 +1362,55 @@ mod tests {
         assert_eq!(page.path, "sample.html");
         assert!(page.raw.contains("Welcome"));
         assert!(page.raw.contains("test"));
+    }
+
+    #[test]
+    fn write_new_page_writes_a_page_that_is_not_there_yet() {
+        let dir = folder();
+        let folder = dir.path().to_str().unwrap();
+
+        assert!(write_new_page(folder, "new/a.md", "# A\n").unwrap());
+
+        assert_eq!(fs::read_to_string(dir.path().join("new/a.md")).unwrap(), "# A\n");
+    }
+
+    /// A note saved from another editor since the last listing must survive a new page of its name.
+    #[test]
+    fn write_new_page_leaves_a_file_already_there_byte_for_byte() {
+        let dir = folder();
+        let folder = dir.path().to_str().unwrap();
+        let note = "---\ntitle: Sleep\n---\n# Sleep\n\nMy own notes, \u{2014} not the app's.\r\n";
+        write_md(dir.path(), "sleep.md", note);
+
+        assert!(!write_new_page(folder, "sleep.md", "# Sleep\n\n").unwrap());
+
+        assert_eq!(fs::read(dir.path().join("sleep.md")).unwrap(), note.as_bytes());
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+
+    /// macOS volumes ignore case, so `sleep.md` there is the reader's own `Sleep.md`.
+    #[test]
+    fn write_new_page_leaves_a_case_twin_alone_where_the_volume_ignores_case() {
+        let dir = folder();
+        let folder = dir.path().to_str().unwrap();
+        write_md(dir.path(), "Sleep.md", "# Mine\n");
+        let ignores_case = dir.path().join("SLEEP.md").exists();
+
+        let written = write_new_page(folder, "sleep.md", "# Sleep\n\n").unwrap();
+
+        assert_eq!(written, !ignores_case);
+        assert_eq!(fs::read_to_string(dir.path().join("Sleep.md")).unwrap(), "# Mine\n");
+    }
+
+    #[test]
+    fn write_new_page_refuses_a_path_that_leaves_the_folder() {
+        let outer = folder();
+        let session = outer.path().join("session");
+        fs::create_dir_all(&session).unwrap();
+
+        assert!(write_new_page(session.to_str().unwrap(), "../escape.md", "# X\n").is_err());
+
+        assert!(!outer.path().join("escape.md").exists());
     }
 
     #[test]

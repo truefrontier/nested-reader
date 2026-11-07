@@ -343,6 +343,8 @@ export interface Platform {
   readPage(folder: string, path: string): Promise<Page>;
   /** Writes the full file content (front matter included). */
   writePage(folder: string, path: string, content: string): Promise<void>;
+  /** Writes a page that must be new. Resolves to `false`, touching nothing, if the path is already taken on disk. */
+  writeNewPage(folder: string, path: string, content: string): Promise<boolean>;
   /** Takes a page out of the folder, parking it in `.reader/trash` rather than removing it. Resolves to the name `restorePage` needs. */
   deletePage(folder: string, path: string): Promise<string>;
   /** Puts back a page `deletePage` parked, with its snapshots. Rejects, leaving it parked, if anything has since appeared at `path`. */
