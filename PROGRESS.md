@@ -847,7 +847,17 @@
 - Side effect of the front-matter fix: a page the app wrote now parses without its leading newline, so its `fingerprint` changes once and its map line counts as stale one time (re-adding a folder offers to describe those pages again).
 
 ### Possible next steps
-- `lexBlocks` normalises CRLF, so linking one word in a CRLF file rewrites every line ending (`joinBlocks` writes LF).
+- `lexBlocks` normalises CRLF, so linking one word in a CRLF file rewrites every line ending (`joinBlocks` writes LF). Fixed 2026-11-06, below.
 - `rootOf` gives different roots to members of the same cycle, so a cycle member can drop out of its own session list.
 - `stem` folds "movies" to "movy" but leaves "movie", and "news" to "new" (mirrored in `tools.rs`; changing it means both sides).
 - A CI job for `pnpm test` and `cargo test`.
+
+### Follow-up — 2026-11-06: a CRLF page keeps its line endings
+- `lexBlocks` lexes the body with LF, so a body rebuilt from its blocks came back all LF. Linking one word in a CRLF file, from Windows or from git, rewrote every line of it.
+- `withLineEndings(text, like)` in `src/lib/markdown.ts` gives `text` the endings `like` uses most: CRLF if it has more CRLF than lone LF, otherwise the text is left as it is. The store uses it in four places:
+  - `linkSelection`, after `joinBlocks`.
+  - `runRefine`, before the unchanged check, for both selection and whole-page refines. A refine that changed nothing on a CRLF page used to count as a change and get written.
+  - `undoChange`, after `revertChange`, which also rebuilds the body from LF blocks.
+  - The store's `writePage`, so the front matter, always written with LF, follows the body. The Rust front matter readers already trim `\r`.
+- A mixed file comes back all in whichever ending it uses more, LF on a tie. Rendering is unchanged: `lexBlocks` still lexes LF.
+- Checks: `pnpm test` 89 → 93, and the four new tests fail on `main`, where `withLineEndings` doesn't exist. `pnpm build` passes. In the browser mock, a new page linked from a word in a CRLF page left the source CRLF throughout, front matter included. In its body only the linked line changed. Not run: the desktop app.

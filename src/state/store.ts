@@ -24,7 +24,7 @@ import {
 } from "../platform";
 import { diffBodies, revertChange, type Change, type PageDiff } from "../lib/diff";
 import { createDataUriMask, maskDataUris, unmaskDataUris } from "../lib/dataUris";
-import { findWikiLink, joinBlocks, lexBlocks, linkTextInRaw, replaceFlexible, resolveWikiTarget } from "../lib/markdown";
+import { findWikiLink, joinBlocks, lexBlocks, linkTextInRaw, replaceFlexible, resolveWikiTarget, withLineEndings } from "../lib/markdown";
 import { authFor, modelSlot, pageRewriteTokens } from "../lib/models";
 import { parseFrontMatter, serializePage, titleFromBody } from "../lib/frontmatter";
 import { createUnique, slugify, titleFromQuestion } from "../lib/slug";
@@ -730,7 +730,8 @@ export class ReaderStore {
     if (!base) return;
     const { folder, rel } = this.loc(path);
     const source = base.source?.startsWith(folder + "/") ? base.source.slice(folder.length + 1) : base.source;
-    await platform.writePage(folder, rel, serializePage({ ...base, source }, body));
+    // The front matter is written with LF; a CRLF page should stay CRLF throughout.
+    await platform.writePage(folder, rel, withLineEndings(serializePage({ ...base, source }, body), body));
     this.scheduleSummary(path);
   }
 
@@ -2478,7 +2479,7 @@ export class ReaderStore {
     const raw = linkTextInRaw(b.raw, text, slug);
     if (!raw) return;
     blocks[block] = { ...b, raw };
-    const next = joinBlocks(blocks);
+    const next = withLineEndings(joinBlocks(blocks), body);
     this.set({ bodies: { ...this.state.bodies, [path]: next } });
     await this.writePage(path, next);
   }
@@ -2613,6 +2614,8 @@ export class ReaderStore {
                 } else {
                   next = wholePageRewrite(cleaned);
                 }
+                // Blocks and the model's answer come back LF; the page keeps its own endings.
+                next = withLineEndings(next, body);
                 if (next.trim() === body.trim()) return finish();
                 const { folder: root, rel } = this.loc(path);
                 const n = await platform.snapshotVersion(root, rel);
@@ -2681,7 +2684,7 @@ export class ReaderStore {
     const diff = this.reviewDiff(path);
     if (!diff || !path || !this.state.folder) return;
     try {
-      const next = revertChange(diff, change);
+      const next = withLineEndings(revertChange(diff, change), this.state.bodies[path] ?? "");
       await this.writePage(path, next);
       this.set({ bodies: { ...this.state.bodies, [path]: next } });
       if (diffBodies(this.state.reviewBases[path]?.body ?? "", next).changes.length === 0) await this.undoAll(path);
