@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DEFAULT_SETTINGS, type Settings } from "../platform/types";
 import { unmaskDataUris } from "./dataUris";
-import { newFileMessages, parseSummaries, quickAnswerMessages, refineMessages, summaryMessages, SUMMARY_PAGE_CHARS, type AskContext, type ContextPage } from "./prompts";
+import { newFileMessages, parseSummaries, quickAnswerMessages, refineMessages, summaryMessages, SUMMARY_PAGE_CHARS, wholePageRewrite, type AskContext, type ContextPage } from "./prompts";
 
 /** True when `s` holds half of a surrogate pair, which the backend's JSON parser rejects outright. */
 const torn = (s: string) => /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(s);
@@ -94,4 +94,15 @@ test("a ⌘N page leaves out the highlight even when one is set", () => {
   const { messages } = newFileMessages(ctx({ selection: "stale selection", paragraph: "stale paragraph" }), "A page on sleep", false);
   assert.doesNotMatch(messages[0].content, /stale/);
   assert.match(messages[0].content, /New page: A page on sleep$/);
+});
+
+test("wholePageRewrite refuses an empty answer instead of blanking the page", () => {
+  const refused = { message: "The model sent back an empty page, so the rewrite was left unwritten. The page is unchanged — try again." };
+  assert.throws(() => wholePageRewrite(""), refused);
+  assert.throws(() => wholePageRewrite("  \n\n\t"), refused);
+});
+
+test("wholePageRewrite writes a real answer with one closing newline", () => {
+  assert.equal(wholePageRewrite("# Sleep\n\nRipples replay the day."), "# Sleep\n\nRipples replay the day.\n");
+  assert.equal(wholePageRewrite("# Sleep\n"), "# Sleep\n");
 });

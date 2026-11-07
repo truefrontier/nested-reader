@@ -169,6 +169,16 @@ export function refineMessages(
 }
 
 /**
+ * The page a whole-page refine writes, from the model's answer once fences and images are dealt
+ * with. An empty answer is refused: writing it would blank the page, and only a snapshot could
+ * bring it back.
+ */
+export function wholePageRewrite(cleaned: string): string {
+  if (!cleaned.trim()) throw new Error("The model sent back an empty page, so the rewrite was left unwritten. The page is unchanged — try again.");
+  return cleaned.endsWith("\n") ? cleaned : cleaned + "\n";
+}
+
+/**
  * The lines the session map keeps, for a batch of pages in one call. Pages are numbered rather
  * than named: a number survives the round trip, where a long path invites the model to tidy it,
  * and it costs a token instead of thirty.
