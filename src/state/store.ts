@@ -24,6 +24,7 @@ import {
 } from "../platform";
 import { diffBodies, revertChange, type Change, type PageDiff } from "../lib/diff";
 import { createDataUriMask, maskDataUris, unmaskDataUris } from "../lib/dataUris";
+import { guardedRefine } from "../lib/refineGuard";
 import { findWikiLink, joinBlocks, lexBlocks, linkTextInRaw, replaceFlexible, resolveWikiTarget, withLineEndings } from "../lib/markdown";
 import { authFor, modelSlot, pageRewriteTokens } from "../lib/models";
 import { parseFrontMatter, serializePage, titleFromBody } from "../lib/frontmatter";
@@ -2565,79 +2566,97 @@ export class ReaderStore {
         // page's chain for anyone else waiting behind it.
         if (this.cancelledRefines.has(id)) return finish();
         if (!this.state.folder || !this.state.pages[this.livePath(path)]) return finish();
-        const body = await this.loadBody(path);
-        const blocks = lexBlocks(body);
-        const target = selection ? selection.text : body;
         const ctx = await this.askContext(selection, undefined, path);
         if (!ctx) return finish();
         if (this.cancelledRefines.has(id)) return finish();
-        const { system, messages, mask } = refineMessages({ ...ctx, page: { meta: this.state.pages[path], body } }, instruction, selection ? "selection" : "page", target);
-        let out = "";
-        const req = this.request(system, messages, undefined, "refine");
-        // A whole page has to come back whole, so its room grows with the page as the model sees it
-        // (images masked); a fixed ceiling cut every long page off and refused it.
-        req.maxTokens = selection ? 800 : pageRewriteTokens(maskDataUris(createDataUriMask(), target).length, req);
-        this.stream(key, req, {
-          delta: (t) => {
-            out += t;
-          },
-          done: (truncated) => {
-            // A cut-off answer is half a page. Writing it would overwrite the real one with the
-            // part that arrived, so the page is left alone and the reader is told why.
-            if (truncated) return finish(new Error("The model ran out of room before it finished, so the rewrite was cut off. The page is unchanged — try refining a smaller selection."));
-            void (async () => {
-              try {
-                let next: string;
-                const stripped = stripFences(out).trim();
+        // One model run against `body`, giving back the cleaned answer. A cut-off or unusable answer
+        // throws, so nothing is written.
+        const generate = (body: string) =>
+          new Promise<string>((res, rej) => {
+            const target = selection ? selection.text : body;
+            const { system, messages, mask } = refineMessages({ ...ctx, page: { meta: this.state.pages[path], body } }, instruction, selection ? "selection" : "page", target);
+            let out = "";
+            const req = this.request(system, messages, undefined, "refine");
+            // A whole page has to come back whole, so its room grows with the page as the model sees it
+            // (images masked); a fixed ceiling cut every long page off and refused it.
+            req.maxTokens = selection ? 800 : pageRewriteTokens(maskDataUris(createDataUriMask(), target).length, req);
+            this.stream(key, req, {
+              delta: (t) => {
+                out += t;
+              },
+              done: (truncated) => {
+                // A cut-off answer is half a page. Writing it would overwrite the real one with the
+                // part that arrived, so the page is left alone and the reader is told why.
+                if (truncated) return rej(new Error("The model ran out of room before it finished, so the rewrite was cut off. The page is unchanged — try refining a smaller selection."));
                 // Fails closed: an image reference that comes back unknown, doubled or torn means
                 // the rewrite cannot be trusted, so nothing is written and the original images —
                 // the ones the model was never actually shown — are left exactly as they were.
-                const restored = unmaskDataUris(mask, stripped);
-                if (!restored.ok) throw new Error(`The rewrite ${restored.reason}, so it was left unwritten. The page is unchanged.`);
-                const cleaned = restored.text;
-                if (selection) {
-                  // A refine ahead of this one in the page's turn may have reshaped the body since the
-                  // highlight was made, so the block it names is only the first place to look.
-                  const order = [selection.block, ...blocks.map((_, i) => i).filter((i) => i !== selection.block)];
-                  let raw: string | null = null;
-                  let at = -1;
-                  for (const i of order) {
-                    raw = blocks[i] ? replaceFlexible(blocks[i].raw, selection.text, cleaned) : null;
-                    if (raw !== null) {
-                      at = i;
-                      break;
-                    }
-                  }
-                  if (raw === null) throw new Error("Could not find the selection in the page source.");
-                  blocks[at] = { ...blocks[at], raw };
-                  next = joinBlocks(blocks);
-                } else {
-                  next = wholePageRewrite(cleaned);
-                }
-                // Blocks and the model's answer come back LF; the page keeps its own endings.
-                next = withLineEndings(next, body);
-                if (next.trim() === body.trim()) return finish();
-                const { folder: root, rel } = this.loc(path);
-                const n = await platform.snapshotVersion(root, rel);
-                await this.writePage(path, next);
-                this.set({ bodies: { ...this.state.bodies, [path]: next } });
-                // Refines stacked on one page read as one set of edits: the review stays pinned to the
-                // snapshot the first of them took, so the strip counts every change since.
-                const pending = this.state.session.pending;
-                if (pending[path] === undefined) this.setSession({ pending: { ...pending, [path]: n } });
-                if (this.isShown(path)) await this.refreshVersions(path);
-                // Every changed page gets its review base, so the split pane and later visits show the tints.
-                await this.refreshReview(path);
-              } catch (e) {
-                finish(e);
-                return;
+                const restored = unmaskDataUris(mask, stripFences(out).trim());
+                if (!restored.ok) return rej(new Error(`The rewrite ${restored.reason}, so it was left unwritten. The page is unchanged.`));
+                res(restored.text);
+              },
+              error: (m) => rej(new Error(m)),
+            });
+            watch();
+          });
+        const apply = async (body: string, cleaned: string) => {
+          const blocks = lexBlocks(body);
+          let next: string;
+          if (selection) {
+            // A refine ahead of this one in the page's turn may have reshaped the body since the
+            // highlight was made, so the block it names is only the first place to look.
+            const order = [selection.block, ...blocks.map((_, i) => i).filter((i) => i !== selection.block)];
+            let raw: string | null = null;
+            let at = -1;
+            for (const i of order) {
+              raw = blocks[i] ? replaceFlexible(blocks[i].raw, selection.text, cleaned) : null;
+              if (raw !== null) {
+                at = i;
+                break;
               }
-              finish();
-            })();
-          },
-          error: (m) => finish(new Error(m)),
-        });
-        watch();
+            }
+            if (raw === null) throw new Error("Could not find the selection in the page source.");
+            blocks[at] = { ...blocks[at], raw };
+            next = joinBlocks(blocks);
+          } else {
+            next = wholePageRewrite(cleaned);
+          }
+          // Blocks and the model's answer come back LF; the page keeps its own endings.
+          next = withLineEndings(next, body);
+          if (next.trim() === body.trim()) return;
+          const { folder: root, rel } = this.loc(path);
+          const n = await platform.snapshotVersion(root, rel);
+          await this.writePage(path, next);
+          this.set({ bodies: { ...this.state.bodies, [path]: next } });
+          // Refines stacked on one page read as one set of edits: the review stays pinned to the
+          // snapshot the first of them took, so the strip counts every change since.
+          const pending = this.state.session.pending;
+          if (pending[path] === undefined) this.setSession({ pending: { ...pending, [path]: n } });
+          if (this.isShown(path)) await this.refreshVersions(path);
+          // Every changed page gets its review base, so the split pane and later visits show the tints.
+          await this.refreshReview(path);
+        };
+        try {
+          // The page is hashed as sent and again right before the write; a page that changed meanwhile
+          // (an edit, another refine, the file on disk) has its answer thrown away and is refined afresh.
+          await guardedRefine({
+            read: () => this.loadBody(path),
+            latest: async (sent) => {
+              const cached = this.state.bodies[path];
+              if (cached !== undefined && cached !== sent) return cached;
+              const { folder: root, rel } = this.loc(path);
+              return (await platform.readPage(root, rel)).body;
+            },
+            generate,
+            apply,
+            onStale: (current) => {
+              if (this.state.bodies[path] !== current) this.set({ bodies: { ...this.state.bodies, [path]: current } });
+            },
+          });
+        } catch (e) {
+          return finish(e);
+        }
+        finish();
       })().catch(finish);
     });
   }
