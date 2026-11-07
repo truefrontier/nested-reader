@@ -718,6 +718,12 @@
 - Show the Before / Now change cards in the split pane too, since the tints and strip already appear there.
 - Keep a split-pane highlight when the main pane navigates (today `navigate` resets all of `ui`).
 
+### Follow-up — 2026-11-06: every page in a source loop shares one session root
+- `buildTree` lists pages caught in a source cycle flat, but `rootOf` gave each member of a cycle a different root: it stopped wherever its walk began to repeat. With A → B → A, `rootOf(A)` was A and `rootOf(B)` was B, so `sessionPages` left B out of A's session, and the reverse. That list feeds the ask's context and a corpus refine's pages. (This closes the `rootOf` item in the 2026-11-03 session's next steps.)
+- When the walk comes round again, `rootOf` now walks the loop once and returns its first path in sort order. Every loop member gets that root, and so does every page that hangs off the loop. A chain with no loop, or one whose source is missing from the folder, is unchanged.
+- The web map centres on that root whichever loop member has focus, and still draws every page once.
+- Checks: `pnpm test` 89 → 94. Five tests are new, and one existing test that expected B to drop out now expects it listed. On `main`'s `rootOf`, the four loop tests fail. The self-loop and plain-chain tests pass on both, since those cases don't change. `pnpm build` passes. In the browser mock I gave the sample session's root a loop with its child, and all six pages shared one root. Each loop member's session listed the other five, and the Web map drew all six pages with five lines. Not run: the desktop app.
+
 ## Session: 2026-09-14 — Rename, Reveal in Finder and Delete in the tree's ⋯ menu
 
 ### Leading assumptions
