@@ -53,7 +53,7 @@ Publishing a version is one command from a clean `main`:
 pnpm release 0.2.0     # or: pnpm release patch | minor | major
 ```
 
-It writes the version into `package.json`, `tauri.conf.json`, `Cargo.toml` and `Cargo.lock`, commits, tags `v0.2.0` and pushes. GitHub Actions ([`release.yml`](.github/workflows/release.yml)) then builds, Apple-signs, and notarizes a universal Mac app, signs the updater bundle, and creates a GitHub Release with the `.dmg`, the bundle, and `latest.json` (kept as a draft during initial notarization validation). The repository is private, so installed copies do not read the release directly: the relay in [`feedback-relay/`](feedback-relay/README.md) serves `latest.json` and the downloads with its own token. The workflow header lists the required Apple and updater secrets; only the updater public key belongs in `tauri.conf.json`.
+It writes the version into `package.json`, `tauri.conf.json`, `Cargo.toml` and `Cargo.lock`, commits, tags `v0.2.0` and pushes. GitHub Actions ([`release.yml`](.github/workflows/release.yml)) then builds, Apple-signs, and notarizes a universal Mac app, signs the updater bundle, and creates a GitHub Release with the `.dmg`, the bundle, and `latest.json` (kept as a draft during initial notarization validation). Installed copies do not read the release directly: their update endpoint is the relay in [`feedback-relay/`](feedback-relay/README.md), which serves `latest.json` and the downloads with its own token, whether the repository is private or public. The workflow header lists the required Apple and updater secrets; only the updater public key belongs in `tauri.conf.json`.
 
 ## Opening pages
 
