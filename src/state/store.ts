@@ -2103,6 +2103,13 @@ export class ReaderStore {
       watch: () => {
         if (!settled) this.releases.set(key, finish);
       },
+      /**
+       * Called before the task starts another stream on its key, as a refine run again does: starting
+       * a stream stops whatever holds the key, and that must not let go of this task.
+       */
+      unwatch: () => {
+        if (this.releases.get(key) === finish) this.releases.delete(key);
+      },
     };
   }
 
@@ -2560,7 +2567,7 @@ export class ReaderStore {
   private runRefine(id: string, path: string, instruction: string, selection: Selection | undefined): Promise<void> {
     const key = `refine:${path}`;
     return new Promise<void>((resolve, reject) => {
-      const { finish, watch } = this.settler(key, resolve, reject);
+      const { finish, watch, unwatch } = this.settler(key, resolve, reject);
       void (async () => {
         // Cancelled before its turn came up: no model call, no write, and it does not hold the
         // page's chain for anyone else waiting behind it.
@@ -2580,6 +2587,8 @@ export class ReaderStore {
             // A whole page has to come back whole, so its room grows with the page as the model sees it
             // (images masked); a fixed ceiling cut every long page off and refused it.
             req.maxTokens = selection ? 800 : pageRewriteTokens(maskDataUris(createDataUriMask(), target).length, req);
+            // A try after the first streams on the same key, and starting it would let go of this task.
+            unwatch();
             this.stream(key, req, {
               delta: (t) => {
                 out += t;
