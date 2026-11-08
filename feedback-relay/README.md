@@ -62,9 +62,17 @@ curl -I "$NESTED_FEEDBACK_URL/updates/dmg"
 }
 ```
 
-`email`, `attachment` and `app` are optional. The note becomes the issue body (quoted), the first line its title, and the contact line carries the email when one was given, so a reply can go back to the person. The repository is private, so the email is seen only by its collaborators. Notes over 5000 characters and malformed emails are refused with a plain-text reason the app shows as is.
+`email`, `attachment` and `app` are optional. The note becomes the issue body (quoted), the first line its title, and the contact line carries the email when one was given, so a reply can go back to the person. Notes over 5000 characters and malformed emails are refused with a plain-text reason the app shows as is.
 
-A screenshot (`attachment`, PNG/JPEG/GIF/WebP, up to 5 MB, base64 in `data` without a `data:` prefix) is committed to a `feedback-attachments` branch of its own, created from the default branch the first time one is needed, and embedded in the issue by its raw URL. Uploading it costs a few extra GitHub API calls; if that upload fails, the note is still filed, just without the picture.
+An email or a screenshot goes only to a private repository. Before it uses either one, the relay asks GitHub whether `GITHUB_REPO` is private (`GET /repos/{repo}`, which any token that can file issues may read) and remembers the answer for five minutes. If the repository is public, or GitHub doesn't answer, the note is still filed, without the email and without the screenshot. The issue notes that they were withheld, and the relay's answer lists them:
+
+```json
+{ "number": 42, "url": "https://github.com/…/issues/42", "withheld": ["email", "screenshot"] }
+```
+
+`truefrontier/nested-reader` is public, so for now every email and screenshot is held back. Pointing `GITHUB_REPO` at a private repository, with a token scoped to it, brings them back.
+
+In a private repository, a screenshot (`attachment`, PNG/JPEG/GIF/WebP, up to 5 MB, base64 in `data` without a `data:` prefix) is committed to a `feedback-attachments` branch of its own, created from the default branch the first time one is needed, and embedded in the issue by its raw URL. Uploading it costs a few extra GitHub API calls; if that upload fails, the note is still filed, just without the picture.
 
 Try it:
 

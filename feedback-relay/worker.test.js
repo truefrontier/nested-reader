@@ -55,6 +55,7 @@ test("files the issue and answers with its number", async () => {
   const real = globalThis.fetch;
   let sent;
   globalThis.fetch = async (url, init) => {
+    if (url === "https://api.github.com/repos/o/r") return new Response(JSON.stringify({ private: true }), { status: 200 });
     sent = { url, init, body: JSON.parse(init.body) };
     return new Response(JSON.stringify({ number: 7, html_url: "https://github.com/o/r/issues/7" }), { status: 201 });
   };
@@ -83,7 +84,7 @@ test("uploads a screenshot to its own branch and embeds it in the issue", async 
     const call = { url, init, body: init?.body ? JSON.parse(init.body) : undefined };
     calls.push(call);
     if (url.endsWith("/git/ref/heads/feedback-attachments")) return new Response("not found", { status: 404 });
-    if (url === "https://api.github.com/repos/o/r") return new Response(JSON.stringify({ default_branch: "main" }), { status: 200 });
+    if (url === "https://api.github.com/repos/o/r") return new Response(JSON.stringify({ private: true, default_branch: "main" }), { status: 200 });
     if (url.endsWith("/git/ref/heads/main")) return new Response(JSON.stringify({ object: { sha: "base-sha" } }), { status: 200 });
     if (url.endsWith("/git/refs")) return new Response(JSON.stringify({ ref: "refs/heads/feedback-attachments" }), { status: 201 });
     if (url.includes("/contents/")) return new Response(JSON.stringify({ content: { path: call.body.path } }), { status: 201 });
@@ -109,7 +110,8 @@ test("uploads a screenshot to its own branch and embeds it in the issue", async 
 test("still files the note when the screenshot upload fails", async () => {
   const real = globalThis.fetch;
   globalThis.fetch = async (url) => {
-    if (url.includes("/git/") || url === "https://api.github.com/repos/o/r") return new Response("nope", { status: 500 });
+    if (url === "https://api.github.com/repos/o/r") return new Response(JSON.stringify({ private: true }), { status: 200 });
+    if (url.includes("/git/")) return new Response("nope", { status: 500 });
     if (url.endsWith("/issues")) return new Response(JSON.stringify({ number: 1, html_url: "https://github.com/o/r/issues/1" }), { status: 201 });
     throw new Error(`unexpected call to ${url}`);
   };
@@ -129,4 +131,85 @@ test("a GitHub refusal comes back as 502", async () => {
   } finally {
     globalThis.fetch = real;
   }
+});
+
+// The issue is as public as the repo it lands in, so the relay asks GitHub before it posts an email or a
+// screenshot. Each test below files to a repo of its own, so the remembered answer of one can't leak
+// into the next.
+const shot = { name: "shot.png", mime: "image/png", data: "aGVsbG8=" };
+const repoEnv = (repo) => ({ GITHUB_TOKEN: "t", GITHUB_REPO: repo });
+
+/**
+ * Stands in for GitHub and records every call. `repo` is the answer to GET /repos/{repo}: an object is
+ * the repo, a number a refusal with that status, an Error a request that never got an answer.
+ */
+const realFetch = globalThis.fetch;
+function fakeGitHub(t, repo) {
+  const calls = [];
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url, method: init?.method || "GET", body: init?.body ? JSON.parse(init.body) : undefined });
+    if (/^https:\/\/api\.github\.com\/repos\/[^/]+\/[^/]+$/.test(url)) {
+      if (repo instanceof Error) throw repo;
+      return typeof repo === "number" ? new Response("nope", { status: repo }) : Response.json(repo);
+    }
+    if (url.includes("/git/ref/heads/")) return Response.json({ object: { sha: "base-sha" } });
+    if (url.includes("/contents/")) return Response.json({}, { status: 201 });
+    if (url.endsWith("/issues")) return Response.json({ number: 3, html_url: "https://github.com/o/x/issues/3" }, { status: 201 });
+    throw new Error(`unexpected call to ${url}`);
+  };
+  t.after(() => {
+    globalThis.fetch = realFetch;
+  });
+  return calls;
+}
+
+const issueText = (calls) => calls.findLast((c) => c.url.endsWith("/issues")).body.body;
+
+test("a public repo gets the note without the email or the screenshot", async (t) => {
+  const calls = fakeGitHub(t, { private: false });
+  const res = await worker.fetch(post({ message: "It broke", email: "me@example.com", attachment: shot }), repoEnv("o/public"));
+  assert.equal(res.status, 201);
+  assert.deepEqual(await res.json(), { number: 3, url: "https://github.com/o/x/issues/3", withheld: ["email", "screenshot"] });
+  // Nothing was uploaded: one look at the repo, then the issue.
+  assert.deepEqual(calls.map((c) => `${c.method} ${c.url}`), ["GET https://api.github.com/repos/o/public", "POST https://api.github.com/repos/o/public/issues"]);
+  const body = issueText(calls);
+  assert.doesNotMatch(body, /me@example\.com/);
+  assert.doesNotMatch(body, /!\[Screenshot\]/);
+  assert.match(body, /\*\*Contact:\*\* withheld, because the relay couldn't confirm this repository is private/);
+  assert.match(body, /\*\*Screenshot:\*\* withheld, because the relay couldn't confirm this repository is private/);
+});
+
+test("a private repo gets the email and the screenshot", async (t) => {
+  const calls = fakeGitHub(t, { private: true });
+  const res = await worker.fetch(post({ message: "It broke", email: "me@example.com", attachment: shot }), repoEnv("o/private"));
+  assert.equal(res.status, 201);
+  assert.deepEqual(await res.json(), { number: 3, url: "https://github.com/o/x/issues/3" });
+  assert.equal(calls.filter((c) => c.method === "PUT" && c.url.includes("/contents/")).length, 1);
+  const body = issueText(calls);
+  assert.match(body, /\*\*Contact:\*\* me@example\.com/);
+  assert.match(body, /!\[Screenshot\]\(https:\/\/raw\.githubusercontent\.com\/o\/private\/feedback-attachments\//);
+});
+
+test("a visibility check that fails holds both back, files the note, and asks again next time", async (t) => {
+  for (const [repo, answer] of [["o/refused", 503], ["o/offline", new TypeError("fetch failed")]]) {
+    const calls = fakeGitHub(t, answer);
+    for (const message of ["one", "two"]) {
+      const res = await worker.fetch(post({ message, email: "me@example.com", attachment: shot }), repoEnv(repo));
+      assert.equal(res.status, 201);
+      assert.deepEqual((await res.json()).withheld, ["email", "screenshot"]);
+      assert.doesNotMatch(issueText(calls), /me@example\.com|!\[Screenshot\]/);
+    }
+    assert.equal(calls.filter((c) => c.url === `https://api.github.com/repos/${repo}`).length, 2);
+    assert.equal(calls.some((c) => c.url.includes("/contents/")), false);
+  }
+});
+
+test("the answer is remembered, and a note with nothing personal never asks", async (t) => {
+  const calls = fakeGitHub(t, { private: true });
+  const env = repoEnv("o/cached");
+  for (const note of [{ message: "no email" }, { message: "one", email: "a@example.com" }, { message: "two", email: "b@example.com" }]) {
+    assert.equal((await worker.fetch(post(note), env)).status, 201);
+  }
+  assert.equal(calls.filter((c) => c.url === "https://api.github.com/repos/o/cached").length, 1);
+  assert.match(issueText(calls), /\*\*Contact:\*\* b@example\.com/);
 });
