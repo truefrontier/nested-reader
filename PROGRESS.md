@@ -867,3 +867,29 @@
   - The store's `writePage`, so the front matter, always written with LF, follows the body. The Rust front matter readers already trim `\r`.
 - A mixed file comes back all in whichever ending it uses more, LF on a tie. Rendering is unchanged: `lexBlocks` still lexes LF.
 - Checks: `pnpm test` 89 → 93, and the four new tests fail on `main`, where `withLineEndings` doesn't exist. `pnpm build` passes. In the browser mock, a new page linked from a word in a CRLF page left the source CRLF throughout, front matter included. In its body only the linked line changed. Not run: the desktop app.
+
+## Session: 2026-11-08 — a refine checks the page again before it writes (#101)
+
+### Leading assumptions
+- Overflow task: review the branch the Claude GitHub Action pushed for #101, fix what falls short with tests that fail first, and open the PR it never opened. The Action's commit stays as it is, with this work on top.
+
+### What the Action left
+- Branch `claude/issue-101-20261107-0315`, one commit (`5f37704`): `src/lib/refineGuard.ts` (`hashPage`, `guardedRefine`, `MAX_REFINE_RETRIES = 3`), four tests of that helper with a fake page, and `runRefine` split into `generate` and `apply` around the guard. Its sandbox refused `npm test` and `tsc`. Both pass as it left them: `pnpm test` 107, `pnpm build` passes. Nothing tested the store's own refine path.
+
+### What fell short, and the fixes
+- **A retry let go of its own task.** A retry starts its stream on the same key, and `stream()` begins with `stopStream(key)`, which fires the release `watch()` registered. So the refine settled as a success while the retry still ran: the card went, the page's turn passed to the next task, and the "kept changing" error at the cap was dropped. The settler gains `unwatch()`, called before each stream starts.
+- **A cancel between tries didn't stop the next one.** With no stream running, ✕ only fires the release; `guardedRefine` read the page, ran the model again and could write. It now takes `stopped` (the task was let go of, or the refine is in `cancelledRefines`) and checks it before each try and before the write.
+- **A change during the version snapshot was written over.** The check ran before `await platform.snapshotVersion`. `apply` now gets `unchanged()` and calls it after the snapshot, so only the write is left after the check. A try that finds the page changed deletes its own snapshot, so history gains no extra entry.
+- **The check read the text on screen before the file.** A link or an undo that landed while the file was being read was missed. The file is read first now.
+
+### World facts
+- `src/state/refine.test.ts` drives the real `store.refine` against the browser mock, with a hand-driven `aiStream`, a hook after `snapshotVersion`, and a way to hold one disk read. `main`'s `scripts/test-hooks.mjs` can't load the store (it imports a directory, JSON and `?raw` files), so the test registers those hooks itself; open PR #103 adds the same to `test-hooks.mjs`, and the two can stand together. Each test refines its own page, so nothing one leaves running touches another.
+- The check is a SHA-256 of the body with CRLF folded to LF. The front matter isn't part of it, and a write rewrites it from the store's copy, as every page write does.
+- Still between the check and the write: one SHA-256 digest, and `writePage`'s wait while a Finder rematch runs. Closing that would take a lock.
+
+### Verification
+- `pnpm test`: 103 on `main`, 107 on `5f37704`, 115 here. Seven store tests are new: the edited-page tests for a whole page and a selection, the retry cap, the cancel and the snapshot test fail on `5f37704`; the read-order test fails on the commit before its fix and with the late check alone; the CRLF page refined twice in a row is a guard and passes on both. One helper test is new (a stop while the model runs).
+- `pnpm build` passes. No Rust change. Not run: the desktop app.
+
+### Possible next steps
+- A selection refine whose passage was edited away runs the model once more before it fails with "Could not find the selection". It could look for the passage before running again.

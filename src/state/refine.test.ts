@@ -42,6 +42,7 @@ const page = (title: string, text: string) => `---\ntitle: ${title}\n---\n\n# ${
 // One page per test, so nothing a test leaves running can touch another test's page.
 for (const name of ["edited", "selection", "cap", "cancel", "snapshot", "screen"]) await platform.writePage(F, `${name}.md`, page(name, `The ${name} page as it was.`));
 await platform.writePage(F, "selection.md", page("selection", "First paragraph.\n\nSecond paragraph to refine."));
+await platform.writePage(F, "crlf.md", page("crlf", "A page from Windows.").replace(/\n/g, "\r\n"));
 
 /** Every page write's text, by page. The test's own edits go through `edit`, so they are not counted. */
 const writes = new Map<string, string[]>();
@@ -123,6 +124,18 @@ async function refinePage(name: string) {
   await until(() => streams.length === 1);
   return run;
 }
+
+test("a page left alone takes the answer on the first try, and so does the next refine, CRLF and all", async () => {
+  for (const answerText of ["First answer.", "Second answer."]) {
+    const run = await refinePage("crlf");
+    answer(streams[0], `# crlf\n\n${answerText}`);
+    await run.done;
+    assert.equal(streams.length, 1);
+    assert.equal((await text("crlf")).replace(/\r\n/g, "\n"), `# crlf\n\n${answerText}\n`);
+  }
+  assert.match(written("crlf"), /\r\n/);
+  assert.deepEqual(errors(), []);
+});
 
 test("a page edited while its refine runs is refined again on the new text, and the old answer is never written", async () => {
   const run = await refinePage("edited");
