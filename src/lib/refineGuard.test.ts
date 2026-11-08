@@ -54,3 +54,24 @@ test("a page that keeps changing stops at the retry cap and is left untouched", 
   assert.deepEqual(h.written, []);
   assert.equal(h.page(), "edit " + MAX_REFINE_RETRIES);
 });
+
+test("a refine stopped while the model runs starts no other try and writes nothing", async () => {
+  let page = "v0";
+  let stopped = false;
+  const sentTo: string[] = [];
+  const written: string[] = [];
+  await guardedRefine<string>({
+    read: async () => page,
+    latest: async () => page,
+    generate: async (body) => {
+      sentTo.push(body);
+      page = "edited";
+      stopped = true;
+      return "refined(" + body + ")";
+    },
+    apply: async (_body, result) => void written.push(result),
+    stopped: () => stopped,
+  });
+  assert.deepEqual(sentTo, ["v0"]);
+  assert.deepEqual(written, []);
+});

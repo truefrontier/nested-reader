@@ -26,6 +26,8 @@ export type GuardedRefine<T> = {
   apply: (body: string, result: T) => Promise<void>;
   /** The page changed under an attempt; `current` is what it became. */
   onStale?: (current: string) => void;
+  /** True once the refine is cancelled: no further attempt starts and nothing is written. */
+  stopped?: () => boolean;
   maxRetries?: number;
 };
 
@@ -37,9 +39,11 @@ export async function guardedRefine<T>(o: GuardedRefine<T>): Promise<void> {
   const max = o.maxRetries ?? MAX_REFINE_RETRIES;
   let body = await o.read();
   for (let retries = 0; ; retries++) {
+    if (o.stopped?.()) return;
     const sent = await hashPage(body);
     const result = await o.generate(body);
     const current = await o.latest(body);
+    if (o.stopped?.()) return;
     if ((await hashPage(current)) === sent) return o.apply(body, result);
     o.onStale?.(current);
     if (retries >= max) {

@@ -55,6 +55,26 @@ const edit = (name: string, text: string) => writePage.call(platform, F, `${name
 const text = async (name: string) => (await platform.readPage(F, `${name}.md`)).body;
 const written = (name: string) => (writes.get(`${name}.md`) ?? []).join("\n");
 
+/** Holds the next disk read of one page until `open()`: a refine paused while it checks the page. */
+let hold: { path: string; reached: boolean; open: () => void; opened: Promise<void> } | undefined;
+const readPage = platform.readPage;
+platform.readPage = async function (folder, path) {
+  const h = hold;
+  if (h && path === h.path) {
+    hold = undefined;
+    h.reached = true;
+    await h.opened;
+  }
+  return readPage.call(this, folder, path);
+};
+function holdRead(name: string) {
+  let open = () => {};
+  const opened = new Promise<void>((r) => (open = r));
+  const h = { path: `${name}.md`, reached: false, open, opened };
+  hold = h;
+  return h;
+}
+
 /** The answer streams the store starts, which the test drives by hand. A cancelled one passes nothing on. */
 type Backend = { req: AiRequest; send: (e: StreamEvent) => void; cancelled: boolean };
 let streams: Backend[] = [];
@@ -84,8 +104,10 @@ const errors = () => Object.values(store.state.ui.refines).flatMap((r) => (r.err
 async function refinePage(name: string) {
   await store.navigate(`${name}.md`);
   streams = [];
-  const run = { settled: false, done: Promise.resolve() };
+  const earlier = new Set(Object.keys(store.state.ui.refines));
+  const run = { id: "", settled: false, done: Promise.resolve() };
   run.done = store.refine("Make it shorter", "page").then(() => void (run.settled = true));
+  run.id = Object.keys(store.state.ui.refines).find((id) => !earlier.has(id)) ?? "";
   await until(() => streams.length === 1);
   return run;
 }
@@ -141,4 +163,19 @@ test("a page that keeps changing is left as it is after the last try, and the re
   assert.equal(written("cap"), "");
   assert.equal(errors().length, 1);
   assert.match(errors()[0], /kept changing/);
+});
+
+test("a refine cancelled while it checks the page does not run again", async () => {
+  const run = await refinePage("cancel");
+  await edit("cancel", "Edited by hand.");
+  const h = holdRead("cancel");
+  answer(streams[0], "# cancel\n\nAn answer for the old text.");
+  await until(() => h.reached);
+  store.cancelRefine(run.id);
+  h.open();
+  await run.done;
+  await sleep(50);
+  assert.equal(streams.length, 1);
+  assert.equal(written("cancel"), "");
+  assert.match(await text("cancel"), /Edited by hand\./);
 });

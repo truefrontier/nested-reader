@@ -2110,6 +2110,8 @@ export class ReaderStore {
       unwatch: () => {
         if (this.releases.get(key) === finish) this.releases.delete(key);
       },
+      /** True once the task has been let go of: by its own end, or by a cancel through `releases`. */
+      settled: () => settled,
     };
   }
 
@@ -2567,7 +2569,7 @@ export class ReaderStore {
   private runRefine(id: string, path: string, instruction: string, selection: Selection | undefined): Promise<void> {
     const key = `refine:${path}`;
     return new Promise<void>((resolve, reject) => {
-      const { finish, watch, unwatch } = this.settler(key, resolve, reject);
+      const { finish, watch, unwatch, settled } = this.settler(key, resolve, reject);
       void (async () => {
         // Cancelled before its turn came up: no model call, no write, and it does not hold the
         // page's chain for anyone else waiting behind it.
@@ -2661,6 +2663,9 @@ export class ReaderStore {
             onStale: (current) => {
               if (this.state.bodies[path] !== current) this.set({ bodies: { ...this.state.bodies, [path]: current } });
             },
+            // A cancel between tries finds no stream to stop, only this task to let go of, so the
+            // next try has to look for it.
+            stopped: () => settled() || this.cancelledRefines.has(id),
           });
         } catch (e) {
           return finish(e);
