@@ -1,0 +1,54 @@
+# Runs the frontend and Rust unit tests on every pull request and on every push to main.
+#
+# macOS, as in release.yml. The app only ships for the Mac, and part of its Rust only builds there
+# (NSOpenPanel and NSWorkspace through objc2, the keyring's Apple backend), so this tests the code
+# that ships. Tauri also needs no extra system packages on macOS, where Ubuntu would need the
+# WebKitGTK set. The repo is public, so the macOS minutes cost nothing.
+#
+# No secrets. The live tests that call outside services are #[ignore]d and stay that way.
+name: Test
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# A newer push to the same branch or pull request replaces a run still going.
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm test
+
+      # `pnpm test` only type-checks what the tests import; the build checks the whole app.
+      - run: pnpm build
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: cargo test
+        working-directory: src-tauri
+        run: cargo test
