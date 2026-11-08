@@ -1,9 +1,17 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { queryTerms, rankByRelevance, words } from "./rank";
 
 test("words lowercases, drops stop words and single letters, and folds plurals", () => {
   assert.deepEqual(words("The Ripples of Classes and Studies, glasses: a boss's gas I x"), ["ripple", "class", "study", "glass", "boss", "gas"]);
+});
+
+// One table for both sides: tools.rs's tests read this same file, so the two can't fold apart.
+const plurals = JSON.parse(readFileSync(new URL("./plurals.json", import.meta.url), "utf8")) as [string, string[]][];
+
+test("words folds a plural onto its singular and leaves words that only look plural (plurals.json)", () => {
+  for (const [text, want] of plurals) assert.deepEqual(words(text), want, text);
 });
 
 // `search_pages` in tools.rs must cut text into the same words; its test checks these same lines.

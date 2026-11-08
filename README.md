@@ -19,7 +19,7 @@ pnpm tauri dev
 
 `pnpm dev` runs the reader in a browser with an in-memory sample folder, useful for UI work without the Rust side.
 
-`pnpm test` runs the frontend unit tests with Node's own runner; `cargo test` in `src-tauri/` runs the Rust ones.
+`pnpm test` runs the frontend unit tests with Node's own runner; `cargo test` in `src-tauri/` runs the Rust ones. GitHub Actions runs both on every pull request and every push to `main` ([`test.yml`](.github/workflows/test.yml)).
 
 `pnpm tauri build` produces the `.app` and `.dmg` under `src-tauri/target/release/bundle/`.
 
