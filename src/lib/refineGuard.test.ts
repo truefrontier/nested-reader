@@ -19,9 +19,11 @@ function harness(edits: string[]) {
         calls++;
         return out;
       },
-      apply: async (_body, result) => {
+      apply: async (_body, result, unchanged) => {
+        if (!(await unchanged())) return false;
         written.push(result);
         page = result;
+        return true;
       },
     });
   return { run, written, sentTo, page: () => page };
@@ -69,7 +71,11 @@ test("a refine stopped while the model runs starts no other try and writes nothi
       stopped = true;
       return "refined(" + body + ")";
     },
-    apply: async (_body, result) => void written.push(result),
+    apply: async (_body, result, unchanged) => {
+      if (!(await unchanged())) return false;
+      written.push(result);
+      return true;
+    },
     stopped: () => stopped,
   });
   assert.deepEqual(sentTo, ["v0"]);

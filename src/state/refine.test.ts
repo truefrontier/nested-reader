@@ -40,7 +40,7 @@ const { MAX_REFINE_RETRIES } = await import("../lib/refineGuard");
 const F = "/test/refine";
 const page = (title: string, text: string) => `---\ntitle: ${title}\n---\n\n# ${title}\n\n${text}\n`;
 // One page per test, so nothing a test leaves running can touch another test's page.
-for (const name of ["edited", "selection", "cap", "cancel", "snapshot"]) await platform.writePage(F, `${name}.md`, page(name, `The ${name} page as it was.`));
+for (const name of ["edited", "selection", "cap", "cancel", "snapshot", "screen"]) await platform.writePage(F, `${name}.md`, page(name, `The ${name} page as it was.`));
 await platform.writePage(F, "selection.md", page("selection", "First paragraph.\n\nSecond paragraph to refine."));
 
 /** Every page write's text, by page. The test's own edits go through `edit`, so they are not counted. */
@@ -55,17 +55,29 @@ const edit = (name: string, text: string) => writePage.call(platform, F, `${name
 const text = async (name: string) => (await platform.readPage(F, `${name}.md`)).body;
 const written = (name: string) => (writes.get(`${name}.md`) ?? []).join("\n");
 
-/** Holds the next disk read of one page until `open()`: a refine paused while it checks the page. */
+/** Runs once, right after the next version snapshot is taken: a change landing between the snapshot and the write. */
+let afterSnapshot: (() => Promise<void>) | undefined;
+const snapshotVersion = platform.snapshotVersion;
+platform.snapshotVersion = async function (folder, path) {
+  const n = await snapshotVersion.call(this, folder, path);
+  const run = afterSnapshot;
+  afterSnapshot = undefined;
+  await run?.();
+  return n;
+};
+
+/** Holds the next disk read of one page, once it has read the file, until `open()`: a read on its way back. */
 let hold: { path: string; reached: boolean; open: () => void; opened: Promise<void> } | undefined;
 const readPage = platform.readPage;
 platform.readPage = async function (folder, path) {
+  const read = await readPage.call(this, folder, path);
   const h = hold;
   if (h && path === h.path) {
     hold = undefined;
     h.reached = true;
     await h.opened;
   }
-  return readPage.call(this, folder, path);
+  return read;
 };
 function holdRead(name: string) {
   let open = () => {};
@@ -178,4 +190,37 @@ test("a refine cancelled while it checks the page does not run again", async () 
   assert.equal(streams.length, 1);
   assert.equal(written("cancel"), "");
   assert.match(await text("cancel"), /Edited by hand\./);
+});
+
+test("a change that lands while the version snapshot is taken is not written over", async () => {
+  const before = (await platform.listVersions(F, "snapshot.md")).length;
+  const run = await refinePage("snapshot");
+  afterSnapshot = () => edit("snapshot", "Edited while the snapshot was taken.");
+  answer(streams[0], "# snapshot\n\nAn answer for the old text.");
+  await until(() => streams.length === 2);
+  assert.match(await text("snapshot"), /Edited while the snapshot was taken\./);
+  assert.match(sent(streams[1]), /Edited while the snapshot was taken\./);
+  answer(streams[1], "# snapshot\n\nAn answer for the edited text.");
+  await run.done;
+  assert.match(await text("snapshot"), /An answer for the edited text\./);
+  assert.doesNotMatch(written("snapshot"), /An answer for the old text/);
+  // The try that found the page changed leaves no snapshot of its own behind.
+  assert.equal((await platform.listVersions(F, "snapshot.md")).length, before + 1);
+});
+
+test("a change on screen made while the page is read back still counts", async () => {
+  const run = await refinePage("screen");
+  const h = holdRead("screen");
+  answer(streams[0], "# screen\n\nAn answer for the old text.");
+  await until(() => h.reached);
+  // A link or an undo changes the file and the text on screen, here while the read is on its way back.
+  await edit("screen", "Changed on screen.");
+  store.state.bodies = { ...store.state.bodies, "screen.md": await text("screen") };
+  h.open();
+  await until(() => streams.length === 2);
+  assert.match(sent(streams[1]), /Changed on screen\./);
+  answer(streams[1], "# screen\n\nAn answer for the changed text.");
+  await run.done;
+  assert.match(await text("screen"), /An answer for the changed text\./);
+  assert.doesNotMatch(written("screen"), /An answer for the old text/);
 });

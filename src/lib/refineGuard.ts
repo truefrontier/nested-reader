@@ -18,12 +18,17 @@ export async function hashPage(text: string): Promise<string> {
 export type GuardedRefine<T> = {
   /** The page as it is now, for the first attempt and for each re-run. */
   read: () => Promise<string>;
-  /** The page as it is at apply time, given the text the attempt was run on. */
+  /** The page as it is at apply time, given the text the attempt was run on: what the write would replace. */
   latest: (sent: string) => Promise<string>;
   /** One run of the refine against `body`; resolves with whatever `apply` needs. */
   generate: (body: string) => Promise<T>;
-  /** Writes the result. Called only when the page still hashes the same as the text that was sent. */
-  apply: (body: string, result: T) => Promise<void>;
+  /**
+   * Writes the result. `unchanged()` hashes the page again and is the last thing before the write,
+   * so nothing but the write is left between them. When it is false nothing is written and `apply`
+   * resolves false; the refine then runs again on the page as it is. True once written, or when
+   * there was nothing to write.
+   */
+  apply: (body: string, result: T, unchanged: () => Promise<boolean>) => Promise<boolean>;
   /** The page changed under an attempt; `current` is what it became. */
   onStale?: (current: string) => void;
   /** True once the refine is cancelled: no further attempt starts and nothing is written. */
@@ -32,8 +37,9 @@ export type GuardedRefine<T> = {
 };
 
 /**
- * Runs `generate` and `apply` with the stale check between them. A changed page discards the result
- * and starts over on the current text, up to `maxRetries` times; past that it throws and writes nothing.
+ * Runs `generate` and then `apply`, which makes the stale check just before it writes. A changed page
+ * discards the result and starts over on the current text, up to `maxRetries` times; past that it
+ * throws and writes nothing.
  */
 export async function guardedRefine<T>(o: GuardedRefine<T>): Promise<void> {
   const max = o.maxRetries ?? MAX_REFINE_RETRIES;
@@ -42,9 +48,13 @@ export async function guardedRefine<T>(o: GuardedRefine<T>): Promise<void> {
     if (o.stopped?.()) return;
     const sent = await hashPage(body);
     const result = await o.generate(body);
-    const current = await o.latest(body);
-    if (o.stopped?.()) return;
-    if ((await hashPage(current)) === sent) return o.apply(body, result);
+    let current = body;
+    const unchanged = async () => {
+      if (o.stopped?.()) return false;
+      current = await o.latest(body);
+      return (await hashPage(current)) === sent;
+    };
+    if ((await o.apply(body, result, unchanged)) || o.stopped?.()) return;
     o.onStale?.(current);
     if (retries >= max) {
       throw new Error(`The page kept changing while it was being refined, so the result was discarded after ${max + 1} tries. The page is unchanged — try again once it settles.`);

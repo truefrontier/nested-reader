@@ -2610,7 +2610,7 @@ export class ReaderStore {
             });
             watch();
           });
-        const apply = async (body: string, cleaned: string) => {
+        const apply = async (body: string, cleaned: string, unchanged: () => Promise<boolean>) => {
           const blocks = lexBlocks(body);
           let next: string;
           if (selection) {
@@ -2634,9 +2634,16 @@ export class ReaderStore {
           }
           // Blocks and the model's answer come back LF; the page keeps its own endings.
           next = withLineEndings(next, body);
-          if (next.trim() === body.trim()) return;
+          if (next.trim() === body.trim()) return true;
           const { folder: root, rel } = this.loc(path);
           const n = await platform.snapshotVersion(root, rel);
+          // Checked after the snapshot, so only the write is left after it. A try that finds the page
+          // changed writes nothing and takes its snapshot back; an orphan left by a failed delete is
+          // only an extra entry in the page's history.
+          if (!(await unchanged())) {
+            await platform.deleteVersion(root, rel, n).catch(() => {});
+            return false;
+          }
           await this.writePage(path, next);
           this.set({ bodies: { ...this.state.bodies, [path]: next } });
           // Refines stacked on one page read as one set of edits: the review stays pinned to the
@@ -2646,17 +2653,20 @@ export class ReaderStore {
           if (this.isShown(path)) await this.refreshVersions(path);
           // Every changed page gets its review base, so the split pane and later visits show the tints.
           await this.refreshReview(path);
+          return true;
         };
         try {
           // The page is hashed as sent and again right before the write; a page that changed meanwhile
           // (an edit, another refine, the file on disk) has its answer thrown away and is refined afresh.
           await guardedRefine({
             read: () => this.loadBody(path),
+            // The write replaces the file and the text on screen, so a change to either counts. The
+            // file is read first, so a change on screen made while it is read is still seen.
             latest: async (sent) => {
-              const cached = this.state.bodies[path];
-              if (cached !== undefined && cached !== sent) return cached;
               const { folder: root, rel } = this.loc(path);
-              return (await platform.readPage(root, rel)).body;
+              const disk = (await platform.readPage(root, rel)).body;
+              const cached = this.state.bodies[path];
+              return cached !== undefined && cached !== sent ? cached : disk;
             },
             generate,
             apply,
