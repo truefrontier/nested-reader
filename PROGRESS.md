@@ -95,6 +95,14 @@
 - Four new tests with a stubbed `fetch` (public, private, failed lookup, cache); three of them fail on the old worker. Relay `npm test` 25 pass, `pnpm test` 103 pass. README and `docs/architecture.md` no longer say the repo is private.
 - Not done here: deploying the relay, and the audit's private-repo steps (a private feedback repo, a token scoped to it, moving `feedback-triage.yml`). Until then every email and screenshot is held back.
 
+### Follow-up 2026-11-08: the relay's abuse holes (review in claude-overflow, PR #108)
+- A note saying "@claude …" started `claude.yml` with `contents: write`, because the relay files every issue as kevnk and that job runs on any issue kevnk opens that mentions @claude. Now the relay breaks every `@mention` (`unmention`, a zero-width space after the `@`), and `claude.yml` skips a new issue labelled `feedback`.
+- On Fly, the live path, there was no limit on notes. Each one costs a GitHub call, an Actions run and a Claude triage. `handler.js` now takes 5 an hour per address and 30 from everyone (`noteLimiter`, in memory, before the body is read). The address is `Fly-Client-IP` only when `FLY_APP_NAME` is set; IPv6 counts by its /64. The Cloudflare rule is a README step for Kevin.
+- `latest.json` downloaded the manifest from GitHub on every request; it now rides on the remembered release. A download is handed out only for an asset of the newest release, so asset ids can't be probed.
+- Also: `app` fields must be plain words, and a note must say it is JSON.
+- Checks: relay `npm test` 25 → 36, with the tests written first (10 failed on no-op stubs). `pnpm test` 103 pass. Fake `fetch` throughout; nothing deployed.
+- Not done: protecting `main` and `v*` tags, scoping Feedback Triage's tools to its own issue, checking screenshot bytes, breaking cross-repo references.
+
 ## Session: 2026-09-12 — sidebar buttons gone; ⌘⇧O adds a folder or file to the session
 
 ### Leading assumptions
