@@ -887,7 +887,11 @@ export class ReaderStore {
       if (this.opening !== target) return;
       const all: Record<string, PageMeta> = {};
       for (const p of list) all[p.path] = p;
-      if (file && !all[file]) throw new Error(`Not a Markdown page: ${file}`);
+      if (file && !all[file]) {
+        const why = await unlisted(folder, file);
+        if (this.opening !== target) return;
+        throw why;
+      }
       const pages: Record<string, PageMeta> = {};
       for (const p of list) if (!file || growsFrom(p.path, file, all)) pages[p.path] = p;
       const stored = await platform.loadSession(folder, file);
@@ -2956,6 +2960,18 @@ function mapValues<T>(map: Record<string, T>, touch: (value: T) => T): Record<st
   const out: Record<string, T> = {};
   for (const [k, v] of Object.entries(map)) out[k] = touch(v);
   return out;
+}
+
+/**
+ * What to say when `file` isn't in its folder's listing. The listing leaves out a file it can't read
+ * (a scan with no text, a PDF past the size cap, a deleted file), and `read_page` gives the reason; a
+ * file it reads fine is simply not a page the reader opens.
+ */
+async function unlisted(folder: string, file: string): Promise<unknown> {
+  return platform.readPage(folder, file).then(
+    () => new Error(`Not a Markdown page: ${file}`),
+    (e: unknown) => e,
+  );
 }
 
 /** The full path of every page the session holds, whichever root it came from. */

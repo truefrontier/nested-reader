@@ -116,3 +116,45 @@ test("an open that a later open replaces stops nothing", async () => {
   await refining;
   assert.match(await text(A, "notes.md"), /Shorter still\./);
 });
+
+test("a file the listing left out opens with the reason it couldn't be read", async () => {
+  await openA();
+  // The desktop listing leaves out a file it can't read, and read_page says why.
+  await platform.writePage(A, "scan.pdf", "");
+  const { listPages, readPage } = platform;
+  const why = "PDF file 'scan.pdf' contains no extractable text (possibly a scanned document)";
+  platform.listPages = async (folder) => (await listPages.call(platform, folder)).filter((p) => p.path !== "scan.pdf");
+  platform.readPage = async (folder, path) => (path === "scan.pdf" ? Promise.reject(why) : readPage.call(platform, folder, path));
+  try {
+    await store.openFolder(A, { file: "scan.pdf" });
+    assert.equal(store.state.ui.error, why);
+    await store.openFolder(A, { file: "gone.md" });
+    assert.equal(store.state.ui.error, "No such page: gone.md");
+  } finally {
+    platform.listPages = listPages;
+    platform.readPage = readPage;
+  }
+});
+
+test("the reason for a file left out of the listing doesn't land on a session opened since", async () => {
+  await openA();
+  await platform.writePage(A, "scan.pdf", "");
+  const { listPages, readPage } = platform;
+  let refuse: ((why: string) => void) | undefined;
+  platform.listPages = async (folder) => (await listPages.call(platform, folder)).filter((p) => p.path !== "scan.pdf");
+  // The reason is slow to come, as re-reading a big PDF is; another folder opens meanwhile.
+  platform.readPage = (folder, path) => (path === "scan.pdf" ? new Promise((_, reject) => (refuse = reject)) : readPage.call(platform, folder, path));
+  try {
+    store.setUi({ error: undefined });
+    const opening = store.openFolder(A, { file: "scan.pdf" });
+    await until(() => refuse !== undefined);
+    await store.openFolder(B);
+    refuse!("PDF file 'scan.pdf' contains no extractable text (possibly a scanned document)");
+    await opening;
+    assert.equal(store.state.folder, B);
+    assert.equal(store.state.ui.error, undefined);
+  } finally {
+    platform.listPages = listPages;
+    platform.readPage = readPage;
+  }
+});

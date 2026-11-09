@@ -63,7 +63,7 @@ Click a link or a tree row to open the page here. ⌘‑click opens it beside (t
 
 **PDF and HTML support.** Nested can also open `.pdf`, `.html`, and `.htm` files alongside Markdown files. Text content is extracted from PDFs and HTML for reading, asking, and searching. PDF extraction includes **structure inference and paragraph consolidation**: headings are detected from typography (ALL CAPS, spacing patterns) and rendered as Markdown `#`/`##`/`###`, while mid-paragraph line breaks from PDF visual layout are joined into flowing prose. PDF and HTML files are read-only: **Refine**, **New Page**, and **Deep Dive** work normally and create new `.md` files, but the original PDF or HTML file is never modified. Use ⌘O or ⌘⇧O to add PDF/HTML files to your session, or drop them into the window.
 
-PDF text extraction uses the `pdf-extract` crate and handles compressed PDFs properly. Scanned image-only PDFs without embedded text will not extract successfully (OCR is not supported). Structure inference is best-effort based on typography; complex layouts may not preserve all document hierarchy.
+PDF text extraction uses the `pdf-extract` crate and handles compressed PDFs properly. Scanned image-only PDFs without embedded text will not extract successfully (OCR is not supported). PDF and HTML files over 50 MB are left out of the folder without being read; opening one directly says it is too big. Structure inference is best-effort based on typography; complex layouts may not preserve all document hierarchy.
 
 ## Send feedback
 

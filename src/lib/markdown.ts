@@ -50,14 +50,37 @@ marked.use({
   ],
 });
 
-// A plain click on a web link would take the whole window to the site, with no way back to the
-// reader. With target=_blank the opener plugin's click handler opens it in the browser instead.
-DOMPurify.addHook("afterSanitizeAttributes", (node) => {
-  if (node.tagName === "A" && /^https?:/i.test(node.getAttribute("href") ?? "")) {
-    node.setAttribute("target", "_blank");
-    node.setAttribute("rel", "noopener noreferrer");
+const SVG_NS = "http://www.w3.org/2000/svg";
+const MATHML_NS = "http://www.w3.org/1998/Math/MathML";
+
+/** A link's scheme as the browser's URL parser reads it: tabs and newlines anywhere, and control characters or spaces in front, don't count. */
+function schemeOf(href: string): string | undefined {
+  const cleaned = href.replace(/[\t\n\r]/g, "").replace(/^[\u0000-\u0020]+/, "");
+  return /^([a-z][a-z0-9+.-]*):/i.exec(cleaned)?.[1].toLowerCase();
+}
+
+/**
+ * A plain click on a web link would take the whole window to the site, with no way back to the
+ * reader. With target=_blank the opener plugin's click handler opens it in the browser instead.
+ * That handler reads `target` and `href` as strings, which only an HTML `<a>` has, so the other
+ * links a note can carry lose their address: an image map's `<area>`, an SVG `<a>`, and an `href`
+ * on any MathML element, which WebKit follows too.
+ */
+export function keepLinksInReader(node: Element) {
+  if (node.tagName === "A") {
+    const scheme = schemeOf(node.getAttribute("href") ?? "");
+    if (scheme === "http" || scheme === "https") {
+      node.setAttribute("target", "_blank");
+      node.setAttribute("rel", "noopener noreferrer");
+      // Mermaid's own hooks (added once a diagram has HTML labels) put an author's target back from here.
+      node.removeAttribute("data-temp-href-target");
+    }
+  } else if (node.tagName === "AREA" || (node.namespaceURI === SVG_NS && node.tagName === "a") || node.namespaceURI === MATHML_NS) {
+    node.removeAttribute("href");
+    node.removeAttribute("xlink:href");
   }
-});
+}
+DOMPurify.addHook("afterSanitizeAttributes", keepLinksInReader);
 
 const scratch = typeof document !== "undefined" ? document.createElement("div") : null;
 

@@ -104,9 +104,9 @@ pub fn list_pages(folder: &str) -> Result<Vec<RawPage>> {
             continue;
         };
         // A file that can't be read (a scan with no text, a PDF the parser rejects, a note that
-        // isn't UTF-8) is left out, rather than keeping the whole folder from opening. `read_page`
-        // still gives the reason; the reader, which opens a single file from this listing, says
-        // "Not a Markdown page" for it.
+        // isn't UTF-8, a PDF or HTML file past the size cap) is left out, rather than keeping the
+        // whole folder from opening. `read_page` still gives the reason, which the reader shows when
+        // it opens such a file on its own.
         let Ok(raw) = raw else { continue };
         let meta = entry.metadata().ok();
         out.push(RawPage {
@@ -122,6 +122,9 @@ pub fn list_pages(folder: &str) -> Result<Vec<RawPage>> {
 
 pub fn read_page(folder: &str, rel: &str) -> Result<RawPage> {
     let full = safe_join(folder, rel)?;
+    if is_openable_page(&full) && !full.try_exists()? {
+        return Err(AppError::Message(format!("No such page: {rel}")));
+    }
     let raw = if is_markdown(&full) {
         fs::read_to_string(&full)?
     } else if is_pdf(&full) {
@@ -218,7 +221,8 @@ pub fn delete_page(folder: &str, rel: &str) -> Result<String> {
     if !full.is_file() {
         return Err(AppError::Message(format!("No such page: {rel}")));
     }
-    let trash = reader_dir(folder).join("trash");
+    let trash = reader_subdir(folder, &["trash"])?;
+    let versions = versions_dir(folder, rel)?;
     fs::create_dir_all(&trash)?;
     let stem = full.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "page".into());
     let ext = full.extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_else(|| "md".into());
@@ -230,7 +234,6 @@ pub fn delete_page(folder: &str, rel: &str) -> Result<String> {
         i += 1;
     }
     fs::rename(&full, trash.join(format!("{name}.{ext}")))?;
-    let versions = versions_dir(folder, rel)?;
     if versions.is_dir() {
         // The page is already out of the way; snapshots left behind are stale, not a failure.
         let _ = fs::rename(&versions, trash.join(format!("{name}-versions")));
@@ -247,7 +250,8 @@ pub fn restore_page(folder: &str, rel: &str, trashed: &str) -> Result<()> {
     if !is_openable_page(&full) {
         return Err(AppError::Message(format!("Not a page: {rel}")));
     }
-    let trash = reader_dir(folder).join("trash");
+    let trash = reader_subdir(folder, &["trash"])?;
+    let versions = versions_dir(folder, rel)?;
     let ext = full.extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_else(|| "md".into());
     let parked = safe_join(&trash.to_string_lossy(), &format!("{trashed}.{ext}"))?;
     if !parked.is_file() {
@@ -264,7 +268,6 @@ pub fn restore_page(folder: &str, rel: &str, trashed: &str) -> Result<()> {
         _ => AppError::Message(format!("Couldn't put the page back ({e}). It's still in .reader/trash.")),
     })?;
     fs::remove_file(&parked)?;
-    let versions = versions_dir(folder, rel)?;
     let parked_versions = trash.join(format!("{trashed}-versions"));
     if parked_versions.is_dir() && !versions.exists() {
         // The page is already back; snapshots that can't follow stay in the trash, not a failure.
@@ -279,7 +282,7 @@ pub fn restore_page(folder: &str, rel: &str, trashed: &str) -> Result<()> {
 /// `.reader/trash`, if the folder has one. A link in its place is refused rather than followed, so
 /// emptying the trash can never reach outside the folder.
 fn trash_dir(folder: &str) -> Result<Option<PathBuf>> {
-    let trash = reader_dir(folder).join("trash");
+    let trash = reader_subdir(folder, &["trash"])?;
     match fs::symlink_metadata(&trash) {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(e.into()),
@@ -320,8 +323,31 @@ pub fn empty_trash(folder: &str) -> Result<u32> {
     Ok(n)
 }
 
-fn reader_dir(folder: &str) -> PathBuf {
-    Path::new(folder).join(READER_DIR)
+/// `.reader`, where the app keeps a folder's session, map, snapshots and trash. A link in its place
+/// is refused rather than followed, so none of that lands outside the folder.
+fn reader_dir(folder: &str) -> Result<PathBuf> {
+    reader_subdir(folder, &[])
+}
+
+/// A folder inside `.reader`, such as `trash` or `versions/<page>`. `.reader` and each folder on the
+/// way are refused if they are links: with `.reader/versions -> ..`, deleting `notes.md` would move
+/// the folder's neighbour `notes/` into the trash.
+fn reader_subdir(folder: &str, parts: &[&str]) -> Result<PathBuf> {
+    let refuse_link = |dir: &Path, shown: &str| match fs::symlink_metadata(dir) {
+        Ok(m) if m.file_type().is_symlink() => Err(AppError::Message(format!(
+            "{shown} in this folder is a link, so Nested won't read or write through it. Replace it with a plain folder."
+        ))),
+        _ => Ok(()),
+    };
+    let mut dir = Path::new(folder).join(READER_DIR);
+    let mut shown = READER_DIR.to_string();
+    refuse_link(&dir, &shown)?;
+    for part in parts {
+        dir.push(part);
+        shown = format!("{shown}/{part}");
+        refuse_link(&dir, &shown)?;
+    }
+    Ok(dir)
 }
 
 /// A page path flattened into one file-name segment: `notes/a.md` -> `notes__a`.
@@ -332,7 +358,7 @@ fn page_key(rel: &str) -> String {
 /// `.reader/session.json` for a folder session; a session opened from one file
 /// inside the folder keeps its own state in `.reader/session-<page>.json`.
 fn session_path(folder: &str, file: Option<&str>) -> Result<PathBuf> {
-    let dir = reader_dir(folder);
+    let dir = reader_dir(folder)?;
     Ok(match file {
         None => dir.join("session.json"),
         Some(rel) => {
@@ -365,7 +391,7 @@ pub fn save_session(folder: &str, session: &Value, file: Option<&str>) -> Result
 /// `map.json` holds the one-line summaries and the fingerprint of the text each was written for;
 /// `map.md` is the same thing rendered, kept beside it so it can be read without the app.
 pub fn load_map(folder: &str) -> Result<Option<Value>> {
-    let path = reader_dir(folder).join("map.json");
+    let path = reader_dir(folder)?.join("map.json");
     if !path.exists() {
         return Ok(None);
     }
@@ -374,14 +400,14 @@ pub fn load_map(folder: &str) -> Result<Option<Value>> {
 }
 
 pub fn save_map(folder: &str, cache: &Value, rendered: &str) -> Result<()> {
-    let dir = reader_dir(folder);
+    let dir = reader_dir(folder)?;
     write_atomic(&dir.join("map.json"), &serde_json::to_string_pretty(cache)?)?;
     write_atomic(&dir.join("map.md"), rendered)
 }
 
 fn versions_dir(folder: &str, rel: &str) -> Result<PathBuf> {
     safe_join(folder, rel)?;
-    Ok(reader_dir(folder).join("versions").join(page_key(rel)))
+    reader_subdir(folder, &["versions", &page_key(rel)])
 }
 
 /// Whether a dropped path is a folder, a Markdown file, or something the reader cannot open.
@@ -418,9 +444,29 @@ fn is_openable_page(path: &Path) -> bool {
     is_markdown(path) || is_pdf(path) || is_html(path)
 }
 
+/// The largest PDF or HTML file whose text is read. Every listing reads and parses each one whole,
+/// so a bigger file would hold up the folder every time it opens; it is left out of the listing
+/// like an unreadable file, and `read_page` gives this reason.
+const MAX_EXTRACT_BYTES: u64 = 50 * 1024 * 1024;
+
+fn check_extract_size(path: &Path) -> Result<()> {
+    let len = fs::metadata(path)?.len();
+    if len > MAX_EXTRACT_BYTES {
+        const MB: u64 = 1024 * 1024;
+        let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        return Err(AppError::Message(format!(
+            "{name} is too big to read ({} MB; Nested reads PDF and HTML files up to {} MB).",
+            len.div_ceil(MB),
+            MAX_EXTRACT_BYTES / MB
+        )));
+    }
+    Ok(())
+}
+
 /// Extract text content from a PDF file using the pdf-extract crate,
 /// then apply Markdown structure inference and paragraph consolidation.
 fn extract_pdf_text(path: &Path) -> Result<String> {
+    check_extract_size(path)?;
     let bytes = fs::read(path)?;
     
     // pdf-extract panics on some malformed files (text shown before any font is set, a missing
@@ -488,6 +534,7 @@ fn extract_pdf_text_naive(bytes: &[u8]) -> String {
 /// Extract text content from an HTML file.
 /// Simple HTML-to-text conversion that strips tags and decodes entities.
 fn extract_html_text(path: &Path) -> Result<String> {
+    check_extract_size(path)?;
     let html = fs::read_to_string(path)?;
     
     // Remove script and style tags and their content
@@ -1269,6 +1316,102 @@ mod tests {
         assert!(empty_trash(folder).is_err());
 
         assert_eq!(fs::read_to_string(outer.path().join("elsewhere/kept.md")).unwrap(), "# Kept\n");
+    }
+
+    /// A folder can ship `.reader` as a link (a cloned repo, an unzipped folder). Session state, the
+    /// map, snapshots and deleted pages would all land wherever it points, so nothing goes through it.
+    #[cfg(unix)]
+    #[test]
+    fn a_linked_reader_folder_is_neither_read_nor_written() {
+        let outer = folder();
+        let session = outer.path().join("session");
+        write_md(&session, "a.md", "# A\n");
+        write_md(outer.path(), "elsewhere/session.json", "{\"current\":\"planted.md\"}");
+        std::os::unix::fs::symlink(outer.path().join("elsewhere"), session.join(".reader")).unwrap();
+        let folder = session.to_str().unwrap();
+        let refused = ".reader in this folder is a link, so Nested won't read or write through it. Replace it with a plain folder.";
+
+        assert_eq!(load_session(folder, None).unwrap_err().to_string(), refused);
+        assert_eq!(save_session(folder, &json!({ "current": "a.md" }), None).unwrap_err().to_string(), refused);
+        assert_eq!(save_map(folder, &json!({}), "").unwrap_err().to_string(), refused);
+        assert_eq!(snapshot_version(folder, "a.md").unwrap_err().to_string(), refused);
+        assert_eq!(delete_page(folder, "a.md").unwrap_err().to_string(), refused);
+        assert!(load_map(folder).is_err());
+        assert!(trash_count(folder).is_err());
+
+        assert_eq!(fs::read_to_string(session.join("a.md")).unwrap(), "# A\n");
+        let mut left: Vec<String> = fs::read_dir(outer.path().join("elsewhere")).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+        left.sort();
+        assert_eq!(left, vec!["session.json"]);
+    }
+
+    /// "No such page" only when the page isn't there: a folder that can't be searched says so.
+    #[cfg(unix)]
+    #[test]
+    fn read_page_tells_a_missing_page_from_one_it_may_not_reach() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = folder();
+        let folder = dir.path().to_str().unwrap();
+        write_md(dir.path(), "locked/a.md", "# A\n");
+        assert_eq!(read_page(folder, "gone.md").err().unwrap().to_string(), "No such page: gone.md");
+        fs::set_permissions(dir.path().join("locked"), fs::Permissions::from_mode(0o000)).unwrap();
+        let err = read_page(folder, "locked/a.md").err().unwrap().to_string();
+        fs::set_permissions(dir.path().join("locked"), fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(err.contains("Permission denied"), "{err}");
+    }
+
+    /// A real `.reader` can still hold links one level down. Deleting `notes.md` with
+    /// `.reader/versions -> ..` would have moved the folder's neighbour `notes/` into the trash, where
+    /// emptying it deletes it for good. Every folder under `.reader` the app writes into is checked.
+    #[cfg(unix)]
+    #[test]
+    fn a_link_inside_reader_is_not_followed() {
+        use std::os::unix::fs::symlink;
+        let outer = folder();
+        let session = outer.path().join("session");
+        write_md(&session, "notes.md", "# Notes\n");
+        write_md(outer.path(), "notes/keep.md", "# Keep\n");
+        fs::create_dir_all(session.join(".reader")).unwrap();
+        symlink(outer.path(), session.join(".reader/versions")).unwrap();
+        let folder = session.to_str().unwrap();
+        let refused = |what: &str| format!("{what} in this folder is a link, so Nested won't read or write through it. Replace it with a plain folder.");
+
+        assert_eq!(delete_page(folder, "notes.md").unwrap_err().to_string(), refused(".reader/versions"));
+        assert_eq!(snapshot_version(folder, "notes.md").unwrap_err().to_string(), refused(".reader/versions"));
+        assert!(list_versions(folder, "notes.md").is_err());
+        assert_eq!(fs::read_to_string(session.join("notes.md")).unwrap(), "# Notes\n");
+        assert_eq!(fs::read_to_string(outer.path().join("notes/keep.md")).unwrap(), "# Keep\n");
+        assert!(!outer.path().join("notes/v1.md").exists());
+
+        // The trash, and one page's own versions folder, the same way.
+        fs::remove_file(session.join(".reader/versions")).unwrap();
+        symlink(outer.path().join("notes"), session.join(".reader/trash")).unwrap();
+        assert_eq!(delete_page(folder, "notes.md").unwrap_err().to_string(), refused(".reader/trash"));
+        assert_eq!(restore_page(folder, "keep.md", "keep").unwrap_err().to_string(), refused(".reader/trash"));
+        assert!(session.join("notes.md").exists());
+        assert_eq!(fs::read_to_string(outer.path().join("notes/keep.md")).unwrap(), "# Keep\n");
+        fs::create_dir_all(session.join(".reader/versions")).unwrap();
+        symlink(outer.path().join("notes"), session.join(".reader/versions/notes")).unwrap();
+        assert_eq!(snapshot_version(folder, "notes.md").unwrap_err().to_string(), refused(".reader/versions/notes"));
+        assert!(!outer.path().join("notes/v1.md").exists());
+    }
+
+    /// Every listing reads and parses each PDF and HTML file whole, so one huge file would hold up
+    /// the folder each time it opens. Past the cap it is left out, and opening it says why.
+    #[test]
+    fn a_pdf_or_html_file_past_the_size_cap_is_not_read() {
+        let dir = folder();
+        let folder = dir.path().to_str().unwrap();
+        write_md(dir.path(), "a.md", "# A\n");
+        for name in ["big.pdf", "big.html"] {
+            // Sparse: as big as the cap says, without the disk space.
+            fs::File::create(dir.path().join(name)).unwrap().set_len(50 * 1024 * 1024 + 1).unwrap();
+        }
+
+        let listed: Vec<String> = list_pages(folder).unwrap().into_iter().map(|p| p.path).collect();
+        assert_eq!(listed, vec!["a.md"]);
+        assert_eq!(read_page(folder, "big.pdf").err().unwrap().to_string(), "big.pdf is too big to read (51 MB; Nested reads PDF and HTML files up to 50 MB).");
+        assert_eq!(read_page(folder, "big.html").err().unwrap().to_string(), "big.html is too big to read (51 MB; Nested reads PDF and HTML files up to 50 MB).");
     }
 
     #[test]

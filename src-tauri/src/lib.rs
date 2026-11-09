@@ -41,6 +41,37 @@ struct Opened {
     ready: AtomicBool,
 }
 
+/// The paths each window's last native drop delivered, by window label, so `read_dropped_image`
+/// reads only a file someone dropped there, not any image a script in the page names.
+#[derive(Default)]
+struct Dropped(Mutex<HashMap<String, Vec<std::path::PathBuf>>>);
+
+impl Dropped {
+    fn remember(&self, window: &str, paths: &[std::path::PathBuf]) {
+        self.0.lock().unwrap().insert(window.to_owned(), paths.to_vec());
+    }
+
+    fn forget(&self, window: &str) {
+        self.0.lock().unwrap().remove(window);
+    }
+
+    fn holds(&self, window: &str, path: &str) -> bool {
+        self.0.lock().unwrap().get(window).is_some_and(|paths| paths.iter().any(|p| p == std::path::Path::new(path)))
+    }
+}
+
+/// Keeps `Dropped` in step with the windows: a native drop replaces that window's paths, and a closed
+/// window's go, so a new page window that reuses its label starts with none. Tauri calls this right
+/// after it hands the drop to the page, in the same main-thread turn, so the page's
+/// `read_dropped_image` can't arrive first.
+fn track_drops<R: tauri::Runtime>(window: &tauri::Window<R>, event: &tauri::WindowEvent) {
+    match event {
+        tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) => window.state::<Dropped>().remember(window.label(), paths),
+        tauri::WindowEvent::Destroyed => window.state::<Dropped>().forget(window.label()),
+        _ => {}
+    }
+}
+
 // ---------- files ----------
 
 /// Folder only: Settings uses it for the default folder.
@@ -110,10 +141,33 @@ fn reveal_in_finder(app: AppHandle, path: String) -> Result<()> {
 /// plugin so the webview needs no `open-path` permission.
 #[tauri::command]
 fn open_folder(app: AppHandle, path: String) -> Result<()> {
-    if files::path_kind(&path) != "folder" {
+    let real = folder_to_open(&path)?;
+    app.opener().open_path(real.to_string_lossy(), None::<&str>).map_err(|e| AppError::Message(e.to_string()))
+}
+
+/// The real path of the folder to open. A package (an `.app`, an `.rtfd`) is a folder on disk, but
+/// opening one runs the app or hands it to one, so it is refused like a file. Packages are told apart
+/// the way Finder does it, not by a dot in the name, so a folder called `grayscale.design` still
+/// opens. The check runs on the resolved path, since it doesn't follow a link and opening does.
+fn folder_to_open(path: &str) -> Result<std::path::PathBuf> {
+    if files::path_kind(path) != "folder" {
         return Err(AppError::Message(format!("not a folder: {}", path)));
     }
-    app.opener().open_path(&path, None::<&str>).map_err(|e| AppError::Message(e.to_string()))
+    let real = std::fs::canonicalize(path)?;
+    if is_package(&real.to_string_lossy()) {
+        return Err(AppError::Message(format!("not a folder: {path} is an app or package")));
+    }
+    Ok(real)
+}
+
+#[cfg(target_os = "macos")]
+fn is_package(path: &str) -> bool {
+    objc2_app_kit::NSWorkspace::sharedWorkspace().isFilePackageAtPath(&objc2_foundation::NSString::from_str(path))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn is_package(_path: &str) -> bool {
+    false
 }
 
 /// The title bar follows the open session: its native proxy icon (right-click / ⌘-click for a
@@ -371,9 +425,14 @@ async fn send_feedback(app: AppHandle, message: String, email: Option<String>, a
 }
 
 /// A screenshot dropped on the window while the feedback box is open, reported by path since the
-/// window's native drag-drop hands over a path rather than a browser `File`.
+/// window's native drag-drop hands over a path rather than a browser `File`. Only a path that drop
+/// delivered is read: otherwise a script in the page could read any image on disk and, through
+/// `send_feedback`, post it to the relay.
 #[tauri::command]
-fn read_dropped_image(path: String) -> Result<feedback::Attachment> {
+fn read_dropped_image<R: tauri::Runtime>(window: tauri::WebviewWindow<R>, path: String, dropped: State<'_, Dropped>) -> Result<feedback::Attachment> {
+    if !dropped.holds(window.label(), &path) {
+        return Err(AppError::Message("Drop the screenshot on the window to attach it.".into()));
+    }
     feedback::read_attachment(&path)
 }
 
@@ -592,6 +651,8 @@ pub fn run() {
         .manage(Streams::default())
         .manage(Opened::default())
         .manage(updater::Pending::default())
+        .manage(Dropped::default())
+        .on_window_event(track_drops)
         .setup(|app| {
             migrate::run(app.handle());
             build_menu(app.handle())?;
@@ -713,6 +774,28 @@ mod tests {
     }
 
     #[test]
+    fn open_folder_opens_plain_folders_and_refuses_packages() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = |name: &str| {
+            let p = tmp.path().join(name);
+            std::fs::create_dir(&p).unwrap();
+            p.to_str().unwrap().to_owned()
+        };
+        assert!(folder_to_open(&path("notes")).is_ok());
+        // A dot in a folder's name doesn't make it a package; only kinds macOS opens with an app do.
+        assert!(folder_to_open(&path("grayscale.design")).is_ok());
+        // Launch Services would run an app bundle, or hand a document bundle to its app.
+        let app = path("Calculator.app");
+        assert_eq!(folder_to_open(&app).unwrap_err().to_string(), format!("not a folder: {app} is an app or package"));
+        assert!(folder_to_open(&path("Report.rtfd")).is_err());
+        std::fs::write(tmp.path().join("a.md"), "# A\n").unwrap();
+        assert!(folder_to_open(tmp.path().join("a.md").to_str().unwrap()).is_err());
+        // macOS's package check doesn't follow a link, but opening it would (/Applications/Safari.app is one).
+        std::os::unix::fs::symlink(&app, tmp.path().join("docs")).unwrap();
+        assert!(folder_to_open(tmp.path().join("docs").to_str().unwrap()).is_err());
+    }
+
+    #[test]
     fn urlencode_keeps_path_characters_and_escapes_the_rest() {
         assert_eq!(
             urlencode("notes/Sleep replay.md"),
@@ -739,6 +822,8 @@ mod ipc {
         let app = mock_builder()
             .manage(Streams::default())
             .manage(Opened::default())
+            .manage(Dropped::default())
+            .on_window_event(track_drops)
             .invoke_handler(tauri::generate_handler![
                 path_kind,
                 opened_paths,
@@ -784,6 +869,13 @@ mod ipc {
         p.to_str().unwrap().to_string()
     }
 
+    /// The window event a native drop of `paths` raises, through the handler `run()` registers.
+    fn drop_on(window: &tauri::WebviewWindow<MockRuntime>, paths: &[&Path]) {
+        let paths = paths.iter().map(|p| p.to_path_buf()).collect();
+        let event = tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, position: Default::default() });
+        track_drops(&window.as_ref().window(), &event);
+    }
+
     #[test]
     fn pages_are_written_read_and_listed() {
         let (_app, w) = app();
@@ -815,6 +907,8 @@ mod ipc {
         );
         assert!(!tmp.path().parent().unwrap().join("escape.md").exists());
         assert_eq!(call(&w, "read_page", json!({ "folder": folder, "path": "notes.txt" })), Err(json!("Unsupported file type: notes.txt")));
+        // The reader shows this when a session's file has gone, so it names the page, not the OS error.
+        assert_eq!(call(&w, "read_page", json!({ "folder": folder, "path": "gone.md" })), Err(json!("No such page: gone.md")));
         assert_eq!(
             call(&w, "write_page", json!({ "folder": folder, "path": "paper.pdf", "content": "x" })),
             Err(json!("Cannot write to read-only file type: paper.pdf. Create a companion .md file instead."))
@@ -920,12 +1014,40 @@ mod ipc {
         crate::ai::TEST_KEYS.lock().unwrap().push(("ipc-test".into(), "k".into()));
         assert_eq!(call(&w, "has_api_key", json!({ "provider": "ipc-test" })), Ok(json!(true)));
 
+        std::fs::write(tmp.path().join("shot.png"), b"png").unwrap();
+        drop_on(&w, &[&tmp.path().join("a.txt"), &tmp.path().join("shot.png")]);
         assert_eq!(
             call(&w, "read_dropped_image", json!({ "path": dir_str(&tmp.path().join("a.txt")) })),
             Err(json!("Drop a screenshot (PNG, JPEG, GIF or WebP)."))
         );
-        std::fs::write(tmp.path().join("shot.png"), b"png").unwrap();
         let shot = call(&w, "read_dropped_image", json!({ "path": dir_str(&tmp.path().join("shot.png")) })).unwrap();
         assert_eq!(shot, json!({ "name": "shot.png", "mime": "image/png", "data": "cG5n" }));
+    }
+
+    #[test]
+    fn only_an_image_dropped_on_the_window_is_read() {
+        let (app, w) = app();
+        let tmp = tempfile::tempdir().unwrap();
+        for name in ["dropped.png", "other.png"] {
+            std::fs::write(tmp.path().join(name), b"png").unwrap();
+        }
+        let read = |name: &str| call(&w, "read_dropped_image", json!({ "path": dir_str(&tmp.path().join(name)) }));
+        let refused = Err(json!("Drop the screenshot on the window to attach it."));
+        // Nothing dropped yet: a script in the page naming a screenshot on disk gets nothing.
+        assert_eq!(read("dropped.png"), refused);
+
+        drop_on(&w, &[&tmp.path().join("dropped.png")]);
+        assert_eq!(read("dropped.png").unwrap()["name"], "dropped.png");
+        assert_eq!(read("other.png"), refused);
+        // A drop on another window doesn't open this one's reach.
+        let other = tauri::WebviewWindowBuilder::new(&app, "page-1", Default::default()).build().unwrap();
+        drop_on(&other, &[&tmp.path().join("other.png")]);
+        assert_eq!(read("other.png"), refused);
+        // The next drop replaces the last one.
+        drop_on(&w, &[&tmp.path().join("other.png")]);
+        assert_eq!(read("dropped.png"), refused);
+        // A closed window's drop goes with it, so a new window that gets its label starts with none.
+        track_drops(&other.as_ref().window(), &tauri::WindowEvent::Destroyed);
+        assert!(!app.state::<Dropped>().holds("page-1", &dir_str(&tmp.path().join("other.png"))));
     }
 }
