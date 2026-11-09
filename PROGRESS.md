@@ -89,6 +89,12 @@
 - The Home screen has no sidebar, so no link there; a matching link under the recent sessions would cover it.
 - Rate limiting on the relay's route in the Cloudflare dashboard if the URL ever gets abused.
 
+### Follow-up 2026-11-08: no email or screenshot in a public repo
+- The repo went public, so the next email left in the box would have been published (Nov 1 legal audit, M1). Nothing leaked so far: 39 feedback issues, none with an email or image.
+- `worker.js` now asks GitHub whether `GITHUB_REPO` is private (`repoIsPrivate`, `GET /repos/{repo}`, remembered five minutes) before it uses an email or a screenshot. Public, or a failed lookup, files the note without them; the issue says they were withheld and the JSON answer lists `withheld`. `handler.js` only forwards to the worker, so the rule covers Fly and Cloudflare alike.
+- Four new tests with a stubbed `fetch` (public, private, failed lookup, cache); three of them fail on the old worker. Relay `npm test` 25 pass, `pnpm test` 103 pass. README and `docs/architecture.md` no longer say the repo is private.
+- Not done here: deploying the relay, and the audit's private-repo steps (a private feedback repo, a token scoped to it, moving `feedback-triage.yml`). Until then every email and screenshot is held back.
+
 ## Session: 2026-09-12 — sidebar buttons gone; ⌘⇧O adds a folder or file to the session
 
 ### Leading assumptions

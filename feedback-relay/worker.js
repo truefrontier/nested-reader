@@ -15,6 +15,9 @@ const MAX_TITLE = 72;
 const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 const ATTACHMENT_EXT = { "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp" };
 const ATTACHMENTS_BRANCH = "feedback-attachments";
+const VISIBILITY_MS = 5 * 60_000;
+
+let visibility = { at: 0, repo: "", private: false };
 
 export default {
   async fetch(request, env) {
@@ -33,14 +36,26 @@ export default {
     const message = typeof body?.message === "string" ? body.message.trim() : "";
     if (!message) return text(400, "The note is empty");
     if (message.length > MAX_MESSAGE) return text(413, `Keep the note under ${MAX_MESSAGE} characters`);
-    const email = typeof body?.email === "string" ? body.email.trim() : "";
+    let email = typeof body?.email === "string" ? body.email.trim() : "";
     if (email && (email.length > MAX_EMAIL || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) return text(400, "That email address doesn't look right");
     const app = detail(body?.app);
+    let attachment = null;
+    if (body?.attachment !== undefined) {
+      attachment = validAttachment(body.attachment);
+      if (!attachment) return text(400, "That screenshot didn't look right");
+    }
+
+    // Anyone who can read the repo can read the issue and the screenshot's branch, so an email or a
+    // screenshot goes only to a repo GitHub says is private. Public, or no answer, files the note without them.
+    let withheld = [];
+    if ((email || attachment) && !(await repoIsPrivate(env))) {
+      withheld = [email && "email", attachment && "screenshot"].filter(Boolean);
+      email = "";
+      attachment = null;
+    }
 
     let attachmentUrl;
-    if (body?.attachment !== undefined) {
-      const attachment = validAttachment(body.attachment);
-      if (!attachment) return text(400, "That screenshot didn't look right");
+    if (attachment) {
       try {
         attachmentUrl = await uploadAttachment(env, attachment);
       } catch (e) {
@@ -51,7 +66,7 @@ export default {
 
     const res = await gh(env, `/repos/${env.GITHUB_REPO}/issues`, {
       method: "POST",
-      body: JSON.stringify({ title: titleFor(message), body: issueBody(message, email, app, attachmentUrl), labels: [env.LABEL || "feedback"] }),
+      body: JSON.stringify({ title: titleFor(message), body: issueBody(message, email, app, attachmentUrl, withheld), labels: [env.LABEL || "feedback"] }),
     });
     if (!res.ok) {
       const why = await res.text().catch(() => "");
@@ -59,9 +74,30 @@ export default {
       return text(502, "GitHub didn't accept the note");
     }
     const issue = await res.json();
-    return new Response(JSON.stringify({ number: issue.number, url: issue.html_url }), { status: 201, headers: { "Content-Type": "application/json" } });
+    const answer = { number: issue.number, url: issue.html_url };
+    if (withheld.length) answer.withheld = withheld;
+    return new Response(JSON.stringify(answer), { status: 201, headers: { "Content-Type": "application/json" } });
   },
 };
+
+/**
+ * Whether GitHub says GITHUB_REPO is private. The answer is remembered for five minutes, so a wave of notes
+ * costs one lookup. A failed lookup counts as public and isn't remembered, so the next note asks again.
+ */
+async function repoIsPrivate(env) {
+  const now = Date.now();
+  if (visibility.repo === env.GITHUB_REPO && now - visibility.at < VISIBILITY_MS) return visibility.private;
+  try {
+    const res = await gh(env, `/repos/${env.GITHUB_REPO}`);
+    if (!res.ok) throw new Error(`GitHub answered ${res.status}`);
+    const repo = await res.json();
+    visibility = { at: now, repo: env.GITHUB_REPO, private: repo?.private === true };
+    return visibility.private;
+  } catch (e) {
+    console.error("Couldn't tell whether the repo is private, so the email and screenshot are held back", e);
+    return false;
+  }
+}
 
 /** The screenshot as the frontend sent it, or null when it isn't a small, supported image. */
 export function validAttachment(a) {
@@ -136,11 +172,13 @@ export function detail(app) {
   return out;
 }
 
-export function issueBody(message, email, app, attachmentUrl) {
+export function issueBody(message, email, app, attachmentUrl, withheld = []) {
   const quoted = message.split("\n").map((l) => `> ${l}`).join("\n");
   const lines = ["Sent from the app with **Send feedback**.", "", quoted, ""];
   if (attachmentUrl) lines.push(`![Screenshot](${attachmentUrl})`, "");
-  lines.push(`**Contact:** ${email ? email : "none given"}`);
+  const held = "withheld, because the relay couldn't confirm this repository is private";
+  lines.push(`**Contact:** ${email ? email : withheld.includes("email") ? held : "none given"}`);
+  if (withheld.includes("screenshot")) lines.push(`**Screenshot:** ${held}`);
   const parts = [app.version && `Nested ${app.version}`, app.os && `${app.os}${app.arch ? ` ${app.arch}` : ""}`].filter(Boolean);
   if (parts.length) lines.push(`**App:** ${parts.join(", ")}`);
   return lines.join("\n");
