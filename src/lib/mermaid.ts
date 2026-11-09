@@ -7,7 +7,9 @@ let initedAs: Theme | undefined;
 
 function ensureInit(theme: Theme) {
   if (initedAs === theme) return;
-  mermaid.initialize({ startOnLoad: false, securityLevel: "strict", suppressErrorRendering: true, theme: theme === "dark" ? "dark" : "default" });
+  // SVG text labels: HTML ones sit in <foreignObject>, which the sanitizer's SVG profile drops, and a
+  // flowchart, class or state diagram then shows its boxes empty.
+  mermaid.initialize({ startOnLoad: false, securityLevel: "strict", suppressErrorRendering: true, htmlLabels: false, theme: theme === "dark" ? "dark" : "default" });
   initedAs = theme;
 }
 
