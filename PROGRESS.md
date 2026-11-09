@@ -1071,3 +1071,4 @@
   4. Home's ⋯ stayed visible after a mouse click (`:focus-within`); it now shows for keyboard focus on the row's name or ⋯ only.
   5. The review strip's status mounted with its text, so it was never read out. `TopStrip` keeps one `.sr-only` status mounted.
 - `pnpm test` 155 → 157.
+- The Settings window (`?window=settings`, its own document in the app) had no main landmark: the 95 → 97 above was measured on the embedded stand-in, inside the reader's `<main>`. Its root is now `role="main"` when standalone. Lighthouse on the standalone window: 94 → 96, with only the faint grey's contrast left.
