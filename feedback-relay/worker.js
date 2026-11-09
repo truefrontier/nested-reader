@@ -195,17 +195,21 @@ export function detail(app) {
 }
 
 /**
- * Breaks each @mention with a zero-width space after the @, so the text reads as typed but pings no one.
+ * Breaks each @mention with a zero-width space after the @, so the text reads as typed but pings no one,
+ * and each #123 the same way, so a note can't leave "mentioned this" marks on this repo's issues or, as
+ * owner/repo#123, on anyone else's.
  * The issue is filed as the token's owner, so a mention would come from that account, and an "@claude"
  * in an issue its owner opened starts .github/workflows/claude.yml. An @ after a letter or digit, as in
  * an email address, is no mention to GitHub and is left alone.
  */
 export function unmention(s) {
-  return s.replace(/(^|[^A-Za-z0-9_])@(?=[A-Za-z0-9])/g, "$1@\u200b");
+  return s.replace(/(^|[^A-Za-z0-9_])@(?=[A-Za-z0-9])/g, "$1@\u200b").replace(/#(?=\d)/g, "#\u200b");
 }
 
 export function issueBody(message, email, app, attachmentUrl, withheld = []) {
-  const quoted = message.split("\n").map((l) => `> ${l}`).join("\n");
+  // A "<" shows as written, so no HTML in the note can hide text from a person reading the issue (an
+  // HTML comment is invisible on the page, yet Claude, reading the raw text, would still follow it).
+  const quoted = message.split("\n").map((l) => `> ${l.replaceAll("<", "&lt;")}`).join("\n");
   const lines = ["Sent from the app with **Send feedback**.", "", quoted, ""];
   if (attachmentUrl) lines.push(`![Screenshot](${attachmentUrl})`, "");
   const held = "withheld, because the relay couldn't confirm this repository is private";
