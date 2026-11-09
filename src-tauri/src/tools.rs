@@ -38,16 +38,29 @@ const B: f64 = 0.3;
 /// A query word in the title says more than the same word in the body, in proportion to its rarity.
 const TITLE_WEIGHT: f64 = 1.0;
 
+/// Words that end like a plural and aren't one: folding them turns "news" into "new" and "series"
+/// into "sery".
+const NOT_PLURAL: &[&str] = &["news", "series", "species"];
+
 /// Folds a plural onto its singular, so searching for "ripple" ranks the page about ripples.
 /// Only plurals: -s and -ies are the endings that keep notes from matching, and stripping more
-/// (-ing, -ed) starts changing words that meant different things. Mirrored in `src/lib/rank.ts`.
+/// (-ing, -ed) starts changing words that meant different things. A singular in -ie is spelled -y,
+/// so "movie" meets "movies" where "study" meets "studies"; "tie" and "lie" are too short for either
+/// rule and fold by the plain -s. Mirrored in `src/lib/rank.ts`; `src/lib/plurals.json` holds the
+/// cases both test.
 fn stem(w: &str) -> String {
+    if NOT_PLURAL.contains(&w) {
+        return w.to_string();
+    }
     let n = w.chars().count();
     if n > 4 && w.ends_with("sses") {
         return w[..w.len() - 2].to_string();
     }
     if n > 4 && w.ends_with("ies") {
         return format!("{}y", &w[..w.len() - 3]);
+    }
+    if n > 3 && w.ends_with("ie") {
+        return format!("{}y", &w[..w.len() - 2]);
     }
     if w.ends_with("ss") {
         return w.to_string();
@@ -432,6 +445,17 @@ mod tests {
             ),
             vec!["ripple", "class", "study", "glass", "boss", "gas"]
         );
+    }
+
+    #[test]
+    fn plurals_fold_as_rank_ts_folds_them() {
+        // src/lib/rank.test.ts reads this same table, so the two sides can't fold apart.
+        let stop: HashSet<&str> = STOP.iter().copied().collect();
+        let cases: Vec<(String, Vec<String>)> =
+            serde_json::from_str(include_str!("../../src/lib/plurals.json")).unwrap();
+        for (text, want) in cases {
+            assert_eq!(words(&text, &stop), want, "{text}");
+        }
     }
 
     fn folder() -> tempfile::TempDir {

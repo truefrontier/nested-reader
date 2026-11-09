@@ -871,8 +871,18 @@
 ### Possible next steps
 - `lexBlocks` normalises CRLF, so linking one word in a CRLF file rewrites every line ending (`joinBlocks` writes LF). Fixed 2026-11-06, below.
 - `rootOf` gives different roots to members of the same cycle, so a cycle member can drop out of its own session list.
-- `stem` folds "movies" to "movy" but leaves "movie", and "news" to "new" (mirrored in `tools.rs`; changing it means both sides).
-- A CI job for `pnpm test` and `cargo test`.
+- `stem` folds "movies" to "movy" but leaves "movie", and "news" to "new" (mirrored in `tools.rs`; changing it means both sides). Fixed 2026-11-08, below.
+- A CI job for `pnpm test` and `cargo test`. Added 2026-11-08, below.
+
+### Follow-up — 2026-11-08: `stem` keeps "news" whole and meets "movie"; CI runs the tests
+- **`stem`** (`src/lib/rank.ts`, mirrored in `src-tauri/src/tools.rs`) has two changes:
+  - `NOT_PLURAL` keeps "news", "series" and "species" as they are. Before, "news" folded to "new", and "series" and "species" to "sery" and "specy".
+  - A word of four or more letters ending in -ie is spelled -y, so "movie" and "movies" both become "movy", as "study" and "studies" become "study". "tie" and "lie" are too short for that rule, so they and "ties" and "lies" still fold to "tie" and "lie" through the plain -s.
+  - Still plurals only: no -ing or -ed. "bus" and "gas" stay whole (three letters), and "this" is a stop word, so it never reaches `stem`.
+- **One table for both sides.** `src/lib/plurals.json` lists the cases. `rank.test.ts` reads it, and `tools.rs`'s `plurals_fold_as_rank_ts_folds_them` reads the same file through `include_str!`, so the two can't fold apart. Before the fix, five of its twelve cases fail on both sides (movies, cookies, news, series, species). The other seven are guards and pass on both.
+- **Ranking shifts a little** for -ie words and for news, series and species, since their stems changed. Nothing stores a stem: `words()` runs fresh each time a prompt's context is ranked (`prompts.ts`), the map is ranked (`sessionmap.ts`), or `search_pages` searches. The map's `fingerprint` hashes the raw body, so no saved map line goes stale.
+- **CI:** `.github/workflows/test.yml` runs on every pull request and on pushes to `main`, on `macos-latest` with Node 22 and pnpm 10, as `release.yml` does. It runs `pnpm install --frozen-lockfile`, `pnpm test`, `pnpm build`, then `cargo test` in `src-tauri`. The build is there because `pnpm test` only type-checks what the tests import. There are no secrets, and the live tests stay `#[ignore]`d. macOS because part of the crate only builds there (objc2 panels, the keyring's Apple backend), and Tauri needs no extra packages on it.
+- **Checks:** `pnpm test` 103 → 104, and `pnpm build` passes before and after. Locally, `cargo test` could not run: the crate cache is empty, and every crates.io download failed on the local proxy's expired certificate. Instead, the real `STOP`/`stem`/`words` code, cut out of `tools.rs` and compiled with plain `rustc`, gave the same result as `rank.ts` on all twelve cases, both before and after. The workflow's first run on the PR, with `main`'s code, passed with `cargo test` at 77 passed and 12 ignored, in about four and a half minutes. Its run on this fix is linked from the PR (#105). Not run: the desktop app.
 
 ### Follow-up — 2026-11-06: a CRLF page keeps its line endings
 - `lexBlocks` lexes the body with LF, so a body rebuilt from its blocks came back all LF. Linking one word in a CRLF file, from Windows or from git, rewrote every line of it.

@@ -36,15 +36,22 @@ const B = 0.3;
 /** A query word in the title says more than the same word in the body, in proportion to how rare it is. */
 const TITLE_WEIGHT = 1.0;
 
+/** Words that end like a plural and aren't one: folding them turns "news" into "new" and "series" into "sery". */
+const NOT_PLURAL = new Set(["news", "series", "species"]);
+
 /**
  * Folds a plural onto its singular, so asking about "ripple" finds the page about ripples.
  * Only plurals: -s and -ies are the endings that keep notes from matching, and stripping more
- * (-ing, -ed) starts changing words that meant different things. Mirrored in `tools.rs`.
+ * (-ing, -ed) starts changing words that meant different things. A singular in -ie is spelled -y,
+ * so "movie" meets "movies" where "study" meets "studies"; "tie" and "lie" are too short for either
+ * rule and fold by the plain -s. Mirrored in `tools.rs`; `plurals.json` holds the cases both test.
  */
 function stem(w: string): string {
+  if (NOT_PLURAL.has(w)) return w;
   const n = [...w].length;
   if (n > 4 && w.endsWith("sses")) return w.slice(0, -2);
   if (n > 4 && w.endsWith("ies")) return w.slice(0, -3) + "y";
+  if (n > 3 && w.endsWith("ie")) return w.slice(0, -2) + "y";
   if (w.endsWith("ss")) return w;
   if (n > 3 && w.endsWith("s")) return w.slice(0, -1);
   return w;
