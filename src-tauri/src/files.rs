@@ -122,7 +122,7 @@ pub fn list_pages(folder: &str) -> Result<Vec<RawPage>> {
 
 pub fn read_page(folder: &str, rel: &str) -> Result<RawPage> {
     let full = safe_join(folder, rel)?;
-    if is_openable_page(&full) && !full.exists() {
+    if is_openable_page(&full) && !full.try_exists()? {
         return Err(AppError::Message(format!("No such page: {rel}")));
     }
     let raw = if is_markdown(&full) {
@@ -1343,6 +1343,21 @@ mod tests {
         let mut left: Vec<String> = fs::read_dir(outer.path().join("elsewhere")).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
         left.sort();
         assert_eq!(left, vec!["session.json"]);
+    }
+
+    /// "No such page" only when the page isn't there: a folder that can't be searched says so.
+    #[cfg(unix)]
+    #[test]
+    fn read_page_tells_a_missing_page_from_one_it_may_not_reach() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = folder();
+        let folder = dir.path().to_str().unwrap();
+        write_md(dir.path(), "locked/a.md", "# A\n");
+        assert_eq!(read_page(folder, "gone.md").err().unwrap().to_string(), "No such page: gone.md");
+        fs::set_permissions(dir.path().join("locked"), fs::Permissions::from_mode(0o000)).unwrap();
+        let err = read_page(folder, "locked/a.md").err().unwrap().to_string();
+        fs::set_permissions(dir.path().join("locked"), fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(err.contains("Permission denied"), "{err}");
     }
 
     /// A real `.reader` can still hold links one level down. Deleting `notes.md` with

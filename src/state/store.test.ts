@@ -135,3 +135,26 @@ test("a file the listing left out opens with the reason it couldn't be read", as
     platform.readPage = readPage;
   }
 });
+
+test("the reason for a file left out of the listing doesn't land on a session opened since", async () => {
+  await openA();
+  await platform.writePage(A, "scan.pdf", "");
+  const { listPages, readPage } = platform;
+  let refuse: ((why: string) => void) | undefined;
+  platform.listPages = async (folder) => (await listPages.call(platform, folder)).filter((p) => p.path !== "scan.pdf");
+  // The reason is slow to come, as re-reading a big PDF is; another folder opens meanwhile.
+  platform.readPage = (folder, path) => (path === "scan.pdf" ? new Promise((_, reject) => (refuse = reject)) : readPage.call(platform, folder, path));
+  try {
+    store.setUi({ error: undefined });
+    const opening = store.openFolder(A, { file: "scan.pdf" });
+    await until(() => refuse !== undefined);
+    await store.openFolder(B);
+    refuse!("PDF file 'scan.pdf' contains no extractable text (possibly a scanned document)");
+    await opening;
+    assert.equal(store.state.folder, B);
+    assert.equal(store.state.ui.error, undefined);
+  } finally {
+    platform.listPages = listPages;
+    platform.readPage = readPage;
+  }
+});

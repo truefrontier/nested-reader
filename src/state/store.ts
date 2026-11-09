@@ -887,7 +887,11 @@ export class ReaderStore {
       if (this.opening !== target) return;
       const all: Record<string, PageMeta> = {};
       for (const p of list) all[p.path] = p;
-      if (file && !all[file]) throw await unlisted(folder, file);
+      if (file && !all[file]) {
+        const why = await unlisted(folder, file);
+        if (this.opening !== target) return;
+        throw why;
+      }
       const pages: Record<string, PageMeta> = {};
       for (const p of list) if (!file || growsFrom(p.path, file, all)) pages[p.path] = p;
       const stored = await platform.loadSession(folder, file);
