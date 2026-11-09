@@ -40,7 +40,7 @@ Three `GET` routes read the newest published release (drafts and pre-releases le
 | `/updates/download/<asset id>/<name>` | `302` to GitHub's short-lived signed link for that asset, so the bytes never pass through the relay. |
 | `/updates/dmg` | `302` to the newest `.dmg`, a stable link for a first install. |
 
-The release lookup and its `latest.json` are remembered for a minute, so a wave of launches costs two GitHub calls a minute at most. A download link is handed out only for an asset of that release; any other asset id gets a `404` without a call to GitHub. The app's updater endpoint is `plugins.updater.endpoints` in `src-tauri/tauri.conf.json`; it passes `version`, `target` and `arch`, which the relay ignores (the updater compares versions itself and verifies the bundle's signature against the public key in the same file).
+The release lookup and its `latest.json` are remembered for a minute, so a wave of launches costs two GitHub calls a minute at most. A lookup GitHub refuses (a lapsed token, a spent rate limit) is remembered for 10 seconds, so the launches don't keep the limit spent by asking again each time. A download link is handed out only for an asset of that release; any other asset id gets a `404` without a call to GitHub. The app's updater endpoint is `plugins.updater.endpoints` in `src-tauri/tauri.conf.json`; it passes `version`, `target` and `arch`, which the relay ignores (the updater compares versions itself and verifies the bundle's signature against the public key in the same file).
 
 Try it:
 
@@ -72,7 +72,7 @@ An email or a screenshot goes only to a private repository. Before it uses eithe
 
 `truefrontier/nested-reader` is public, so for now every email and screenshot is held back. Pointing `GITHUB_REPO` at a private repository, with a token scoped to it, brings them back.
 
-In a private repository, a screenshot (`attachment`, PNG/JPEG/GIF/WebP, up to 5 MB, base64 in `data` without a `data:` prefix) is committed to a `feedback-attachments` branch of its own, created from the default branch the first time one is needed, and embedded in the issue by its raw URL. Uploading it costs a few extra GitHub API calls; if that upload fails, the note is still filed, just without the picture.
+In a private repository, a screenshot (`attachment`, PNG/JPEG/GIF/WebP, up to 5 MB, base64 in `data` without a `data:` prefix; its first bytes must be one of those four, and they, not `mime`, decide which) is committed to a `feedback-attachments` branch of its own, created from the default branch the first time one is needed, and embedded in the issue by its raw URL. Uploading it costs a few extra GitHub API calls; if that upload fails, the note is still filed, just without the picture.
 
 Try it:
 
