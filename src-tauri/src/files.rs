@@ -104,8 +104,9 @@ pub fn list_pages(folder: &str) -> Result<Vec<RawPage>> {
             continue;
         };
         // A file that can't be read (a scan with no text, a PDF the parser rejects, a note that
-        // isn't UTF-8) is left out, rather than keeping the whole folder from opening. Opened on its
-        // own, it says why.
+        // isn't UTF-8) is left out, rather than keeping the whole folder from opening. `read_page`
+        // still gives the reason; the reader, which opens a single file from this listing, says
+        // "Not a Markdown page" for it.
         let Ok(raw) = raw else { continue };
         let meta = entry.metadata().ok();
         out.push(RawPage {
@@ -631,14 +632,30 @@ pub fn collect_ids(folder: &str) -> HashMap<String, String> {
 ///
 /// On Mac, `bookmark` is tried first when the absolute folder path is gone. There is no
 /// full-volume search if both the path and the bookmark fail.
+/// Where a page path that is a symlink really points, as its folder and file name; `None` for a plain
+/// file. A file opened through a link (`~/Desktop/plan.md -> ~/Projects/x/plan.md`) opens there: the
+/// listing skips links, since a link can point anywhere, and the pages grown from it belong beside it.
+fn symlink_target(path: &Path) -> Option<(String, String)> {
+    if !fs::symlink_metadata(path).ok()?.file_type().is_symlink() {
+        return None;
+    }
+    let real = fs::canonicalize(path).ok().filter(|p| p.is_file())?;
+    Some((real.parent()?.to_string_lossy().into_owned(), real.file_name()?.to_string_lossy().into_owned()))
+}
+
 pub fn resolve_session(
     folder: &str,
     file: Option<&str>,
     ids: Option<&HashMap<String, String>>,
     bookmark: Option<&str>,
 ) -> Result<ResolvedSession> {
-    let file = file.filter(|s| !s.is_empty());
     let mut folder = folder.to_string();
+    let mut opened = file.filter(|s| !s.is_empty()).map(str::to_string);
+    if let Some((real_folder, name)) = opened.as_deref().and_then(|f| symlink_target(&Path::new(&folder).join(f))) {
+        folder = real_folder;
+        opened = Some(name);
+    }
+    let file = opened.as_deref();
     if !Path::new(&folder).is_dir() {
         if let Some(resolved) = bookmark.and_then(resolve_bookmark) {
             if Path::new(&resolved).is_dir() {
@@ -1369,6 +1386,28 @@ mod tests {
         assert!(resolved.remaps.is_empty());
     }
 
+    /// `~/Desktop/plan.md -> ~/Projects/x/plan.md`: the listing skips links, so a session on the
+    /// Desktop never found its own page ("Not a Markdown page: plan.md"). It opens where the file is.
+    #[cfg(unix)]
+    #[test]
+    fn a_file_opened_through_a_symlink_opens_where_it_really_is() {
+        let dir = folder();
+        let desk = dir.path().join("Desktop");
+        write_md(dir.path(), "Projects/x/2026-11-09.md", "# Plan\n");
+        fs::create_dir_all(&desk).unwrap();
+        std::os::unix::fs::symlink(dir.path().join("Projects/x/2026-11-09.md"), desk.join("today.md")).unwrap();
+
+        let resolved = resolve_session(desk.to_str().unwrap(), Some("today.md"), None, None).unwrap();
+        assert_eq!(Path::new(&resolved.folder), fs::canonicalize(dir.path().join("Projects/x")).unwrap());
+        assert_eq!(resolved.file.as_deref(), Some("2026-11-09.md"));
+        assert!(list_pages(&resolved.folder).unwrap().iter().any(|p| p.path == "2026-11-09.md"));
+        // A plain file is left as it was.
+        write_md(&desk, "real.md", "# Real\n");
+        let plain = resolve_session(desk.to_str().unwrap(), Some("real.md"), None, None).unwrap();
+        assert_eq!(plain.folder, desk.to_str().unwrap());
+        assert_eq!(plain.file.as_deref(), Some("real.md"));
+    }
+
     #[test]
     fn resolve_session_skips_version_dir_when_destination_exists() {
         let dir = folder();
@@ -1557,7 +1596,7 @@ mod tests {
         let folder = dir.path().to_str().unwrap();
         let paths: Vec<String> = list_pages(folder).unwrap().into_iter().map(|p| p.path).collect();
         assert_eq!(paths, vec!["notes.md"]);
-        // Opened on its own, each still says why.
+        // read_page still says why for each.
         assert!(read_page(folder, "latin.md").is_err());
         assert!(read_page(folder, "scan.pdf").map(|p| p.raw).unwrap_err().to_string().contains("no extractable text"));
     }
