@@ -152,11 +152,28 @@ export function Sidebar() {
     const items = treeItems();
     rove(items.find((el) => keyOf(el) === focusKey.current) ?? items.find((el) => el.getAttribute("aria-selected") === "true") ?? items[0], items);
   });
+  // After a keyboard menu action the row it came from can go a moment later (a delete or a removal
+  // finishes after `refocus` has put the focus back on it). The focus then falls to the body with no blur
+  // event, and the tree's Tab stop takes it back on the next render. Leaving the tree for another control,
+  // or a pointer press, ends that.
+  const keepFocus = useRef(false);
+  useLayoutEffect(() => {
+    if (!keepFocus.current || document.activeElement !== document.body) return;
+    treeRef.current?.querySelector<HTMLElement>('[role=treeitem][tabindex="0"]')?.focus();
+  });
+  useEffect(() => {
+    const drop = () => (keepFocus.current = false);
+    window.addEventListener("pointerdown", drop, true);
+    return () => window.removeEventListener("pointerdown", drop, true);
+  }, []);
   const onTreeFocus = (e: FocusEvent) => {
     const el = (e.target as HTMLElement).closest<HTMLElement>("[role=treeitem]");
     if (!el || el !== e.target) return;
     focusKey.current = keyOf(el);
     rove(el);
+  };
+  const onTreeBlur = (e: FocusEvent) => {
+    if (e.relatedTarget && !treeRef.current?.contains(e.relatedTarget as Node)) keepFocus.current = false;
   };
   // The row a menu was opened from with the keyboard, which takes the focus back when the menu is done.
   // A menu opened with the mouse leaves focus where the click put it.
@@ -165,6 +182,7 @@ export function Sidebar() {
     const el = returnTo.current;
     returnTo.current = null;
     if (!el) return;
+    keepFocus.current = true;
     // A row that has gone (deleted, or dropped from the session) hands the focus to the tree's Tab stop.
     requestAnimationFrame(() => (el.isConnected ? el : treeRef.current?.querySelector<HTMLElement>('[role=treeitem][tabindex="0"]'))?.focus());
   };
@@ -517,7 +535,7 @@ export function Sidebar() {
       </div>
       <div className="tree" onScroll={() => (menuFor || deleting) && closeMenus()} onContextMenu={onTreeContextMenu}>
         {/* A click on a row sends the focus to the page body, as it did before rows could take it, so the
-            window's ↵ still retries a failed page; once the keyboard is in the tree, a click moves it to that row. */}
+            window's ↵ still retries a failed page; once the keyboard is on a row, a click moves it to that row. */}
         <div
           className="tree-inner"
           ref={treeRef}
@@ -525,8 +543,11 @@ export function Sidebar() {
           aria-label="Pages"
           onKeyDown={onTreeKey}
           onFocus={onTreeFocus}
+          onBlur={onTreeBlur}
           onMouseDown={(e) => {
-            if (treeRef.current?.contains(document.activeElement)) return;
+            // A press in the rename box is the box's own; one on a row keeps the focus in the tree only when a row has it.
+            const active = document.activeElement;
+            if ((e.target as HTMLElement).closest("input") || (active?.matches("[role=treeitem]") && treeRef.current?.contains(active))) return;
             e.preventDefault();
             (document.activeElement as HTMLElement | null)?.blur();
           }}

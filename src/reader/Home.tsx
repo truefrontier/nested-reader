@@ -42,7 +42,8 @@ export function Home() {
     setMenuFor(null);
     const el = returnTo.current;
     returnTo.current = null;
-    if (el) requestAnimationFrame(() => el.isConnected && el.focus());
+    // "Remove from recents" takes the row, and its ⋯, with it: the first session's name takes the focus then.
+    if (el) requestAnimationFrame(() => (el.isConnected ? el : document.querySelector<HTMLElement>(".home-row .label"))?.focus());
   };
   useEffect(() => {
     if (!menuFor) return;

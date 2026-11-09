@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { listStep, moveFocus, pressOnKey, treeKey, type TreeRow } from "./keys";
+import { listStep, moveFocus, pressOnKey, STAND_IN, trackInput, treeKey, type TreeRow } from "./keys";
 
 // Node has no DOM. These stand-ins do what the DOM does for the calls keys.ts makes: an event that
 // records whether it was stopped, and elements that set `document.activeElement` when focused.
@@ -133,4 +133,47 @@ test("keys the tree doesn't use, and a row that isn't there, do nothing", () => 
   assert.equal(treeKey("Tab", false, ROWS, 1), null);
   assert.equal(treeKey("ArrowDown", false, ROWS, -1), null);
   assert.equal(treeKey("ArrowDown", false, [], 0), null);
+});
+
+/** `trackInput` on a stand-in window: its listeners, a root with a dataset, and elements that count blurs. */
+function inputWatch() {
+  const on: Record<string, (e: object) => void> = {};
+  const root = { dataset: {} as DOMStringMap };
+  trackInput({ addEventListener: (type: string, fn: (e: object) => void) => void (on[type] = fn) } as unknown as EventTarget, root);
+  const el = (selector: string | null) => {
+    const seen = { blurs: 0 };
+    return { seen, matches: (sel: string) => sel === selector, closest: () => null, blur: () => void seen.blurs++ };
+  };
+  return { on, root, el };
+}
+
+test("a pointer press clears the keyboard mark, and Tab or a key outside a text box sets it", () => {
+  const { on, root } = inputWatch();
+  on.keydown({ key: "j", target: { closest: () => null } });
+  assert.equal(root.dataset.kb, "");
+  on.pointerdown({});
+  assert.equal("kb" in root.dataset, false);
+  on.keydown({ key: "j", target: { closest: () => ({}) } });
+  assert.equal("kb" in root.dataset, false, "typing in a text box doesn't count");
+  on.keydown({ key: "Tab", target: { closest: () => ({}) } });
+  assert.equal(root.dataset.kb, "");
+});
+
+test("focus a pointer press puts on a stand-in button goes back, and keyboard focus stays", () => {
+  const { on, el } = inputWatch();
+  const span = el(STAND_IN);
+  on.pointerdown({});
+  on.focusin({ target: span });
+  assert.equal(span.seen.blurs, 1, "focused by the press");
+  on.pointerup({});
+  on.focusin({ target: span });
+  assert.equal(span.seen.blurs, 1, "focused by code after the press (a menu's first item)");
+  on.pointerdown({});
+  on.keydown({ key: "Tab", target: { closest: () => null } });
+  on.focusin({ target: span });
+  assert.equal(span.seen.blurs, 1, "a key ends the press");
+  const box = el(null);
+  on.pointerdown({});
+  on.focusin({ target: box });
+  assert.equal(box.seen.blurs, 0, "a real button or text box keeps the focus a click gives");
 });
