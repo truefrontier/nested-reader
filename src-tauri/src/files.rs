@@ -221,7 +221,8 @@ pub fn delete_page(folder: &str, rel: &str) -> Result<String> {
     if !full.is_file() {
         return Err(AppError::Message(format!("No such page: {rel}")));
     }
-    let trash = reader_dir(folder)?.join("trash");
+    let trash = reader_subdir(folder, &["trash"])?;
+    let versions = versions_dir(folder, rel)?;
     fs::create_dir_all(&trash)?;
     let stem = full.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "page".into());
     let ext = full.extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_else(|| "md".into());
@@ -233,7 +234,6 @@ pub fn delete_page(folder: &str, rel: &str) -> Result<String> {
         i += 1;
     }
     fs::rename(&full, trash.join(format!("{name}.{ext}")))?;
-    let versions = versions_dir(folder, rel)?;
     if versions.is_dir() {
         // The page is already out of the way; snapshots left behind are stale, not a failure.
         let _ = fs::rename(&versions, trash.join(format!("{name}-versions")));
@@ -250,7 +250,8 @@ pub fn restore_page(folder: &str, rel: &str, trashed: &str) -> Result<()> {
     if !is_openable_page(&full) {
         return Err(AppError::Message(format!("Not a page: {rel}")));
     }
-    let trash = reader_dir(folder)?.join("trash");
+    let trash = reader_subdir(folder, &["trash"])?;
+    let versions = versions_dir(folder, rel)?;
     let ext = full.extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_else(|| "md".into());
     let parked = safe_join(&trash.to_string_lossy(), &format!("{trashed}.{ext}"))?;
     if !parked.is_file() {
@@ -267,7 +268,6 @@ pub fn restore_page(folder: &str, rel: &str, trashed: &str) -> Result<()> {
         _ => AppError::Message(format!("Couldn't put the page back ({e}). It's still in .reader/trash.")),
     })?;
     fs::remove_file(&parked)?;
-    let versions = versions_dir(folder, rel)?;
     let parked_versions = trash.join(format!("{trashed}-versions"));
     if parked_versions.is_dir() && !versions.exists() {
         // The page is already back; snapshots that can't follow stay in the trash, not a failure.
@@ -282,7 +282,7 @@ pub fn restore_page(folder: &str, rel: &str, trashed: &str) -> Result<()> {
 /// `.reader/trash`, if the folder has one. A link in its place is refused rather than followed, so
 /// emptying the trash can never reach outside the folder.
 fn trash_dir(folder: &str) -> Result<Option<PathBuf>> {
-    let trash = reader_dir(folder)?.join("trash");
+    let trash = reader_subdir(folder, &["trash"])?;
     match fs::symlink_metadata(&trash) {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(e.into()),
@@ -324,15 +324,30 @@ pub fn empty_trash(folder: &str) -> Result<u32> {
 }
 
 /// `.reader`, where the app keeps a folder's session, map, snapshots and trash. A link in its place
-/// is refused rather than followed, as `trash_dir` refuses one, so none of that lands outside the folder.
+/// is refused rather than followed, so none of that lands outside the folder.
 fn reader_dir(folder: &str) -> Result<PathBuf> {
-    let dir = Path::new(folder).join(READER_DIR);
-    match fs::symlink_metadata(&dir) {
-        Ok(m) if m.file_type().is_symlink() => Err(AppError::Message(
-            ".reader in this folder is a link, so Nested won't read or write through it. Replace it with a plain folder.".into(),
-        )),
-        _ => Ok(dir),
+    reader_subdir(folder, &[])
+}
+
+/// A folder inside `.reader`, such as `trash` or `versions/<page>`. `.reader` and each folder on the
+/// way are refused if they are links: with `.reader/versions -> ..`, deleting `notes.md` would move
+/// the folder's neighbour `notes/` into the trash.
+fn reader_subdir(folder: &str, parts: &[&str]) -> Result<PathBuf> {
+    let refuse_link = |dir: &Path, shown: &str| match fs::symlink_metadata(dir) {
+        Ok(m) if m.file_type().is_symlink() => Err(AppError::Message(format!(
+            "{shown} in this folder is a link, so Nested won't read or write through it. Replace it with a plain folder."
+        ))),
+        _ => Ok(()),
+    };
+    let mut dir = Path::new(folder).join(READER_DIR);
+    let mut shown = READER_DIR.to_string();
+    refuse_link(&dir, &shown)?;
+    for part in parts {
+        dir.push(part);
+        shown = format!("{shown}/{part}");
+        refuse_link(&dir, &shown)?;
     }
+    Ok(dir)
 }
 
 /// A page path flattened into one file-name segment: `notes/a.md` -> `notes__a`.
@@ -392,7 +407,7 @@ pub fn save_map(folder: &str, cache: &Value, rendered: &str) -> Result<()> {
 
 fn versions_dir(folder: &str, rel: &str) -> Result<PathBuf> {
     safe_join(folder, rel)?;
-    Ok(reader_dir(folder)?.join("versions").join(page_key(rel)))
+    reader_subdir(folder, &["versions", &page_key(rel)])
 }
 
 /// Whether a dropped path is a folder, a Markdown file, or something the reader cannot open.
@@ -1328,6 +1343,42 @@ mod tests {
         let mut left: Vec<String> = fs::read_dir(outer.path().join("elsewhere")).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
         left.sort();
         assert_eq!(left, vec!["session.json"]);
+    }
+
+    /// A real `.reader` can still hold links one level down. Deleting `notes.md` with
+    /// `.reader/versions -> ..` would have moved the folder's neighbour `notes/` into the trash, where
+    /// emptying it deletes it for good. Every folder under `.reader` the app writes into is checked.
+    #[cfg(unix)]
+    #[test]
+    fn a_link_inside_reader_is_not_followed() {
+        use std::os::unix::fs::symlink;
+        let outer = folder();
+        let session = outer.path().join("session");
+        write_md(&session, "notes.md", "# Notes\n");
+        write_md(outer.path(), "notes/keep.md", "# Keep\n");
+        fs::create_dir_all(session.join(".reader")).unwrap();
+        symlink(outer.path(), session.join(".reader/versions")).unwrap();
+        let folder = session.to_str().unwrap();
+        let refused = |what: &str| format!("{what} in this folder is a link, so Nested won't read or write through it. Replace it with a plain folder.");
+
+        assert_eq!(delete_page(folder, "notes.md").unwrap_err().to_string(), refused(".reader/versions"));
+        assert_eq!(snapshot_version(folder, "notes.md").unwrap_err().to_string(), refused(".reader/versions"));
+        assert!(list_versions(folder, "notes.md").is_err());
+        assert_eq!(fs::read_to_string(session.join("notes.md")).unwrap(), "# Notes\n");
+        assert_eq!(fs::read_to_string(outer.path().join("notes/keep.md")).unwrap(), "# Keep\n");
+        assert!(!outer.path().join("notes/v1.md").exists());
+
+        // The trash, and one page's own versions folder, the same way.
+        fs::remove_file(session.join(".reader/versions")).unwrap();
+        symlink(outer.path().join("notes"), session.join(".reader/trash")).unwrap();
+        assert_eq!(delete_page(folder, "notes.md").unwrap_err().to_string(), refused(".reader/trash"));
+        assert_eq!(restore_page(folder, "keep.md", "keep").unwrap_err().to_string(), refused(".reader/trash"));
+        assert!(session.join("notes.md").exists());
+        assert_eq!(fs::read_to_string(outer.path().join("notes/keep.md")).unwrap(), "# Keep\n");
+        fs::create_dir_all(session.join(".reader/versions")).unwrap();
+        symlink(outer.path().join("notes"), session.join(".reader/versions/notes")).unwrap();
+        assert_eq!(snapshot_version(folder, "notes.md").unwrap_err().to_string(), refused(".reader/versions/notes"));
+        assert!(!outer.path().join("notes/v1.md").exists());
     }
 
     /// Every listing reads and parses each PDF and HTML file whole, so one huge file would hold up
