@@ -15,6 +15,44 @@ export function followScrollTop(src: Scroller, dst: Scroller): number | null {
   return Math.abs(dst.scrollTop - target) < 1 ? null : target;
 }
 
+/** A scroll container, as `linkScroll` uses it. */
+type Pane = Scroller & {
+  addEventListener(type: "scroll", listener: () => void, options?: AddEventListenerOptions): void;
+  removeEventListener(type: "scroll", listener: () => void): void;
+};
+
+/**
+ * Makes each of two panes follow the other's scrolling, and lines `split` up with `main` straight away.
+ * Returns the function that unlinks them.
+ */
+export function linkScroll(main: Pane, split: Pane): () => void {
+  // Where we last put each pane. Its next scroll event, if the pane is still there, is that write coming
+  // back, and following it would round the reader's own pane to a new place. Told apart by place, not by
+  // frame: the event can come a frame after the write.
+  const placed = new Map<Pane, number>();
+  const follow = (src: Pane, dst: Pane) => {
+    const target = followScrollTop(src, dst);
+    if (target === null) return;
+    dst.scrollTop = target;
+    placed.set(dst, dst.scrollTop);
+  };
+  const onScroll = (src: Pane, dst: Pane) => () => {
+    const at = placed.get(src);
+    placed.delete(src);
+    if (at !== undefined && Math.abs(src.scrollTop - at) < 1) return;
+    follow(src, dst);
+  };
+  const onMain = onScroll(main, split);
+  const onSplit = onScroll(split, main);
+  main.addEventListener("scroll", onMain, { passive: true });
+  split.addEventListener("scroll", onSplit, { passive: true });
+  follow(main, split);
+  return () => {
+    main.removeEventListener("scroll", onMain);
+    split.removeEventListener("scroll", onSplit);
+  };
+}
+
 /**
  * Links the scrolling of the two panes inside `container` while `active` is true. Each pane follows the
  * other in proportion: the same page renders a little taller in the main pane than in the split, so
@@ -27,34 +65,6 @@ export function useSyncScroll(container: RefObject<HTMLElement | null>, active: 
     const main = root.querySelector<HTMLElement>(":scope > .pane:not(.split)");
     const split = root.querySelector<HTMLElement>(":scope > .pane.split");
     if (!main || !split) return;
-
-    // The pane whose scrollTop was just set by us; its echoed scroll event is dropped so the two don't feed each other.
-    let echo: HTMLElement | null = null;
-    const follow = (src: HTMLElement, dst: HTMLElement) => {
-      const target = followScrollTop(src, dst);
-      if (target === null) return;
-      echo = dst;
-      dst.scrollTop = target;
-      requestAnimationFrame(() => {
-        if (echo === dst) echo = null;
-      });
-    };
-    const onScroll = (src: HTMLElement, dst: HTMLElement) => () => {
-      if (echo === src) {
-        echo = null;
-        return;
-      }
-      follow(src, dst);
-    };
-    const onMain = onScroll(main, split);
-    const onSplit = onScroll(split, main);
-    main.addEventListener("scroll", onMain, { passive: true });
-    split.addEventListener("scroll", onSplit, { passive: true });
-    // Line the split up with the main pane as soon as the link is made.
-    follow(main, split);
-    return () => {
-      main.removeEventListener("scroll", onMain);
-      split.removeEventListener("scroll", onSplit);
-    };
+    return linkScroll(main, split);
   }, [container, active]);
 }

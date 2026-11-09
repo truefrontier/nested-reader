@@ -1190,3 +1190,14 @@
 ### Possible next steps
 - Ask upstream for license files (jrmuizel's three crates, strictdom, objc2's MIT text), so the filled-in texts can be swapped for theirs. Not done: it means posting.
 - `pdf-extract`'s `core_fonts.rs` embeds Adobe's Core 14 font metrics; whether those carry a notice of their own wasn't checked.
+
+## Session: 2026-11-09 — sync scroll no longer nudges the pane being scrolled (#281 follow-up)
+
+### World facts
+- `useSyncScroll` dropped the follower's echo (the scroll event its own `scrollTop` write causes) by a flag that a `requestAnimationFrame` cleared. In Chrome the echo arrives a frame later, after that callback, so it was taken for the reader's scroll and followed back. When one pane's scroll range is more than twice the other's (a narrow split), rounding that round trip moves the pane the reader is scrolling: asking the split for 202 left it at 203, 209 at 210, 211 at 212 (browser mock, 1200×380 window, ranges 523 and 1219 px).
+- The effect's body is now `linkScroll(main, split)` beside the hook, which remembers where it put each pane and drops that pane's next scroll event only if the pane is still there. No frame timing, no `requestAnimationFrame`.
+
+### Verification
+- `pnpm test` 186 → 189. The new tests drive `linkScroll` with stand-in panes that fire a write's scroll event at the next frame, after the frame callbacks, as Chrome did. On the old logic the reader's pane lands at `[200, 203, 203, 205, 205, 206, 207, 208, 210, 210, 212, 212]` for 201–212; now at each one asked for.
+- Browser mock in Chrome, same window: the 12 single steps land where asked, and a one-pixel-a-frame run of 60 frames on either pane ends exactly where asked, with the other pane following.
+- Not run: the desktop app (WKWebView may order these events differently; the fix doesn't depend on the order).
