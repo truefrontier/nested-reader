@@ -92,7 +92,7 @@ jobs:
         run: |
           set -f  # a "*" in the labels file stays a word, not a list of files
           if [[ -f triage/labels.txt ]]; then
-            for label in $(tr ',' ' ' < triage/labels.txt); do
+            for label in $(tr ',' ' ' < triage/labels.txt | tr '[:upper:]' '[:lower:]'); do
               case "$label" in
                 bug | enhancement | question | needs-info) gh issue edit "$ISSUE" --add-label "$label" ;;
                 *) echo "::warning::Triage suggested a label outside the list; skipped it." ;;
