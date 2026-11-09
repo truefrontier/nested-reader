@@ -49,13 +49,25 @@ fn iso(t: std::io::Result<std::time::SystemTime>) -> Option<String> {
     t.ok().map(|t| DateTime::<Utc>::from(t).to_rfc3339())
 }
 
-/// Rejects paths that escape the folder.
+/// Rejects paths that escape the folder: `..`, absolute paths, and symlinks (the page or a folder on
+/// the way to it) that resolve outside it, which a cloned repo or an unzipped folder can carry.
 fn safe_join(folder: &str, rel: &str) -> Result<PathBuf> {
     let rel_path = Path::new(rel);
+    let outside = || AppError::Message(format!("Refusing path outside the folder: {rel}"));
     if rel_path.is_absolute() || rel_path.components().any(|c| matches!(c, Component::ParentDir)) {
-        return Err(AppError::Message(format!("Refusing path outside the folder: {rel}")));
+        return Err(outside());
     }
-    Ok(Path::new(folder).join(rel_path))
+    let full = Path::new(folder).join(rel_path);
+    // What exists of the path is resolved; a page not written yet resolves by its nearest folder.
+    // A folder that does not exist yet holds no links.
+    if let Ok(root) = fs::canonicalize(folder) {
+        if let Some(existing) = full.ancestors().find(|p| p.exists()) {
+            if !fs::canonicalize(existing)?.starts_with(&root) {
+                return Err(outside());
+            }
+        }
+    }
+    Ok(full)
 }
 
 fn rel_string(folder: &Path, full: &Path) -> Option<String> {
@@ -1411,6 +1423,35 @@ mod tests {
         assert!(write_new_page(session.to_str().unwrap(), "../escape.md", "# X\n").is_err());
 
         assert!(!outer.path().join("escape.md").exists());
+    }
+
+    /// A cloned repo or an unzipped folder can carry symlinks to anywhere on disk. A page path is
+    /// read or written only where it really sits inside the folder; a link to one of its own pages
+    /// still works.
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_cannot_take_a_page_outside_the_folder() {
+        use std::os::unix::fs::symlink;
+        let outer = folder();
+        let session = outer.path().join("session");
+        write_md(&session, "notes/real.md", "# Real\n");
+        write_md(outer.path(), "elsewhere/page.md", "# Elsewhere\n");
+        fs::write(outer.path().join("id_ed25519"), "PRIVATE").unwrap();
+        symlink(outer.path().join("id_ed25519"), session.join("key.md")).unwrap();
+        symlink(outer.path().join("elsewhere"), session.join("away")).unwrap();
+        symlink("notes/real.md", session.join("alias.md")).unwrap();
+        let s = session.to_str().unwrap();
+
+        assert!(read_page(s, "key.md").is_err());
+        assert!(read_page(s, "away/page.md").is_err());
+        assert!(write_page(s, "away/page.md", "# Overwritten\n").is_err());
+        assert!(write_new_page(s, "away/new.md", "# New\n").is_err());
+        assert!(delete_page(s, "away/page.md").is_err());
+        assert_eq!(fs::read_to_string(outer.path().join("elsewhere/page.md")).unwrap(), "# Elsewhere\n");
+        assert!(!outer.path().join("elsewhere/new.md").exists());
+
+        assert_eq!(read_page(s, "alias.md").unwrap().raw, "# Real\n");
+        assert!(write_new_page(s, "notes/fresh/new.md", "# New\n").unwrap());
     }
 
     #[test]

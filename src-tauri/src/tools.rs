@@ -516,6 +516,20 @@ mod tests {
         assert!(out.is_error);
     }
 
+    /// A page that is a symlink out of the folder (`notes/key.md -> ~/.ssh/id_ed25519`), named by
+    /// another page's planted instructions, would send that file to the model's provider.
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_page_cannot_reach_outside_the_folder() {
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join("id_ed25519"), "-----BEGIN OPENSSH PRIVATE KEY-----\n").unwrap();
+        let dir = folder();
+        std::os::unix::fs::symlink(outside.path().join("id_ed25519"), dir.path().join("notes/key.md")).unwrap();
+        let out = run(dir.path().to_str().unwrap(), &[], &[], "read_page", &json!({ "path": "notes/key.md" }));
+        assert!(out.is_error, "{}", out.text);
+        assert!(!out.text.contains("PRIVATE KEY"), "{}", out.text);
+    }
+
     #[test]
     fn searches_case_insensitively() {
         let dir = folder();
