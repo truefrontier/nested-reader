@@ -41,6 +41,21 @@ struct Opened {
     ready: AtomicBool,
 }
 
+/// The paths each window's last native drop delivered, by window label, so `read_dropped_image`
+/// reads only a file someone dropped there, not any image a script in the page names.
+#[derive(Default)]
+struct Dropped(Mutex<HashMap<String, Vec<std::path::PathBuf>>>);
+
+impl Dropped {
+    fn remember(&self, window: &str, paths: &[std::path::PathBuf]) {
+        self.0.lock().unwrap().insert(window.to_owned(), paths.to_vec());
+    }
+
+    fn holds(&self, window: &str, path: &str) -> bool {
+        self.0.lock().unwrap().get(window).is_some_and(|paths| paths.iter().any(|p| p == std::path::Path::new(path)))
+    }
+}
+
 // ---------- files ----------
 
 /// Folder only: Settings uses it for the default folder.
@@ -392,9 +407,14 @@ async fn send_feedback(app: AppHandle, message: String, email: Option<String>, a
 }
 
 /// A screenshot dropped on the window while the feedback box is open, reported by path since the
-/// window's native drag-drop hands over a path rather than a browser `File`.
+/// window's native drag-drop hands over a path rather than a browser `File`. Only a path that drop
+/// delivered is read: otherwise a script in the page could read any image on disk and, through
+/// `send_feedback`, post it to the relay.
 #[tauri::command]
-fn read_dropped_image(path: String) -> Result<feedback::Attachment> {
+fn read_dropped_image<R: tauri::Runtime>(window: tauri::WebviewWindow<R>, path: String, dropped: State<'_, Dropped>) -> Result<feedback::Attachment> {
+    if !dropped.holds(window.label(), &path) {
+        return Err(AppError::Message("Drop the screenshot on the window to attach it.".into()));
+    }
     feedback::read_attachment(&path)
 }
 
@@ -613,6 +633,12 @@ pub fn run() {
         .manage(Streams::default())
         .manage(Opened::default())
         .manage(updater::Pending::default())
+        .manage(Dropped::default())
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
+                window.state::<Dropped>().remember(window.label(), paths);
+            }
+        })
         .setup(|app| {
             migrate::run(app.handle());
             build_menu(app.handle())?;
@@ -779,6 +805,7 @@ mod ipc {
         let app = mock_builder()
             .manage(Streams::default())
             .manage(Opened::default())
+            .manage(Dropped::default())
             .invoke_handler(tauri::generate_handler![
                 path_kind,
                 opened_paths,
@@ -946,7 +973,7 @@ mod ipc {
 
     #[test]
     fn path_kinds_keys_and_dropped_files() {
-        let (_app, w) = app();
+        let (app, w) = app();
         let tmp = tempfile::tempdir().unwrap();
         std::fs::write(tmp.path().join("a.md"), "# A\n").unwrap();
         std::fs::write(tmp.path().join("a.txt"), "plain").unwrap();
@@ -960,12 +987,36 @@ mod ipc {
         crate::ai::TEST_KEYS.lock().unwrap().push(("ipc-test".into(), "k".into()));
         assert_eq!(call(&w, "has_api_key", json!({ "provider": "ipc-test" })), Ok(json!(true)));
 
+        std::fs::write(tmp.path().join("shot.png"), b"png").unwrap();
+        app.state::<Dropped>().remember("main", &[tmp.path().join("a.txt"), tmp.path().join("shot.png")]);
         assert_eq!(
             call(&w, "read_dropped_image", json!({ "path": dir_str(&tmp.path().join("a.txt")) })),
             Err(json!("Drop a screenshot (PNG, JPEG, GIF or WebP)."))
         );
-        std::fs::write(tmp.path().join("shot.png"), b"png").unwrap();
         let shot = call(&w, "read_dropped_image", json!({ "path": dir_str(&tmp.path().join("shot.png")) })).unwrap();
         assert_eq!(shot, json!({ "name": "shot.png", "mime": "image/png", "data": "cG5n" }));
+    }
+
+    #[test]
+    fn only_an_image_dropped_on_the_window_is_read() {
+        let (app, w) = app();
+        let tmp = tempfile::tempdir().unwrap();
+        for name in ["dropped.png", "other.png"] {
+            std::fs::write(tmp.path().join(name), b"png").unwrap();
+        }
+        let read = |name: &str| call(&w, "read_dropped_image", json!({ "path": dir_str(&tmp.path().join(name)) }));
+        let refused = Err(json!("Drop the screenshot on the window to attach it."));
+        // Nothing dropped yet: a script in the page naming a screenshot on disk gets nothing.
+        assert_eq!(read("dropped.png"), refused);
+
+        app.state::<Dropped>().remember("main", &[tmp.path().join("dropped.png")]);
+        assert_eq!(read("dropped.png").unwrap()["name"], "dropped.png");
+        assert_eq!(read("other.png"), refused);
+        // A drop on another window doesn't open this one's reach.
+        app.state::<Dropped>().remember("page-1", &[tmp.path().join("other.png")]);
+        assert_eq!(read("other.png"), refused);
+        // The next drop replaces the last one.
+        app.state::<Dropped>().remember("main", &[tmp.path().join("other.png")]);
+        assert_eq!(read("dropped.png"), refused);
     }
 }
