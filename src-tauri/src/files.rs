@@ -218,7 +218,7 @@ pub fn delete_page(folder: &str, rel: &str) -> Result<String> {
     if !full.is_file() {
         return Err(AppError::Message(format!("No such page: {rel}")));
     }
-    let trash = reader_dir(folder).join("trash");
+    let trash = reader_dir(folder)?.join("trash");
     fs::create_dir_all(&trash)?;
     let stem = full.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "page".into());
     let ext = full.extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_else(|| "md".into());
@@ -247,7 +247,7 @@ pub fn restore_page(folder: &str, rel: &str, trashed: &str) -> Result<()> {
     if !is_openable_page(&full) {
         return Err(AppError::Message(format!("Not a page: {rel}")));
     }
-    let trash = reader_dir(folder).join("trash");
+    let trash = reader_dir(folder)?.join("trash");
     let ext = full.extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_else(|| "md".into());
     let parked = safe_join(&trash.to_string_lossy(), &format!("{trashed}.{ext}"))?;
     if !parked.is_file() {
@@ -279,7 +279,7 @@ pub fn restore_page(folder: &str, rel: &str, trashed: &str) -> Result<()> {
 /// `.reader/trash`, if the folder has one. A link in its place is refused rather than followed, so
 /// emptying the trash can never reach outside the folder.
 fn trash_dir(folder: &str) -> Result<Option<PathBuf>> {
-    let trash = reader_dir(folder).join("trash");
+    let trash = reader_dir(folder)?.join("trash");
     match fs::symlink_metadata(&trash) {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(e.into()),
@@ -320,8 +320,16 @@ pub fn empty_trash(folder: &str) -> Result<u32> {
     Ok(n)
 }
 
-fn reader_dir(folder: &str) -> PathBuf {
-    Path::new(folder).join(READER_DIR)
+/// `.reader`, where the app keeps a folder's session, map, snapshots and trash. A link in its place
+/// is refused rather than followed, as `trash_dir` refuses one, so none of that lands outside the folder.
+fn reader_dir(folder: &str) -> Result<PathBuf> {
+    let dir = Path::new(folder).join(READER_DIR);
+    match fs::symlink_metadata(&dir) {
+        Ok(m) if m.file_type().is_symlink() => Err(AppError::Message(
+            ".reader in this folder is a link, so Nested won't read or write through it. Replace it with a plain folder.".into(),
+        )),
+        _ => Ok(dir),
+    }
 }
 
 /// A page path flattened into one file-name segment: `notes/a.md` -> `notes__a`.
@@ -332,7 +340,7 @@ fn page_key(rel: &str) -> String {
 /// `.reader/session.json` for a folder session; a session opened from one file
 /// inside the folder keeps its own state in `.reader/session-<page>.json`.
 fn session_path(folder: &str, file: Option<&str>) -> Result<PathBuf> {
-    let dir = reader_dir(folder);
+    let dir = reader_dir(folder)?;
     Ok(match file {
         None => dir.join("session.json"),
         Some(rel) => {
@@ -365,7 +373,7 @@ pub fn save_session(folder: &str, session: &Value, file: Option<&str>) -> Result
 /// `map.json` holds the one-line summaries and the fingerprint of the text each was written for;
 /// `map.md` is the same thing rendered, kept beside it so it can be read without the app.
 pub fn load_map(folder: &str) -> Result<Option<Value>> {
-    let path = reader_dir(folder).join("map.json");
+    let path = reader_dir(folder)?.join("map.json");
     if !path.exists() {
         return Ok(None);
     }
@@ -374,14 +382,14 @@ pub fn load_map(folder: &str) -> Result<Option<Value>> {
 }
 
 pub fn save_map(folder: &str, cache: &Value, rendered: &str) -> Result<()> {
-    let dir = reader_dir(folder);
+    let dir = reader_dir(folder)?;
     write_atomic(&dir.join("map.json"), &serde_json::to_string_pretty(cache)?)?;
     write_atomic(&dir.join("map.md"), rendered)
 }
 
 fn versions_dir(folder: &str, rel: &str) -> Result<PathBuf> {
     safe_join(folder, rel)?;
-    Ok(reader_dir(folder).join("versions").join(page_key(rel)))
+    Ok(reader_dir(folder)?.join("versions").join(page_key(rel)))
 }
 
 /// Whether a dropped path is a folder, a Markdown file, or something the reader cannot open.
@@ -1269,6 +1277,33 @@ mod tests {
         assert!(empty_trash(folder).is_err());
 
         assert_eq!(fs::read_to_string(outer.path().join("elsewhere/kept.md")).unwrap(), "# Kept\n");
+    }
+
+    /// A folder can ship `.reader` as a link (a cloned repo, an unzipped folder). Session state, the
+    /// map, snapshots and deleted pages would all land wherever it points, so nothing goes through it.
+    #[cfg(unix)]
+    #[test]
+    fn a_linked_reader_folder_is_neither_read_nor_written() {
+        let outer = folder();
+        let session = outer.path().join("session");
+        write_md(&session, "a.md", "# A\n");
+        write_md(outer.path(), "elsewhere/session.json", "{\"current\":\"planted.md\"}");
+        std::os::unix::fs::symlink(outer.path().join("elsewhere"), session.join(".reader")).unwrap();
+        let folder = session.to_str().unwrap();
+        let refused = ".reader in this folder is a link, so Nested won't read or write through it. Replace it with a plain folder.";
+
+        assert_eq!(load_session(folder, None).unwrap_err().to_string(), refused);
+        assert_eq!(save_session(folder, &json!({ "current": "a.md" }), None).unwrap_err().to_string(), refused);
+        assert_eq!(save_map(folder, &json!({}), "").unwrap_err().to_string(), refused);
+        assert_eq!(snapshot_version(folder, "a.md").unwrap_err().to_string(), refused);
+        assert_eq!(delete_page(folder, "a.md").unwrap_err().to_string(), refused);
+        assert!(load_map(folder).is_err());
+        assert!(trash_count(folder).is_err());
+
+        assert_eq!(fs::read_to_string(session.join("a.md")).unwrap(), "# A\n");
+        let mut left: Vec<String> = fs::read_dir(outer.path().join("elsewhere")).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+        left.sort();
+        assert_eq!(left, vec!["session.json"]);
     }
 
     #[test]
