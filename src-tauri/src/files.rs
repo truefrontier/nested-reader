@@ -401,28 +401,45 @@ fn extract_pdf_text_naive(bytes: &[u8]) -> String {
     text
 }
 
+/// The parts of an HTML file a browser never shows, dropped in one pass: `<script>` and `<style>`
+/// elements in any case, and comments. One left open hides the rest of the file, as in a browser.
+fn drop_hidden_html(html: &str) -> String {
+    // ASCII lowercasing keeps every byte where it was, so an index into `lower` is one into `html`.
+    let lower = html.to_ascii_lowercase();
+    let mut out = String::with_capacity(html.len());
+    let mut i = 0;
+    while let Some(c) = html[i..].chars().next() {
+        let rest = &lower[i..];
+        let close = if rest.starts_with("<!--") {
+            Some("-->")
+        } else if rest.starts_with("<script") {
+            Some("</script")
+        } else if rest.starts_with("<style") {
+            Some("</style")
+        } else {
+            None
+        };
+        let Some(close) = close else {
+            out.push(c);
+            i += c.len_utf8();
+            continue;
+        };
+        i = match rest.find(close) {
+            // Past the closing tag's `>`, or the comment's `-->`.
+            Some(at) => lower[i + at..].find('>').map_or(html.len(), |gt| i + at + gt + 1),
+            None => html.len(),
+        };
+    }
+    out
+}
+
 /// Extract text content from an HTML file.
-/// Simple HTML-to-text conversion that strips tags and decodes entities.
+/// The text is shown as Markdown, so `&lt;`, `&gt;` and `&amp;` stay escaped: decoded, a page that
+/// shows `<b>` as text would render it as markup.
 fn extract_html_text(path: &Path) -> Result<String> {
     let html = fs::read_to_string(path)?;
-    
-    // Remove script and style tags and their content
-    let mut cleaned = html.clone();
-    while let Some(start) = cleaned.find("<script") {
-        if let Some(end) = cleaned[start..].find("</script>") {
-            cleaned.replace_range(start..start + end + 9, "");
-        } else {
-            break;
-        }
-    }
-    while let Some(start) = cleaned.find("<style") {
-        if let Some(end) = cleaned[start..].find("</style>") {
-            cleaned.replace_range(start..start + end + 8, "");
-        } else {
-            break;
-        }
-    }
-    
+    let cleaned = drop_hidden_html(&html);
+
     // Replace HTML tags with spaces
     let mut result = String::new();
     let mut in_tag = false;
@@ -437,23 +454,20 @@ fn extract_html_text(path: &Path) -> Result<String> {
             _ => {}
         }
     }
-    
-    // Decode common HTML entities
+
+    // Decode the entities that can't turn into Markdown or HTML syntax.
     result = result
         .replace("&nbsp;", " ")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&amp;", "&")
         .replace("&quot;", "\"")
         .replace("&#39;", "'")
         .replace("&apos;", "'");
-    
+
     // Normalize whitespace
     let text: String = result
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ");
-    
+
     Ok(text)
 }
 
@@ -1347,6 +1361,30 @@ mod tests {
         let page = read_page(folder, "sample.pdf").unwrap();
         assert_eq!(page.path, "sample.pdf");
         assert!(page.raw.contains("Nested PDF Fixture"));
+    }
+
+    /// An HTML page's text is shown as Markdown. So markup the page only shows (`&lt;b&gt;`) has to stay
+    /// escaped, or it renders as real markup; and what a browser hides (scripts and styles in any case,
+    /// comments) has to go, or it shows up as text.
+    #[test]
+    fn an_html_page_keeps_shown_markup_as_text_and_drops_what_a_browser_hides() {
+        let dir = folder();
+        let html = "<HTML><HEAD><STYLE>p { color: red }</STYLE><SCRIPT type=\"x\">var secret = 1;</SCRIPT></HEAD>\
+            <body><!-- note > aside --><p>Write &lt;b&gt;bold&lt;/b&gt; &amp; then&nbsp;&quot;quote&quot; it&#39;s done.</p>\
+            <script>let a = 1 > 0;</script><p>End.</p></body></HTML>";
+        fs::write(dir.path().join("a.html"), html).unwrap();
+        let page = read_page(dir.path().to_str().unwrap(), "a.html").unwrap();
+        assert_eq!(page.raw, "Write &lt;b&gt;bold&lt;/b&gt; &amp; then \"quote\" it's done. End.");
+    }
+
+    #[test]
+    fn an_unclosed_script_or_comment_hides_the_rest_as_a_browser_would() {
+        let dir = folder();
+        fs::write(dir.path().join("a.html"), "<p>Kept.</p><!-- never closed <p>Gone.</p>").unwrap();
+        fs::write(dir.path().join("b.html"), "<p>Kept.</p><script>var x = '<p>Gone.</p>';").unwrap();
+        let folder = dir.path().to_str().unwrap();
+        assert_eq!(read_page(folder, "a.html").unwrap().raw, "Kept.");
+        assert_eq!(read_page(folder, "b.html").unwrap().raw, "Kept.");
     }
 
     #[test]
