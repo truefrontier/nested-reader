@@ -33,6 +33,7 @@ import { nowIso } from "../lib/time";
 import { newFileMessages, newPageMessages, parseSummaries, quickAnswerMessages, refineMessages, summaryMessages, SUMMARY_BATCH_CHARS, SUMMARY_PAGE_CHARS, wholePageRewrite, type AskContext, type RefineScope } from "../lib/prompts";
 import { fingerprint, sessionMap, summaryIsCurrent, type SummaryCache } from "../lib/sessionmap";
 import { dirOf, folderChain, growsFrom, rootDirs, sessionPages } from "../lib/tree";
+import { closedVersionView, initialUi, uiAfterNavigate } from "./ui";
 
 export type Selection = {
   /** The pane the text was highlighted in: the box opens there and its verbs act on that pane's page. */
@@ -251,29 +252,6 @@ export type UpdateState = {
 const UPDATE_CHECK_DELAY = 4000;
 /** How often a running app looks again. */
 const UPDATE_CHECK_EVERY = 6 * 60 * 60 * 1000;
-
-const closedVersionView: VersionView = { history: false, confirmRestore: false };
-
-const initialUi: UiState = {
-  lookups: {},
-  lastPopoverMode: "ask",
-  versionView: { main: closedVersionView, split: closedVersionView },
-  refines: {},
-  fullscreen: false,
-  syncScroll: true,
-  filter: "",
-  unreadOnly: false,
-  changesOnly: false,
-  dragging: false,
-  find: false,
-  findQuery: "",
-  findIndex: 0,
-  findFocus: 0,
-  findSelect: 0,
-  filterFocus: 0,
-  feedbackMessage: "",
-  feedbackEmail: "",
-};
 
 /** What the OS can hand the app that it cannot open. */
 const OPENED_OTHERWISE = "Nested opens folders and .md files.";
@@ -1145,25 +1123,8 @@ export class ReaderStore {
         trail,
         trailIndex,
       });
-      const ui = this.state.ui;
-      // The split pane keeps its version view and its answer cards; only the main pane changed. The
-      // refine status of every page stays: those cards follow the work, not what is being read.
-      this.setUi({
-        ...initialUi,
-        filter: ui.filter,
-        unreadOnly: ui.unreadOnly,
-        changesOnly: ui.changesOnly,
-        map: undefined,
-        versionView: { ...initialUi.versionView, split: ui.versionView.split },
-        lookups,
-        refines: ui.refines,
-        lastPopoverMode: ui.lastPopoverMode,
-        feedbackMessage: ui.feedbackMessage,
-        feedbackEmail: ui.feedbackEmail,
-        // A toast offering an action stays, so a delete can be undone after moving to another page.
-        error: ui.toastAction ? ui.error : undefined,
-        toastAction: ui.toastAction,
-      });
+      // Only the main pane changed, so only what belonged to its old page goes; see uiAfterNavigate.
+      this.set({ ui: uiAfterNavigate(this.state.ui, lookups) });
       await this.refreshVersions(path);
       await this.refreshReview(path);
     } catch (e) {
