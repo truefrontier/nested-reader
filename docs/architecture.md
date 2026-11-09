@@ -190,7 +190,7 @@ The relay (`feedback-relay/worker.js`, on Fly through `server.mjs` and `handler.
 
 `.github/workflows/feedback-triage.yml` runs on a new issue carrying that label (or when the label is added by hand): Claude reads it, labels it bug, enhancement or question (and needs-info when it is too thin), looks for an earlier issue about the same thing, and leaves one comment saying where in the code it lands and a likely cause. `claude.yml` answers @claude mentions on issues and pull requests and `claude-code-review.yml` reviews each pull request with a sticky comment. All three need the Claude GitHub App installed and an `ANTHROPIC_API_KEY` repository secret.
 
-Feedback Triage reads text a stranger wrote, so its `gh issue edit` and `gh issue comment` are allowed only on the number of the issue it triages. An instruction hidden in a note can't relabel, retitle or comment on any other issue.
+Feedback Triage reads text a stranger wrote, so Claude there only decides. Its tools are read-only (`gh issue view`, `gh issue list`, `gh search issues`), plus writing files under `triage/`. It writes its labels to `triage/labels.txt` and its comment to `triage/comment.md`, and a plain shell step applies them to that one issue. Only `bug`, `enhancement`, `question` and `needs-info` count as labels, mentions in the comment are broken, and the step itself adds the `<!-- feedback-triage -->` marker. An instruction hidden in a note can't reach any other issue.
 
 ## Updates
 
