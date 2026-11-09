@@ -8,6 +8,8 @@ export type Wrap = {
   end: number;
   className: string;
   attrs?: Record<string, string>;
+  /** Set on the wrap's first span only, so a range split across bold or a link is still one Tab stop. */
+  lead?: Record<string, string>;
 };
 
 type Seg = { node: Text; start: number; end: number };
@@ -39,6 +41,7 @@ export function applyWraps(el: Element, wraps: Wrap[]): void {
   for (const w of wraps) {
     if (w.end <= w.start) continue;
     const segs = textNodes(el);
+    let first = true;
     for (const seg of segs) {
       const s = Math.max(w.start, seg.start);
       const e = Math.min(w.end, seg.end);
@@ -49,7 +52,8 @@ export function applyWraps(el: Element, wraps: Wrap[]): void {
       if (e < seg.end) node.splitText(e - s);
       const span = el.ownerDocument.createElement("span");
       span.className = w.className;
-      if (w.attrs) for (const [k, v] of Object.entries(w.attrs)) span.setAttribute(k, v);
+      for (const [k, v] of Object.entries({ ...w.attrs, ...(first ? w.lead : undefined) })) span.setAttribute(k, v);
+      first = false;
       node.parentNode?.insertBefore(span, node);
       span.appendChild(node);
     }

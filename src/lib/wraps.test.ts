@@ -144,6 +144,15 @@ test("wraps carry their attributes, and later wraps still count from the origina
   assert.equal(html(p), '<p><span class="ask" data-ask="0">Ripples</span> carry <span class="change">the sequence</span>.</p>');
 });
 
+test("a wrap's lead attributes go on its first span only, so a split range is one Tab stop", () => {
+  const p = h("p", "Hello ", h("b", "big"), " world");
+  applyWraps(asElement(p), [{ start: 4, end: 11, className: "asked", attrs: { "data-asked": "0" }, lead: { tabindex: "0", role: "button" } }]);
+  assert.equal(
+    html(p),
+    '<p>Hell<span class="asked" data-asked="0" tabindex="0" role="button">o </span><b><span class="asked" data-asked="0">big</span></b><span class="asked" data-asked="0"> w</span>orld</p>',
+  );
+});
+
 test("an empty or backwards wrap changes nothing", () => {
   const p = h("p", "Ripples.");
   applyWraps(asElement(p), [

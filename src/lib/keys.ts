@@ -23,11 +23,15 @@ export type PressEvent = {
  * comes up from something focused inside (a menu item, a rename box) is that thing's to handle.
  */
 export function pressOnKey(e: PressEvent): void {
-  if (e.key !== "Enter" && e.key !== " ") return;
-  if (e.metaKey || e.ctrlKey || e.altKey || e.target !== e.currentTarget) return;
+  if (!isPress(e) || e.target !== e.currentTarget) return;
   e.preventDefault();
   e.stopPropagation();
   e.currentTarget.click();
+}
+
+/** Enter or Space with no ⌘, ⌃ or ⌥: the keys that press a button. */
+export function isPress(e: Pick<PressEvent, "key" | "metaKey" | "ctrlKey" | "altKey">): boolean {
+  return (e.key === "Enter" || e.key === " ") && !e.metaKey && !e.ctrlKey && !e.altKey;
 }
 
 /** Spread on a clickable span or div to make it a button for the keyboard and a screen reader. */
