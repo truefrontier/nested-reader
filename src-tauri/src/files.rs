@@ -95,14 +95,18 @@ pub fn list_pages(folder: &str) -> Result<Vec<RawPage>> {
         }
         let Some(rel) = rel_string(root, path) else { continue };
         let raw = if is_markdown(path) {
-            fs::read_to_string(path)?
+            fs::read_to_string(path).map_err(AppError::from)
         } else if is_pdf(path) {
-            extract_pdf_text(path)?
+            extract_pdf_text(path)
         } else if is_html(path) {
-            extract_html_text(path)?
+            extract_html_text(path)
         } else {
             continue;
         };
+        // A file that can't be read (a scan with no text, a PDF the parser rejects, a note that
+        // isn't UTF-8) is left out, rather than keeping the whole folder from opening. Opened on its
+        // own, it says why.
+        let Ok(raw) = raw else { continue };
         let meta = entry.metadata().ok();
         out.push(RawPage {
             path: rel,
@@ -354,8 +358,11 @@ fn is_openable_page(path: &Path) -> bool {
 fn extract_pdf_text(path: &Path) -> Result<String> {
     let bytes = fs::read(path)?;
     
-    let raw_text = match pdf_extract::extract_text_from_mem(&bytes) {
-        Ok(text) => {
+    // pdf-extract panics on some malformed files (text shown before any font is set, a missing
+    // font). That is a PDF it can't read, so it takes the same fallback as one it rejects.
+    let parsed = std::panic::catch_unwind(|| pdf_extract::extract_text_from_mem(&bytes)).ok().and_then(|r| r.ok());
+    let raw_text = match parsed {
+        Some(text) => {
             let trimmed = text.trim();
             if trimmed.is_empty() {
                 // PDF exists but has no extractable text (e.g., scanned image-only PDF)
@@ -366,7 +373,7 @@ fn extract_pdf_text(path: &Path) -> Result<String> {
             }
             text
         }
-        Err(_e) => {
+        None => {
             // pdf-extract failed, try naive BT/ET fallback for simple test PDFs
             let text = extract_pdf_text_naive(&bytes);
             if text.trim().is_empty() {
@@ -1342,6 +1349,70 @@ mod tests {
         let paths: Vec<&str> = pages.iter().map(|p| p.path.as_str()).collect();
         assert!(paths.contains(&"a.md"));
         assert!(paths.contains(&"test.html"));
+    }
+
+    /// A one-page PDF whose page draws `content`, with no fonts of its own.
+    fn one_page_pdf(content: &str) -> Vec<u8> {
+        let objects = [
+            "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_string(),
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R >>".to_string(),
+            format!("<< /Length {} >>\nstream\n{content}\nendstream", content.len()),
+        ];
+        let mut out = b"%PDF-1.4\n".to_vec();
+        let mut offsets = Vec::new();
+        for (i, object) in objects.iter().enumerate() {
+            offsets.push(out.len());
+            out.extend_from_slice(format!("{} 0 obj\n{object}\nendobj\n", i + 1).as_bytes());
+        }
+        let xref = out.len();
+        out.extend_from_slice(format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1).as_bytes());
+        for offset in offsets {
+            out.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+        }
+        out.extend_from_slice(format!("trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n", objects.len() + 1).as_bytes());
+        out
+    }
+
+    /// A scan has no text layer. It can't be read or asked about, but the folder's notes can.
+    #[test]
+    fn a_folder_with_a_scanned_pdf_still_lists_its_notes() {
+        let dir = folder();
+        write_md(dir.path(), "notes.md", "# Notes\n");
+        fs::write(dir.path().join("scan.pdf"), one_page_pdf("")).unwrap();
+        // An old note saved as Latin-1 isn't UTF-8 either.
+        fs::write(dir.path().join("latin.md"), b"# Caf\xe9\n").unwrap();
+        let folder = dir.path().to_str().unwrap();
+        let paths: Vec<String> = list_pages(folder).unwrap().into_iter().map(|p| p.path).collect();
+        assert_eq!(paths, vec!["notes.md"]);
+        // Opened on its own, each still says why.
+        assert!(read_page(folder, "latin.md").is_err());
+        assert!(read_page(folder, "scan.pdf").map(|p| p.raw).unwrap_err().to_string().contains("no extractable text"));
+    }
+
+    /// pdf-extract panics on some malformed files: here, text shown before any font is set. A release
+    /// build aborts on a panic, so one such PDF in a folder closed the app whenever the folder opened.
+    #[test]
+    fn a_pdf_the_parser_chokes_on_is_an_error_not_a_crash() {
+        let dir = folder();
+        write_md(dir.path(), "notes.md", "# Notes\n");
+        fs::write(dir.path().join("broken.pdf"), one_page_pdf("BT 10 10 Td (Hello) Tj ET")).unwrap();
+        let folder = dir.path().to_str().unwrap();
+        let listed = std::panic::catch_unwind(|| list_pages(folder).map(|pages| pages.into_iter().map(|p| p.path).collect::<Vec<_>>()));
+        let listed = listed.expect("listing the folder panicked");
+        assert!(listed.is_ok(), "{:?}", listed.err().map(|e| e.to_string()));
+        assert!(listed.unwrap().contains(&"notes.md".to_string()));
+        let read = std::panic::catch_unwind(|| read_page(folder, "broken.pdf").map(|p| p.raw));
+        assert!(read.is_ok(), "reading the PDF panicked");
+    }
+
+    /// `catch_unwind` can only catch a panic that unwinds. With `panic = "abort"` in the release
+    /// profile, the guard above would hold in `cargo test` and still crash the app people run.
+    #[test]
+    fn release_builds_unwind_so_a_parser_panic_can_be_caught() {
+        let manifest = include_str!("../Cargo.toml");
+        let release = manifest.split("[profile.release]").nth(1).unwrap_or("").split("\n[").next().unwrap_or("");
+        assert!(!release.contains("panic = \"abort\""), "[profile.release] aborts on panic");
     }
 
     #[test]
