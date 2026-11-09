@@ -50,14 +50,25 @@ marked.use({
   ],
 });
 
-// A plain click on a web link would take the whole window to the site, with no way back to the
-// reader. With target=_blank the opener plugin's click handler opens it in the browser instead.
-DOMPurify.addHook("afterSanitizeAttributes", (node) => {
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+/**
+ * A plain click on a web link would take the whole window to the site, with no way back to the
+ * reader. With target=_blank the opener plugin's click handler opens it in the browser instead.
+ * That handler only picks up an HTML `<a>`, so the two other links a note can carry lose their
+ * address and stay as plain shapes or text: an image map's `<area>`, and an SVG `<a>`, whose
+ * `target` the handler can't read.
+ */
+export function keepLinksInReader(node: Element) {
   if (node.tagName === "A" && /^https?:/i.test(node.getAttribute("href") ?? "")) {
     node.setAttribute("target", "_blank");
     node.setAttribute("rel", "noopener noreferrer");
+  } else if (node.tagName === "AREA" || (node.namespaceURI === SVG_NS && node.tagName === "a")) {
+    node.removeAttribute("href");
+    node.removeAttribute("xlink:href");
   }
-});
+}
+DOMPurify.addHook("afterSanitizeAttributes", keepLinksInReader);
 
 const scratch = typeof document !== "undefined" ? document.createElement("div") : null;
 

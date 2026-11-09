@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { findWikiLink, flexiblePattern, isStubBody, joinBlocks, lexBlocks, linkTextInRaw, renderInline, replaceFlexible, resolveWikiTarget, withLineEndings } from "./markdown";
+import { findWikiLink, flexiblePattern, isStubBody, joinBlocks, keepLinksInReader, lexBlocks, linkTextInRaw, renderInline, replaceFlexible, resolveWikiTarget, withLineEndings } from "./markdown";
 
 test("joinBlocks gives back the body lexBlocks split, byte for byte", () => {
   const body = "\n# Title\n\nFirst paragraph\nhard-wrapped.\n\n- one\n- two\n\n```js\nx = 1\n```\n\n\nLast.";
@@ -81,4 +81,29 @@ test("a file that mixes endings comes back all in the one it uses more", () => {
 test("withLineEndings turns a whole LF text into CRLF for a CRLF body, front matter and all", () => {
   assert.equal(withLineEndings("---\ntitle: Sleep\n---\n\n# Sleep\n", "# Sleep\r\n"), "---\r\ntitle: Sleep\r\n---\r\n\r\n# Sleep\r\n");
   assert.equal(withLineEndings("# Sleep\n", ""), "# Sleep\n");
+});
+
+/** An element as DOMPurify's hook sees it, holding only what the hook reads and writes. */
+function element(nodeName: string, attrs: Record<string, string>, namespaceURI = "http://www.w3.org/1999/xhtml") {
+  const held = new Map(Object.entries(attrs));
+  const node = {
+    nodeName,
+    tagName: nodeName,
+    namespaceURI,
+    getAttribute: (name: string) => held.get(name) ?? null,
+    setAttribute: (name: string, value: string) => void held.set(name, value),
+    removeAttribute: (name: string) => void held.delete(name),
+  };
+  keepLinksInReader(node as unknown as Element);
+  return Object.fromEntries(held);
+}
+
+test("a web link opens in the browser, and links the browser can't be handed lose their address", () => {
+  assert.deepEqual(element("A", { href: "https://example.com/" }), { href: "https://example.com/", target: "_blank", rel: "noopener noreferrer" });
+  assert.deepEqual(element("A", { class: "wl", href: "#", "data-target": "x" }), { class: "wl", href: "#", "data-target": "x" });
+  // An image map's area, and an SVG link, would take the window itself to the site.
+  assert.deepEqual(element("AREA", { shape: "rect", coords: "0,0,9,9", href: "https://attacker.example/" }), { shape: "rect", coords: "0,0,9,9" });
+  const svg = "http://www.w3.org/2000/svg";
+  assert.deepEqual(element("a", { href: "https://attacker.example/" }, svg), {});
+  assert.deepEqual(element("a", { "xlink:href": "https://attacker.example/" }, svg), {});
 });
