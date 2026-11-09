@@ -107,3 +107,16 @@ test("a web link opens in the browser, and links the browser can't be handed los
   assert.deepEqual(element("a", { href: "https://attacker.example/" }, svg), {});
   assert.deepEqual(element("a", { "xlink:href": "https://attacker.example/" }, svg), {});
 });
+
+test("a web link is found the way the browser reads it, and other ways to take the window lose their address", () => {
+  // The URL parser drops a tab or newline anywhere and control characters in front, so these are https links.
+  const blank = { target: "_blank", rel: "noopener noreferrer" };
+  assert.deepEqual(element("A", { href: "ht\ttps://attacker.example/" }), { href: "ht\ttps://attacker.example/", ...blank });
+  assert.deepEqual(element("A", { href: "\u0001HTTPS://attacker.example/" }), { href: "\u0001HTTPS://attacker.example/", ...blank });
+  // Mermaid's own hooks, once a diagram turns its HTML labels on, put an author's target back from this attribute.
+  assert.deepEqual(element("A", { href: "https://example.com/", target: "_self", "data-temp-href-target": "_self" }), { href: "https://example.com/", ...blank });
+  // WebKit follows an href on any MathML element.
+  const math = "http://www.w3.org/1998/Math/MathML";
+  assert.deepEqual(element("math", { href: "https://attacker.example/", display: "block" }, math), { display: "block" });
+  assert.deepEqual(element("mtext", { href: "https://attacker.example/" }, math), {});
+});
