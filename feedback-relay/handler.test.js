@@ -92,6 +92,11 @@ test("update checks and health checks aren't counted as notes", async (t) => {
     assert.equal((await fetch(`${base}/updates/latest.json`, { headers: { "Fly-Client-IP": "203.0.113.4" } })).status, 500);
     assert.equal((await fetch(`${base}/healthz`)).status, 200);
   }
+  // A POST to an update route files nothing (the worker answers 405), so it isn't counted either.
+  for (let i = 0; i < 3; i++) {
+    const res = await fetch(`${base}/updates/latest.json`, { method: "POST", headers: { "Fly-Client-IP": "203.0.113.4" } });
+    assert.equal(res.status, 405);
+  }
   assert.equal((await note(base, { "Fly-Client-IP": "203.0.113.4" })).status, 500);
 });
 

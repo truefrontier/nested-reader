@@ -23,7 +23,8 @@ export function nodeHandler(env, { behindFly = false, limiter = noteLimiter() } 
       return;
     }
 
-    if (req.method === "POST") {
+    // The worker files any POST outside /updates as a note; those are what's counted.
+    if (req.method === "POST" && !req.url.startsWith("/updates")) {
       const wait = limiter(addressKey(callerAddress(req, behindFly)));
       if (wait) {
         const minutes = Math.ceil(wait / 60);
