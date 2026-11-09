@@ -77,14 +77,29 @@ pub struct PingResult {
 pub const KEYCHAIN_SERVICE: &str = "app.nestedreader.nested";
 
 pub fn api_key(provider: &str) -> Result<String> {
-    let entry = keyring::Entry::new(KEYCHAIN_SERVICE, provider)?;
-    match entry.get_password() {
+    match stored_key(provider) {
         Ok(k) if !k.trim().is_empty() => Ok(k),
         Ok(_) | Err(keyring::Error::NoEntry) => Err(AppError::Message(format!(
             "No API key for {provider}. Add one in Settings › AI."
         ))),
         Err(e) => Err(e.into()),
     }
+}
+
+#[cfg(not(test))]
+fn stored_key(provider: &str) -> keyring::Result<String> {
+    keyring::Entry::new(KEYCHAIN_SERVICE, provider)?.get_password()
+}
+
+/// The keys tests see. `cargo test` never reaches the login keychain: a key the app stored there
+/// would be read (or a macOS prompt would stall the run) and sent to the tests' fake servers.
+#[cfg(test)]
+pub(crate) static TEST_KEYS: std::sync::Mutex<Vec<(String, String)>> = std::sync::Mutex::new(Vec::new());
+
+#[cfg(test)]
+fn stored_key(provider: &str) -> keyring::Result<String> {
+    let keys = TEST_KEYS.lock().unwrap();
+    keys.iter().find(|(p, _)| p == provider).map(|(_, k)| k.clone()).ok_or(keyring::Error::NoEntry)
 }
 
 fn openai_base(req_base: Option<&str>, provider: &str) -> String {
