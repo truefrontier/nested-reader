@@ -304,6 +304,7 @@ pub async fn stream_claude(req: &AiRequest, channel: &Channel<StreamEvent>, canc
     // a blunt, app-side backstop: a rough chars-per-token estimate, generous enough not to cut off
     // a real answer, that kills the child rather than waiting for it to finish on its own.
     let budget_chars = req.max_tokens.map(|t| t as usize * 8).unwrap_or(32_000);
+    let mut finished = false;
     let (ok, stderr) = run_lines(child, "Claude Code", idle_cap(req), cancel, |v| {
         match v["type"].as_str() {
             Some("stream_event") => {
@@ -346,6 +347,7 @@ pub async fn stream_claude(req: &AiRequest, channel: &Channel<StreamEvent>, canc
                 }
             }
             Some("result") => {
+                finished = true;
                 if v["is_error"].as_bool().unwrap_or(false) {
                     let msg = v["result"].as_str().unwrap_or("Claude Code returned an error");
                     failure = Some(if msg.contains("Not logged in") {
@@ -373,6 +375,10 @@ pub async fn stream_claude(req: &AiRequest, channel: &Channel<StreamEvent>, canc
     // leaves a partial answer that must not be mistaken for a finished one.
     if !ok {
         return Err(AppError::Message(last_line(&stderr).unwrap_or_else(|| "Claude Code exited with an error".into())));
+    }
+    // A CLI cut off mid-answer can still exit 0, so only the `result` line says the answer is whole.
+    if !finished {
+        return Err(AppError::Message("Claude Code exited before it finished its answer".into()));
     }
     Ok(false)
 }
@@ -441,6 +447,7 @@ pub async fn stream_codex(req: &AiRequest, channel: &Channel<StreamEvent>, cance
     // pages with its own shell; from the neutral folder it has nothing to read.
     let child = spawn(cmd, req.folder.as_deref(), Stdio::null())?;
     let mut failure: Option<String> = None;
+    let mut finished = false;
     let (ok, stderr) = run_lines(child, "Codex", idle_cap(req), cancel, |v| {
         match v["type"].as_str() {
             Some("item.started") if v["item"]["type"] == "command_execution" => {
@@ -457,7 +464,10 @@ pub async fn stream_codex(req: &AiRequest, channel: &Channel<StreamEvent>, cance
                     let _ = channel.send(StreamEvent::Delta { text: t.to_string() });
                 }
             }
-            Some("turn.completed") => return Ok(Next::Wait),
+            Some("turn.completed") => {
+                finished = true;
+                return Ok(Next::Wait);
+            }
             Some("turn.failed") | Some("error") => {
                 let msg = v["error"]["message"]
                     .as_str()
@@ -478,6 +488,10 @@ pub async fn stream_codex(req: &AiRequest, channel: &Channel<StreamEvent>, cance
     // page") before its answer, and `done` would let a whole-page refine write it in the page's place.
     if !ok {
         return Err(AppError::Message(codex_exit_error(&stderr)));
+    }
+    // An exit 0 without `turn.completed` leaves only the messages so far, maybe just an interim one.
+    if !finished {
+        return Err(AppError::Message("Codex exited before it finished its answer".into()));
     }
     Ok(false)
 }
@@ -747,6 +761,56 @@ exec sleep 30
         let events = events.lock().unwrap();
         assert_eq!(kinds(&events), ["delta", "done"]);
         assert_eq!(events[1]["truncated"], false);
+    }
+
+    const DELTA: &str = r#"{"type":"stream_event","event":{"delta":{"type":"text_delta","text":"Ripples carry"}}}"#;
+    const TURN_COMPLETED: &str = r#"{"type":"turn.completed"}"#;
+
+    /// A CLI cut off mid-answer can still exit 0. Without its `result` line the text is only part of
+    /// an answer, and `done` would let a whole-page refine write that part in the page's place.
+    #[tokio::test]
+    async fn a_claude_that_exits_cleanly_without_its_result_ends_in_an_error() {
+        let _dir = install_script(&format!("#!/bin/sh\ncat > /dev/null\necho '{DELTA}'\n"), Some(SHORT_CAP));
+        let (channel, events) = collect();
+        assert!(crate::ai::stream(request(4000), channel, CancelToken::default()).await);
+        let events = events.lock().unwrap();
+        assert_eq!(kinds(&events), ["delta", "error"]);
+        assert_eq!(events[1]["message"], "Claude Code exited before it finished its answer");
+    }
+
+    /// The same for Codex, where the text so far may be only an interim message.
+    #[tokio::test]
+    async fn a_codex_that_exits_cleanly_without_finishing_its_turn_ends_in_an_error() {
+        let (_dir, req) = codex(&format!("#!/bin/sh\necho '{INTERIM}'\n"));
+        let (channel, events) = collect();
+        assert!(crate::ai::stream(req, channel, CancelToken::default()).await);
+        let events = events.lock().unwrap();
+        assert_eq!(kinds(&events), ["delta", "error"]);
+        assert_eq!(events[1]["message"], "Codex exited before it finished its answer");
+    }
+
+    /// The control for the Claude test above: the same run with its `result` line is done. Codex's
+    /// is `a_codex_that_finishes_its_turn_is_done`.
+    #[tokio::test]
+    async fn a_claude_that_sends_its_result_and_exits_is_done() {
+        let _dir = install_script(&format!("#!/bin/sh\ncat > /dev/null\necho '{DELTA}'\necho '{RESULT}'\n"), Some(SHORT_CAP));
+        let (channel, events) = collect();
+        assert!(crate::ai::stream(request(4000), channel, CancelToken::default()).await);
+        let events = events.lock().unwrap();
+        assert_eq!(kinds(&events), ["delta", "done"]);
+        assert_eq!(events[1]["truncated"], false);
+    }
+
+    /// PR #98's case: a Codex that finishes its turn but won't leave is still done once the cap kills it.
+    #[tokio::test]
+    async fn a_codex_that_wont_exit_after_its_turn_still_finishes() {
+        let (dir, req) = codex(&format!("#!/bin/sh\necho '{INTERIM}'\necho '{TURN_COMPLETED}'\necho $$ > \"$0.pid\"\nexec sleep 30\n"));
+        let (channel, events) = collect();
+        let started = Instant::now();
+        assert!(crate::ai::stream(req, channel, CancelToken::default()).await);
+        assert_eq!(kinds(&events.lock().unwrap()), ["delta", "done"]);
+        assert!(started.elapsed() < Duration::from_secs(10), "took {:?}", started.elapsed());
+        assert!(!still_running(&dir));
     }
 
     /// Cancelling still works once reading is over and only the exit is being waited for.
