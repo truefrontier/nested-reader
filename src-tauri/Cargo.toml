@@ -53,5 +53,7 @@ aptabase = ["dep:freshjuice-tauri-aptabase"]
 codegen-units = 1
 lto = true
 opt-level = 3
-panic = "abort"
+# Unwind, so files::extract_pdf_text can catch a pdf-extract panic: with "abort", one malformed
+# PDF in a session folder closed the app every time that folder opened. Costs some binary size.
+panic = "unwind"
 strip = true
