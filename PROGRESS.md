@@ -1032,3 +1032,26 @@
 ### Verification
 - `cargo test --lib`: 77 → 95 passed (12 ignored). `pnpm test`: 103 → 115.
 - The contract test fails if `okLabel` is renamed in `tauri.ts`, or `n` in `lib.rs`'s `read_version`. The table-whitespace test in `wraps.test.ts` fails if that check is removed.
+
+## Session: 2026-11-09 — a third-party notices file for the shipped app (#257)
+
+### Leading assumptions
+- Overflow task: the app ships 351 Rust crates and 120 npm packages, and most of their licenses (MIT, Apache-2.0, BSD) ask that their notice travel with every copy. The repo had only its own `LICENSE`. Build the notices file from the lockfiles with a script, ship it in the `.app`, and add a check so a new dependency can't arrive without one. No UI.
+- "Shipped" means what ends up in the universal Mac app: crates reached from `nested` through normal dependencies on `aarch64-apple-darwin` or `x86_64-apple-darwin`, and `pnpm licenses list --prod`. Build-script and test-only crates are left out; proc-macro crates stay in, since splitting them out buys little.
+
+### World facts
+- `scripts/third-party-notices.mjs` runs `cargo metadata --offline --filter-platform` once per Mac target and walks normal edges from the workspace, then reads `pnpm licenses list --prod --json`. It copies each package's `LICENSE*`, `COPYING*`, `NOTICE*` and `UNLICENSE` files from `~/.cargo/registry/src` and `node_modules`, and writes `THIRD_PARTY_NOTICES.md` grouped by license (flat `OR` choices are sorted, so `MIT/Apache-2.0` and `Apache-2.0 OR MIT` are one group). Packages in a group that ship the same text, ignoring wrapping, share one copy. The output is sorted and has no dates, so a second run gives no diff.
+- It also writes `scripts/third-party-notices.not-shipped.json`: the 293 lockfile packages left out, each "build or test only" or "not used on macOS".
+- `src/thirdPartyNotices.test.ts` (in `pnpm test`, no cargo, no network) parses `Cargo.lock` and `pnpm-lock.yaml` and fails on any `name@version` that is in neither file, so a new or bumped dependency fails until the script is re-run. It also checks `tauri.conf.json` bundles the file.
+- `tauri.conf.json` `bundle.resources` maps `../THIRD_PARTY_NOTICES.md` to `THIRD_PARTY_NOTICES.md`, so it lands in `Nested.app/Contents/Resources/`.
+- Five crates ship only in the Intel half (`core_detect`, `cpufeatures 0.3.1`, `multiversion`, `multiversion-macros`, `rustversion`), which is why the script resolves both targets.
+- `cargo metadata --offline` needs each crate's `.crate` file in `~/.cargo/registry/cache`. Here `core_detect`'s had been cleaned away (its unpacked source was still there), so the Intel resolve failed. This session ran the script with a scratch `CARGO_HOME` that links the real index and sources and stands in an empty placeholder for that one `.crate`; cargo then used the unpacked source. Normally `cargo fetch` once in `src-tauri` is the fix.
+
+### Verification
+- `pnpm test`: 145 → 148 passed. `pnpm build` passed. Two runs of the script gave byte-identical files.
+- The check fails with the missing names listed when a `serde_json` line is dropped from the notices, and when six `2.5.0` crates in `Cargo.lock` are bumped to `2.5.9`; both restored.
+- Not checked: a real `pnpm tauri build` to see the file inside the bundle.
+
+### Possible next steps
+- Show the file from Settings › General or an About window, for Kevin to decide.
+- The check can't see a crate move from `[dev-dependencies]` to `[dependencies]` at the same version; re-run the script after any `Cargo.toml` dependency change too.
