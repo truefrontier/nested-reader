@@ -200,7 +200,9 @@ where
     F: FnMut(&str) -> Result<bool>,
 {
     let mut body = resp.bytes_stream();
-    let mut buf = String::new();
+    // Bytes, not text: a chunk can end inside a character, which decoding chunk by chunk would
+    // turn into two replacement marks. A newline byte is never part of a longer character.
+    let mut buf: Vec<u8> = Vec::new();
     loop {
         let chunk = tokio::select! {
             chunk = body.next() => match chunk {
@@ -211,9 +213,9 @@ where
             // cancels, rather than waiting for the next chunk or the read timeout.
             _ = cancel.cancelled() => return Ok(()),
         };
-        buf.push_str(&String::from_utf8_lossy(&chunk));
-        while let Some(pos) = buf.find('\n') {
-            let line = buf[..pos].trim_end_matches('\r').to_string();
+        buf.extend_from_slice(&chunk);
+        while let Some(pos) = buf.iter().position(|&b| b == b'\n') {
+            let line = String::from_utf8_lossy(&buf[..pos]).trim_end_matches('\r').to_string();
             buf.drain(..=pos);
             if let Some(data) = line.strip_prefix("data:") {
                 if !on_data(data.trim())? {
@@ -230,7 +232,8 @@ where
     F: FnMut(&str) -> Result<bool>,
 {
     let mut body = resp.bytes_stream();
-    let mut buf = String::new();
+    // Bytes, for the same reason as `read_sse`.
+    let mut buf: Vec<u8> = Vec::new();
     loop {
         let chunk = tokio::select! {
             chunk = body.next() => match chunk {
@@ -241,9 +244,9 @@ where
             // cancels, rather than waiting for the next chunk or the read timeout.
             _ = cancel.cancelled() => return Ok(()),
         };
-        buf.push_str(&String::from_utf8_lossy(&chunk));
-        while let Some(pos) = buf.find('\n') {
-            let line = buf[..pos].trim().to_string();
+        buf.extend_from_slice(&chunk);
+        while let Some(pos) = buf.iter().position(|&b| b == b'\n') {
+            let line = String::from_utf8_lossy(&buf[..pos]).trim().to_string();
             buf.drain(..=pos);
             if !line.is_empty() && !on_line(&line)? {
                 return Ok(());
@@ -1307,5 +1310,267 @@ data: [DONE]\n\n";
         let seen = seen.lock().unwrap();
         assert_eq!(seen.len(), 1);
         assert!(seen[0].get("tools").is_none());
+    }
+}
+
+/// Request building, base URLs, stream parsing and error mapping, against a fake server on
+/// localhost that records what reaches it. Nothing here calls a real provider or the keychain.
+#[cfg(test)]
+mod requests {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    /// One request as the fake server saw it: the request line, the lower-cased head, the JSON body.
+    #[derive(Clone)]
+    struct Seen {
+        line: String,
+        head: String,
+        body: Value,
+    }
+
+    /// Answers one request per reply. A reply goes out in the given pieces, with a pause between,
+    /// so the client reads each piece as its own chunk and a test can split a reply anywhere.
+    async fn serve(replies: Vec<(u16, Vec<&'static [u8]>)>) -> (String, Arc<Mutex<Vec<Seen>>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let seen: Arc<Mutex<Vec<Seen>>> = Arc::default();
+        let sink = seen.clone();
+        tokio::spawn(async move {
+            for (status, pieces) in replies {
+                let (mut sock, _) = listener.accept().await.unwrap();
+                let mut buf = Vec::new();
+                let (head_end, length) = loop {
+                    let mut chunk = [0u8; 4096];
+                    let n = sock.read(&mut chunk).await.unwrap();
+                    buf.extend_from_slice(&chunk[..n]);
+                    if let Some(pos) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+                        let head = String::from_utf8_lossy(&buf[..pos]).to_lowercase();
+                        let length: usize = head
+                            .lines()
+                            .find_map(|l| l.strip_prefix("content-length:"))
+                            .and_then(|v| v.trim().parse().ok())
+                            .unwrap_or(0);
+                        if buf.len() >= pos + 4 + length {
+                            break (pos, length);
+                        }
+                    }
+                };
+                let head = String::from_utf8_lossy(&buf[..head_end]).to_string();
+                let body = serde_json::from_slice(&buf[head_end + 4..head_end + 4 + length]).unwrap_or(Value::Null);
+                let line = head.lines().next().unwrap_or("").to_string();
+                sink.lock().unwrap().push(Seen { line, head: head.to_lowercase(), body });
+                let total: usize = pieces.iter().map(|p| p.len()).sum();
+                let reply = format!("HTTP/1.1 {status} X\r\nContent-Type: text/event-stream\r\nConnection: close\r\nContent-Length: {total}\r\n\r\n");
+                sock.write_all(reply.as_bytes()).await.unwrap();
+                for piece in pieces {
+                    sock.write_all(piece).await.unwrap();
+                    sock.flush().await.unwrap();
+                    tokio::time::sleep(Duration::from_millis(40)).await;
+                }
+                sock.shutdown().await.unwrap();
+            }
+        });
+        (base, seen)
+    }
+
+    fn collect() -> (Channel<StreamEvent>, Arc<Mutex<Vec<Value>>>) {
+        let events: Arc<Mutex<Vec<Value>>> = Arc::default();
+        let sink = events.clone();
+        let channel = Channel::new(move |body: tauri::ipc::InvokeResponseBody| {
+            if let tauri::ipc::InvokeResponseBody::Json(json) = body {
+                sink.lock().unwrap().push(serde_json::from_str(&json).unwrap());
+            }
+            Ok(())
+        });
+        (channel, events)
+    }
+
+    fn request(provider: &str, base: &str) -> AiRequest {
+        AiRequest {
+            provider: provider.into(),
+            auth: None,
+            model: "test-model".into(),
+            base_url: Some(base.into()),
+            system: Some("Answer briefly.".into()),
+            messages: vec![ChatMessage { role: "user".into(), content: "What carries the sequence?".into() }],
+            max_tokens: Some(200),
+            folder: None,
+            roots: vec![],
+            excluded: vec![],
+            web_access: false,
+            kind: None,
+        }
+    }
+
+    /// Runs one stream to its end: what the server saw, and the events the UI got.
+    async fn run(req: AiRequest, replies: Vec<(u16, Vec<&'static [u8]>)>) -> (Vec<Seen>, Vec<Value>) {
+        let (base, seen) = serve(replies).await;
+        let req = AiRequest { base_url: req.base_url.map(|b| b.replace("{base}", &base)), ..req };
+        let (channel, events) = collect();
+        assert!(stream(req, channel, CancelToken::default()).await, "the stream sends its last event");
+        let seen = seen.lock().unwrap().clone();
+        let events = events.lock().unwrap().clone();
+        (seen, events)
+    }
+
+    fn text(events: &[Value]) -> String {
+        events.iter().filter(|e| e["type"] == "delta").map(|e| e["text"].as_str().unwrap_or("")).collect()
+    }
+
+    const ANTHROPIC_HELLO: &[u8] = b"data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n\
+data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello.\"}}\n\n\
+data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"}}\n\n\
+data: {\"type\":\"message_stop\"}\n\n";
+
+    const OPENAI_HELLO: &[u8] = b"data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hello.\"}}]}\n\n\
+data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n\
+data: [DONE]\n\n";
+
+    const OLLAMA_HELLO: &[u8] = b"{\"model\":\"m\",\"message\":{\"role\":\"assistant\",\"content\":\"Hello.\"},\"done\":false}\n\
+{\"model\":\"m\",\"message\":{\"role\":\"assistant\",\"content\":\"\"},\"done\":true,\"done_reason\":\"stop\"}\n";
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn anthropic_request_puts_the_system_prompt_on_top_and_defaults_the_budget() {
+        let mut req = request("anthropic", "{base}/");
+        req.max_tokens = None;
+        let (seen, events) = run(req, vec![(200, vec![ANTHROPIC_HELLO])]).await;
+        assert_eq!(seen.len(), 1);
+        assert!(seen[0].line.starts_with("POST /v1/messages "), "{}", seen[0].line);
+        assert!(seen[0].head.contains("anthropic-version: 2023-06-01"), "{}", seen[0].head);
+        let body = &seen[0].body;
+        assert_eq!(body["model"], "test-model");
+        assert_eq!(body["max_tokens"], 2048);
+        assert_eq!(body["stream"], true);
+        assert_eq!(body["system"], "Answer briefly.");
+        assert_eq!(body["messages"], json!([{ "role": "user", "content": "What carries the sequence?" }]));
+        assert!(body.get("tools").is_none(), "no folder and no web, so no tools");
+        assert_eq!(text(&events), "Hello.");
+        assert_eq!(events.last().unwrap(), &json!({ "type": "done", "truncated": false }));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_custom_server_gets_the_openai_shape_at_its_own_trimmed_url() {
+        let (seen, events) = run(request("custom", "  {base}/v1/  "), vec![(200, vec![OPENAI_HELLO])]).await;
+        assert!(seen[0].line.starts_with("POST /v1/chat/completions "), "{}", seen[0].line);
+        // No Custom key is stored, so none is sent.
+        assert!(!seen[0].head.contains("authorization:"), "{}", seen[0].head);
+        let body = &seen[0].body;
+        assert_eq!(body["messages"][0], json!({ "role": "system", "content": "Answer briefly." }));
+        assert_eq!(body["messages"][1]["role"], "user");
+        // OpenAI's newer name and the older one most compatible servers still read.
+        assert_eq!(body["max_completion_tokens"], 200);
+        assert_eq!(body["max_tokens"], 200);
+        assert!(body.get("tools").is_none());
+        assert_eq!(text(&events), "Hello.");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn ollama_gets_thinking_off_and_its_own_token_cap() {
+        let (seen, events) = run(request("ollama", "{base}/"), vec![(200, vec![OLLAMA_HELLO])]).await;
+        assert!(seen[0].line.starts_with("POST /api/chat "), "{}", seen[0].line);
+        let body = &seen[0].body;
+        assert_eq!(body["think"], false);
+        assert_eq!(body["options"], json!({ "num_predict": 200 }));
+        assert_eq!(body["messages"][0]["role"], "system");
+        assert_eq!(text(&events), "Hello.");
+        assert_eq!(events.last().unwrap()["type"], "done");
+    }
+
+    #[test]
+    fn base_urls_are_trimmed_and_fall_back_per_provider() {
+        assert_eq!(ollama_base(None), "http://localhost:11434");
+        assert_eq!(ollama_base(Some("   ")), "http://localhost:11434");
+        assert_eq!(ollama_base(Some(" http://gpu.lan:11434/ ")), "http://gpu.lan:11434");
+        assert_eq!(openai_base(None, "custom"), "http://localhost:11434/v1");
+        assert_eq!(openai_base(Some("https://models.example.com/v1//"), "custom"), "https://models.example.com/v1");
+        assert_eq!(anthropic_base(&AiRequest { base_url: None, ..request("anthropic", "") }), "https://api.anthropic.com");
+        assert_eq!(anthropic_base(&AiRequest { base_url: Some(" ".into()), ..request("anthropic", "") }), "https://api.anthropic.com");
+    }
+
+    /// The network splits a reply wherever it likes, including inside a character: "é" is two
+    /// bytes, and an answer full of curly quotes and dashes is full of three-byte ones.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn an_sse_reply_split_inside_a_character_streams_it_whole() {
+        let first: &[u8] = b"data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n\
+data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Caf\xc3";
+        let second: &[u8] = b"\xa9 \xe2\x80";
+        let third: &[u8] = b"\x94 open.\"}}\n\n\
+data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"}}\n\n\
+data: {\"type\":\"message_stop\"}\n\n";
+        let (_, events) = run(request("anthropic", "{base}"), vec![(200, vec![first, second, third])]).await;
+        assert_eq!(text(&events), "Café — open.");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn an_ndjson_reply_split_inside_a_character_streams_it_whole() {
+        let first: &[u8] = b"{\"model\":\"m\",\"message\":{\"role\":\"assistant\",\"content\":\"Caf\xc3";
+        let second: &[u8] = b"\xa9.\"},\"done\":false}\n\
+{\"model\":\"m\",\"message\":{\"role\":\"assistant\",\"content\":\"\"},\"done\":true,\"done_reason\":\"stop\"}\n";
+        let (_, events) = run(request("ollama", "{base}"), vec![(200, vec![first, second])]).await;
+        assert_eq!(text(&events), "Café.");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_refusal_becomes_one_error_event_with_the_servers_own_words() {
+        let anthropic: &[u8] = b"{\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"}}";
+        let (_, events) = run(request("anthropic", "{base}"), vec![(401, vec![anthropic])]).await;
+        assert_eq!(events, vec![json!({ "type": "error", "message": "401 Unauthorized: invalid x-api-key" })]);
+
+        let ollama: &[u8] = b"{\"error\":\"model 'test-model' not found\"}";
+        let (_, events) = run(request("ollama", "{base}"), vec![(404, vec![ollama])]).await;
+        assert_eq!(events, vec![json!({ "type": "error", "message": "404 Not Found: model 'test-model' not found" })]);
+
+        // Not JSON: the start of the text, as it came.
+        let proxy: &[u8] = b"upstream connect error";
+        let (_, events) = run(request("custom", "{base}"), vec![(502, vec![proxy])]).await;
+        assert_eq!(events, vec![json!({ "type": "error", "message": "502 Bad Gateway: upstream connect error" })]);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_custom_server_that_refuses_tools_is_asked_once_more_without_them() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("replay.md"), "# Replay\n").unwrap();
+        let mut req = request("custom", "{base}/v1");
+        req.folder = Some(dir.path().to_str().unwrap().into());
+        let refusal: &[u8] = b"{\"error\":{\"message\":\"tools are not supported by this model\"}}";
+        let (seen, events) = run(req, vec![(400, vec![refusal]), (200, vec![OPENAI_HELLO])]).await;
+        assert_eq!(seen.len(), 2);
+        assert!(seen[0].body["tools"].is_array());
+        assert!(seen[1].body.get("tools").is_none());
+        assert_eq!(text(&events), "Hello.");
+        assert_eq!(events.last().unwrap()["type"], "done");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn requests_that_cannot_start_say_why() {
+        let (channel, events) = collect();
+        stream(request("ollama", "http://127.0.0.1:1"), channel, CancelToken::default()).await;
+        assert_eq!(
+            events.lock().unwrap().clone(),
+            vec![json!({ "type": "error", "message": "Ollama isn't running at http://127.0.0.1:1. Start it with `ollama serve`." })]
+        );
+
+        for (provider, message) in [
+            ("mystery", "Unknown provider: mystery"),
+            ("builtin", "The built-in plan is not available in this build. Choose a provider in Settings › AI."),
+        ] {
+            let (channel, events) = collect();
+            stream(request(provider, ""), channel, CancelToken::default()).await;
+            assert_eq!(events.lock().unwrap().clone(), vec![json!({ "type": "error", "message": message })]);
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_stream_cancelled_before_it_ends_sends_nothing_more() {
+        let (base, _) = serve(vec![(200, vec![OPENAI_HELLO])]).await;
+        let (channel, events) = collect();
+        let cancel = CancelToken::default();
+        cancel.cancel();
+        let sent = stream(request("custom", &base), channel, cancel).await;
+        assert!(!sent);
+        assert!(events.lock().unwrap().iter().all(|e| e["type"] == "delta"), "no done or error after a cancel");
     }
 }

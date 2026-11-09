@@ -722,3 +722,210 @@ mod tests {
         assert_eq!(urlencode("café"), "caf%C3%A9");
     }
 }
+
+/// The commands as the webview calls them: through Tauri's IPC, with the camelCase arguments
+/// `src/platform/tauri.ts` sends, getting back the JSON (or the error text) it reads. Commands that
+/// need the real app (dialogs, Finder, windows, the updater) are left to the app itself.
+#[cfg(test)]
+mod ipc {
+    use super::*;
+    use serde_json::json;
+    use std::path::Path;
+    use tauri::ipc::{CallbackFn, InvokeBody};
+    use tauri::test::{get_ipc_response, mock_builder, mock_context, noop_assets, MockRuntime, INVOKE_KEY};
+    use tauri::webview::InvokeRequest;
+
+    fn app() -> (tauri::App<MockRuntime>, tauri::WebviewWindow<MockRuntime>) {
+        let app = mock_builder()
+            .manage(Streams::default())
+            .manage(Opened::default())
+            .invoke_handler(tauri::generate_handler![
+                path_kind,
+                opened_paths,
+                list_pages,
+                read_page,
+                write_page,
+                write_new_page,
+                delete_page,
+                restore_page,
+                load_map,
+                save_map,
+                load_session,
+                save_session,
+                list_versions,
+                read_version,
+                snapshot_version,
+                restore_version,
+                delete_version,
+                has_api_key,
+                ai_cancel,
+                read_dropped_image,
+            ])
+            .build(mock_context(noop_assets()))
+            .unwrap();
+        let window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default()).build().unwrap();
+        (app, window)
+    }
+
+    fn call(window: &tauri::WebviewWindow<MockRuntime>, cmd: &str, args: Value) -> std::result::Result<Value, Value> {
+        let request = InvokeRequest {
+            cmd: cmd.into(),
+            callback: CallbackFn(0),
+            error: CallbackFn(1),
+            url: "tauri://localhost".parse().unwrap(),
+            body: InvokeBody::Json(args),
+            headers: Default::default(),
+            invoke_key: INVOKE_KEY.to_string(),
+        };
+        get_ipc_response(window, request).map(|b| b.deserialize::<Value>().unwrap())
+    }
+
+    fn dir_str(p: &Path) -> String {
+        p.to_str().unwrap().to_string()
+    }
+
+    #[test]
+    fn pages_are_written_read_and_listed() {
+        let (_app, w) = app();
+        let tmp = tempfile::tempdir().unwrap();
+        let folder = dir_str(tmp.path());
+        let page = json!({ "folder": folder, "path": "notes/a.md", "content": "# A\n" });
+        assert_eq!(call(&w, "write_new_page", page.clone()), Ok(json!(true)));
+        assert_eq!(call(&w, "write_new_page", page), Ok(json!(false)), "a page already there stays");
+        assert_eq!(call(&w, "write_page", json!({ "folder": folder, "path": "notes/a.md", "content": "# A, again\n" })), Ok(Value::Null));
+
+        let read = call(&w, "read_page", json!({ "folder": folder, "path": "notes/a.md" })).unwrap();
+        assert_eq!(read["path"], "notes/a.md");
+        assert_eq!(read["raw"], "# A, again\n");
+        assert!(read["modified"].is_string());
+        let listed = call(&w, "list_pages", json!({ "folder": folder })).unwrap();
+        let paths: Vec<&str> = listed.as_array().unwrap().iter().map(|p| p["path"].as_str().unwrap()).collect();
+        assert_eq!(paths, vec!["notes/a.md"]);
+    }
+
+    #[test]
+    fn a_refusal_reaches_the_webview_as_its_reason() {
+        let (_app, w) = app();
+        let tmp = tempfile::tempdir().unwrap();
+        let folder = dir_str(tmp.path());
+        std::fs::write(tmp.path().join("notes.txt"), "plain").unwrap();
+        assert_eq!(
+            call(&w, "write_page", json!({ "folder": folder, "path": "../escape.md", "content": "x" })),
+            Err(json!("Refusing path outside the folder: ../escape.md"))
+        );
+        assert!(!tmp.path().parent().unwrap().join("escape.md").exists());
+        assert_eq!(call(&w, "read_page", json!({ "folder": folder, "path": "notes.txt" })), Err(json!("Unsupported file type: notes.txt")));
+        assert_eq!(
+            call(&w, "write_page", json!({ "folder": folder, "path": "paper.pdf", "content": "x" })),
+            Err(json!("Cannot write to read-only file type: paper.pdf. Create a companion .md file instead."))
+        );
+        let file = dir_str(&tmp.path().join("notes.txt"));
+        assert_eq!(call(&w, "list_pages", json!({ "folder": file })), Err(json!(format!("Not a folder: {file}"))));
+        // A missing argument is refused before the command runs.
+        assert!(call(&w, "read_page", json!({ "folder": folder })).is_err());
+    }
+
+    #[test]
+    fn a_deleted_page_comes_back_from_the_trash() {
+        let (_app, w) = app();
+        let tmp = tempfile::tempdir().unwrap();
+        let folder = dir_str(tmp.path());
+        std::fs::write(tmp.path().join("a.md"), "# A\n").unwrap();
+        let trashed = call(&w, "delete_page", json!({ "folder": folder, "path": "a.md" })).unwrap();
+        assert_eq!(trashed, json!("a"));
+        assert!(!tmp.path().join("a.md").exists());
+        assert_eq!(call(&w, "delete_page", json!({ "folder": folder, "path": "a.md" })), Err(json!("No such page: a.md")));
+        assert_eq!(call(&w, "restore_page", json!({ "folder": folder, "path": "a.md", "trashed": trashed })), Ok(Value::Null));
+        assert_eq!(std::fs::read_to_string(tmp.path().join("a.md")).unwrap(), "# A\n");
+    }
+
+    #[test]
+    fn versions_are_snapshotted_listed_read_restored_and_deleted() {
+        let (_app, w) = app();
+        let tmp = tempfile::tempdir().unwrap();
+        let folder = dir_str(tmp.path());
+        std::fs::write(tmp.path().join("a.md"), "# First\n").unwrap();
+        let at = json!({ "folder": folder, "path": "a.md" });
+        assert_eq!(call(&w, "snapshot_version", at.clone()), Ok(json!(1)));
+        std::fs::write(tmp.path().join("a.md"), "# Second\n").unwrap();
+
+        let listed = call(&w, "list_versions", at.clone()).unwrap();
+        assert_eq!(listed.as_array().unwrap().len(), 1);
+        assert_eq!(listed[0]["n"], 1);
+        assert!(listed[0]["at"].is_string());
+        let one = json!({ "folder": folder, "path": "a.md", "n": 1 });
+        assert_eq!(call(&w, "read_version", one.clone()), Ok(json!("# First\n")));
+        assert_eq!(call(&w, "restore_version", one.clone()), Ok(Value::Null));
+        assert_eq!(std::fs::read_to_string(tmp.path().join("a.md")).unwrap(), "# First\n");
+        assert_eq!(call(&w, "delete_version", one), Ok(Value::Null));
+        let left = call(&w, "list_versions", at).unwrap();
+        assert!(left.as_array().unwrap().iter().all(|v| v["n"] != 1), "{left}");
+    }
+
+    #[test]
+    fn session_state_and_the_map_round_trip() {
+        let (_app, w) = app();
+        let tmp = tempfile::tempdir().unwrap();
+        let folder = dir_str(tmp.path());
+        std::fs::write(tmp.path().join("a.md"), "# A\n").unwrap();
+        assert_eq!(call(&w, "load_session", json!({ "folder": folder, "file": null })), Ok(Value::Null));
+        let session = json!({ "open": ["a.md"] });
+        assert_eq!(call(&w, "save_session", json!({ "folder": folder, "session": session, "file": null })), Ok(Value::Null));
+        let back = call(&w, "load_session", json!({ "folder": folder })).unwrap();
+        assert_eq!(back["open"], json!(["a.md"]));
+        assert!(back["ids"]["a.md"].is_string(), "the save records each page's file id: {back}");
+        // A session opened from one file keeps its own state.
+        assert_eq!(call(&w, "load_session", json!({ "folder": folder, "file": "a.md" })), Ok(Value::Null));
+
+        assert_eq!(call(&w, "load_map", json!({ "folder": folder })), Ok(Value::Null));
+        let cache = json!({ "a.md": { "summary": "A page.", "hash": "x" } });
+        assert_eq!(call(&w, "save_map", json!({ "folder": folder, "cache": cache, "rendered": "- a.md: A page.\n" })), Ok(Value::Null));
+        assert_eq!(call(&w, "load_map", json!({ "folder": folder })), Ok(cache));
+        assert_eq!(std::fs::read_to_string(tmp.path().join(".reader/map.md")).unwrap(), "- a.md: A page.\n");
+    }
+
+    #[test]
+    fn files_opened_before_the_reader_listens_are_handed_over_once() {
+        let (app, w) = app();
+        app.state::<Opened>().paths.lock().unwrap().extend(["/notes/a.md".to_string(), "/notes".to_string()]);
+        assert_eq!(call(&w, "opened_paths", json!({})), Ok(json!(["/notes/a.md", "/notes"])));
+        assert!(app.state::<Opened>().ready.load(Ordering::SeqCst), "later opens go straight to the window");
+        assert_eq!(call(&w, "opened_paths", json!({})), Ok(json!([])));
+    }
+
+    #[test]
+    fn ai_cancel_stops_that_stream_and_ignores_one_already_gone() {
+        let (app, w) = app();
+        let token = CancelToken::default();
+        app.state::<Streams>().0.lock().unwrap().insert("ask-1".into(), token.clone());
+        assert_eq!(call(&w, "ai_cancel", json!({ "id": "ask-1" })), Ok(Value::Null));
+        assert!(token.is_cancelled());
+        assert!(app.state::<Streams>().0.lock().unwrap().is_empty());
+        assert_eq!(call(&w, "ai_cancel", json!({ "id": "ask-1" })), Ok(Value::Null));
+    }
+
+    #[test]
+    fn path_kinds_keys_and_dropped_files() {
+        let (_app, w) = app();
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("a.md"), "# A\n").unwrap();
+        std::fs::write(tmp.path().join("a.txt"), "plain").unwrap();
+        let kind = |p: &Path| call(&w, "path_kind", json!({ "path": dir_str(p) })).unwrap();
+        assert_eq!(kind(tmp.path()), json!("folder"));
+        assert_eq!(kind(&tmp.path().join("a.md")), json!("file"));
+        assert_eq!(kind(&tmp.path().join("a.txt")), json!("other"));
+        assert_eq!(kind(&tmp.path().join("gone.md")), json!("other"));
+
+        assert_eq!(call(&w, "has_api_key", json!({ "provider": "ipc-test" })), Ok(json!(false)));
+        crate::ai::TEST_KEYS.lock().unwrap().push(("ipc-test".into(), "k".into()));
+        assert_eq!(call(&w, "has_api_key", json!({ "provider": "ipc-test" })), Ok(json!(true)));
+
+        assert_eq!(
+            call(&w, "read_dropped_image", json!({ "path": dir_str(&tmp.path().join("a.txt")) })),
+            Err(json!("Drop a screenshot (PNG, JPEG, GIF or WebP)."))
+        );
+        std::fs::write(tmp.path().join("shot.png"), b"png").unwrap();
+        let shot = call(&w, "read_dropped_image", json!({ "path": dir_str(&tmp.path().join("shot.png")) })).unwrap();
+        assert_eq!(shot, json!({ "name": "shot.png", "mime": "image/png", "data": "cG5n" }));
+    }
+}
