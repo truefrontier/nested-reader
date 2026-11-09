@@ -7,7 +7,7 @@ import { RenameInput } from "./RenameInput";
 import { AnchoredLayer, DeleteConfirm, EDGE } from "./AnchoredLayer";
 import { useSidebarGrip } from "./useSidebarGrip";
 import { onEscapeFirst } from "../lib/escapeFirst";
-import { moveFocus, PRESS, treeKey } from "../lib/keys";
+import { moveFocus, PRESS, treeKey, typeAhead } from "../lib/keys";
 
 const stop = (e: MouseEvent) => e.stopPropagation();
 
@@ -234,10 +234,25 @@ export function Sidebar() {
     setLayerAnchor(row);
     returnTo.current = row;
   };
+  // Letters typed within a moment of each other, for type-ahead in the tree.
+  const typed = useRef({ text: "", at: 0 });
   const onTreeKey = (e: KeyboardEvent<HTMLDivElement>) => {
     const items = treeItems();
     const at = items.indexOf(e.target as HTMLElement);
     if (at < 0) return;
+    // A letter jumps to the next row whose name starts with what has been typed. A key that matches no
+    // row goes on to the window, so / still reaches the filter from the tree.
+    if (e.key.length === 1 && e.key !== " " && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      const t = typed.current;
+      t.text = (e.timeStamp - t.at < 700 ? t.text : "") + e.key;
+      t.at = e.timeStamp;
+      const to = typeAhead(items.map((el) => el.getAttribute("aria-label") ?? ""), at, t.text);
+      if (to < 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      items[to].focus();
+      return;
+    }
     const rows = items.map((el) => ({
       level: Number(el.getAttribute("aria-level")),
       expanded: el.hasAttribute("aria-expanded") ? el.getAttribute("aria-expanded") === "true" : undefined,

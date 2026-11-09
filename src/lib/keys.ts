@@ -117,3 +117,21 @@ export function gripKey(key: string, shiftKey: boolean, value: number, range: { 
   const next = key === "Home" ? range.min : key === "End" ? range.max : key === grow ? value + by : key === shrink ? value - by : null;
   return next === null ? null : Math.max(range.min, Math.min(range.max, next));
 }
+
+/**
+ * Type-ahead in a list or tree: the index of the first name starting with `query` (any case), looking
+ * from `at` onward and wrapping, or -1 when none does. One letter, or the same letter typed again
+ * ("ss"), starts after `at`, so each press steps to the next name with that letter, as Finder does.
+ */
+export function typeAhead(names: string[], at: number, query: string): number {
+  const q = query.toLowerCase();
+  if (!q || !names.length) return -1;
+  const same = [...q].every((c) => c === q[0]);
+  const needle = same ? q[0] : q;
+  const from = Math.max(0, same ? at + 1 : at);
+  for (let i = 0; i < names.length; i++) {
+    const j = (from + i) % names.length;
+    if (names[j].toLowerCase().startsWith(needle)) return j;
+  }
+  return -1;
+}

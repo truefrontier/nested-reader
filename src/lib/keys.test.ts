@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { gripKey, listStep, moveFocus, pressOnKey, treeKey, type TreeRow } from "./keys";
+import { gripKey, listStep, moveFocus, pressOnKey, treeKey, typeAhead, type TreeRow } from "./keys";
 
 // Node has no DOM. These stand-ins do what the DOM does for the calls keys.ts makes: an event that
 // records whether it was stopped, and elements that set `document.activeElement` when focused.
@@ -162,4 +162,24 @@ test("gripKey takes its direction from `grow`, and ignores the other axis and ot
 test("gripKey keeps the minimum when a small window leaves no room for both panes", () => {
   assert.equal(gripKey("ArrowLeft", false, 300, { min: 260, max: 200 }, 24, "ArrowLeft"), 260);
   assert.equal(gripKey("End", false, 300, { min: 260, max: 200 }, 24, "ArrowLeft"), 260);
+});
+
+const NAMES = ["Why the brain replays the day", "Replay into cortex", "Does replay run the other way?", "Slow oscillations", "Sharp-wave ripples", "Same order"];
+
+test("typeAhead jumps to the next name with the typed letter, wrapping, and steps on with each press", () => {
+  assert.equal(typeAhead(NAMES, 0, "s"), 3);
+  assert.equal(typeAhead(NAMES, 3, "s"), 4);
+  assert.equal(typeAhead(NAMES, 4, "ss"), 5);
+  assert.equal(typeAhead(NAMES, 5, "sss"), 3);
+  assert.equal(typeAhead(NAMES, -1, "w"), 0);
+  assert.equal(typeAhead(NAMES, 0, "W"), 0);
+});
+
+test("typeAhead matches a longer prefix from the row it is on, and finds nothing for a prefix no name has", () => {
+  assert.equal(typeAhead(NAMES, 3, "sl"), 3);
+  assert.equal(typeAhead(NAMES, 3, "sa"), 5);
+  assert.equal(typeAhead(NAMES, 0, "replay i"), 1);
+  assert.equal(typeAhead(NAMES, 0, "z"), -1);
+  assert.equal(typeAhead(NAMES, 0, ""), -1);
+  assert.equal(typeAhead([], 0, "s"), -1);
 });
