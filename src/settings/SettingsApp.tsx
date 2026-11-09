@@ -120,7 +120,9 @@ export function SettingsApp({ embedded, onClose }: { embedded?: boolean; onClose
   if (!settings) return <div className="settings" />;
 
   return (
-    <div className={`settings${embedded ? " embedded" : ""}`}>
+    // The Settings window is its own document, so it needs its own main landmark; embedded (the browser
+    // build's stand-in) it sits inside the reader's.
+    <div className={`settings${embedded ? " embedded" : ""}`} role={embedded ? undefined : "main"}>
       <div className="settings-title">
         {embedded && (
           <div className="tl" style={{ position: "absolute" }}>
