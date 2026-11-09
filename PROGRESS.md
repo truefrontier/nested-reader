@@ -1195,9 +1195,10 @@
 
 ### World facts
 - `useSyncScroll` dropped the follower's echo (the scroll event its own `scrollTop` write causes) by a flag that a `requestAnimationFrame` cleared. In Chrome the echo arrives a frame later, after that callback, so it was taken for the reader's scroll and followed back. When one pane's scroll range is more than twice the other's (a narrow split), rounding that round trip moves the pane the reader is scrolling: asking the split for 202 left it at 203, 209 at 210, 211 at 212 (browser mock, 1200×380 window, ranges 523 and 1219 px).
+- Worse in the common case: a short page barely scrolls in the wide main pane. At 1440×900, split beside, the sample's first page has 3 px of range in the main pane and 427 in the split; asking the split for 80 left it at 142, and 220 at 285.
 - The effect's body is now `linkScroll(main, split)` beside the hook, which remembers where it put each pane and drops that pane's next scroll event only if the pane is still there. No frame timing, no `requestAnimationFrame`.
 
 ### Verification
-- `pnpm test` 186 → 189. The new tests drive `linkScroll` with stand-in panes that fire a write's scroll event at the next frame, after the frame callbacks, as Chrome did. On the old logic the reader's pane lands at `[200, 203, 203, 205, 205, 206, 207, 208, 210, 210, 212, 212]` for 201–212; now at each one asked for.
-- Browser mock in Chrome, same window: the 12 single steps land where asked, and a one-pixel-a-frame run of 60 frames on either pane ends exactly where asked, with the other pane following.
+- `pnpm test` 186 → 190. The new tests drive `linkScroll` with stand-in panes that fire a write's scroll event at the next frame, after the frame callbacks, as Chrome did. On the old logic the reader's pane lands at `[200, 203, 203, 205, 205, 206, 207, 208, 210, 210, 212, 212]` for 201–212, and at 142 for 80 and 285 for 220 in the 3-against-427 case, as in Chrome; now at each one asked for.
+- Browser mock in Chrome, both windows: every single step lands where asked, and a one-pixel-a-frame run of 60 frames on either pane ends exactly where asked, with the other pane following.
 - Not run: the desktop app (WKWebView may order these events differently; the fix doesn't depend on the order).
