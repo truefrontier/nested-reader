@@ -51,8 +51,24 @@ impl Dropped {
         self.0.lock().unwrap().insert(window.to_owned(), paths.to_vec());
     }
 
+    fn forget(&self, window: &str) {
+        self.0.lock().unwrap().remove(window);
+    }
+
     fn holds(&self, window: &str, path: &str) -> bool {
         self.0.lock().unwrap().get(window).is_some_and(|paths| paths.iter().any(|p| p == std::path::Path::new(path)))
+    }
+}
+
+/// Keeps `Dropped` in step with the windows: a native drop replaces that window's paths, and a closed
+/// window's go, so a new page window that reuses its label starts with none. Tauri calls this right
+/// after it hands the drop to the page, in the same main-thread turn, so the page's
+/// `read_dropped_image` can't arrive first.
+fn track_drops<R: tauri::Runtime>(window: &tauri::Window<R>, event: &tauri::WindowEvent) {
+    match event {
+        tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) => window.state::<Dropped>().remember(window.label(), paths),
+        tauri::WindowEvent::Destroyed => window.state::<Dropped>().forget(window.label()),
+        _ => {}
     }
 }
 
@@ -636,11 +652,7 @@ pub fn run() {
         .manage(Opened::default())
         .manage(updater::Pending::default())
         .manage(Dropped::default())
-        .on_window_event(|window, event| {
-            if let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
-                window.state::<Dropped>().remember(window.label(), paths);
-            }
-        })
+        .on_window_event(track_drops)
         .setup(|app| {
             migrate::run(app.handle());
             build_menu(app.handle())?;
@@ -811,6 +823,7 @@ mod ipc {
             .manage(Streams::default())
             .manage(Opened::default())
             .manage(Dropped::default())
+            .on_window_event(track_drops)
             .invoke_handler(tauri::generate_handler![
                 path_kind,
                 opened_paths,
@@ -854,6 +867,13 @@ mod ipc {
 
     fn dir_str(p: &Path) -> String {
         p.to_str().unwrap().to_string()
+    }
+
+    /// The window event a native drop of `paths` raises, through the handler `run()` registers.
+    fn drop_on(window: &tauri::WebviewWindow<MockRuntime>, paths: &[&Path]) {
+        let paths = paths.iter().map(|p| p.to_path_buf()).collect();
+        let event = tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, position: Default::default() });
+        track_drops(&window.as_ref().window(), &event);
     }
 
     #[test]
@@ -980,7 +1000,7 @@ mod ipc {
 
     #[test]
     fn path_kinds_keys_and_dropped_files() {
-        let (app, w) = app();
+        let (_app, w) = app();
         let tmp = tempfile::tempdir().unwrap();
         std::fs::write(tmp.path().join("a.md"), "# A\n").unwrap();
         std::fs::write(tmp.path().join("a.txt"), "plain").unwrap();
@@ -995,7 +1015,7 @@ mod ipc {
         assert_eq!(call(&w, "has_api_key", json!({ "provider": "ipc-test" })), Ok(json!(true)));
 
         std::fs::write(tmp.path().join("shot.png"), b"png").unwrap();
-        app.state::<Dropped>().remember("main", &[tmp.path().join("a.txt"), tmp.path().join("shot.png")]);
+        drop_on(&w, &[&tmp.path().join("a.txt"), &tmp.path().join("shot.png")]);
         assert_eq!(
             call(&w, "read_dropped_image", json!({ "path": dir_str(&tmp.path().join("a.txt")) })),
             Err(json!("Drop a screenshot (PNG, JPEG, GIF or WebP)."))
@@ -1016,14 +1036,18 @@ mod ipc {
         // Nothing dropped yet: a script in the page naming a screenshot on disk gets nothing.
         assert_eq!(read("dropped.png"), refused);
 
-        app.state::<Dropped>().remember("main", &[tmp.path().join("dropped.png")]);
+        drop_on(&w, &[&tmp.path().join("dropped.png")]);
         assert_eq!(read("dropped.png").unwrap()["name"], "dropped.png");
         assert_eq!(read("other.png"), refused);
         // A drop on another window doesn't open this one's reach.
-        app.state::<Dropped>().remember("page-1", &[tmp.path().join("other.png")]);
+        let other = tauri::WebviewWindowBuilder::new(&app, "page-1", Default::default()).build().unwrap();
+        drop_on(&other, &[&tmp.path().join("other.png")]);
         assert_eq!(read("other.png"), refused);
         // The next drop replaces the last one.
-        app.state::<Dropped>().remember("main", &[tmp.path().join("other.png")]);
+        drop_on(&w, &[&tmp.path().join("other.png")]);
         assert_eq!(read("dropped.png"), refused);
+        // A closed window's drop goes with it, so a new window that gets its label starts with none.
+        track_drops(&other.as_ref().window(), &tauri::WindowEvent::Destroyed);
+        assert!(!app.state::<Dropped>().holds("page-1", &dir_str(&tmp.path().join("other.png"))));
     }
 }
