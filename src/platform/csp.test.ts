@@ -22,9 +22,11 @@ test("scripts run only from the app's own files", () => {
   assert.deepEqual(p.get("base-uri"), ["'none'"]);
 });
 
-test("the page can reach nothing but the app's own backend", () => {
+test("fetch and XHR reach nothing but the app's own backend", () => {
   const p = policy();
-  // Every request that carries a key is made in Rust; a script in the page has nowhere to post one.
+  // Every request that carries a key is made in Rust, so a script in the page can't fetch, post or
+  // open a socket anywhere else. Images still load from anywhere (notes show remote images), so a
+  // script could still send a little out in an image's URL; closing that means blocking remote images.
   assert.deepEqual(p.get("connect-src"), ["ipc:", "http://ipc.localhost"]);
   // A form in a document can't take the window to another site.
   assert.deepEqual(p.get("form-action"), ["'none'"]);
