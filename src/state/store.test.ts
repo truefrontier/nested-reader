@@ -116,3 +116,22 @@ test("an open that a later open replaces stops nothing", async () => {
   await refining;
   assert.match(await text(A, "notes.md"), /Shorter still\./);
 });
+
+test("a file the listing left out opens with the reason it couldn't be read", async () => {
+  await openA();
+  // The desktop listing leaves out a file it can't read, and read_page says why.
+  await platform.writePage(A, "scan.pdf", "");
+  const { listPages, readPage } = platform;
+  const why = "PDF file 'scan.pdf' contains no extractable text (possibly a scanned document)";
+  platform.listPages = async (folder) => (await listPages.call(platform, folder)).filter((p) => p.path !== "scan.pdf");
+  platform.readPage = async (folder, path) => (path === "scan.pdf" ? Promise.reject(why) : readPage.call(platform, folder, path));
+  try {
+    await store.openFolder(A, { file: "scan.pdf" });
+    assert.equal(store.state.ui.error, why);
+    await store.openFolder(A, { file: "gone.md" });
+    assert.equal(store.state.ui.error, "No such page: gone.md");
+  } finally {
+    platform.listPages = listPages;
+    platform.readPage = readPage;
+  }
+});

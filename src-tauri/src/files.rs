@@ -105,8 +105,8 @@ pub fn list_pages(folder: &str) -> Result<Vec<RawPage>> {
         };
         // A file that can't be read (a scan with no text, a PDF the parser rejects, a note that
         // isn't UTF-8, a PDF or HTML file past the size cap) is left out, rather than keeping the
-        // whole folder from opening. `read_page` still gives the reason; the reader, which opens a
-        // single file from this listing, says "Not a Markdown page" for it.
+        // whole folder from opening. `read_page` still gives the reason, which the reader shows when
+        // it opens such a file on its own.
         let Ok(raw) = raw else { continue };
         let meta = entry.metadata().ok();
         out.push(RawPage {
@@ -122,6 +122,9 @@ pub fn list_pages(folder: &str) -> Result<Vec<RawPage>> {
 
 pub fn read_page(folder: &str, rel: &str) -> Result<RawPage> {
     let full = safe_join(folder, rel)?;
+    if is_openable_page(&full) && !full.exists() {
+        return Err(AppError::Message(format!("No such page: {rel}")));
+    }
     let raw = if is_markdown(&full) {
         fs::read_to_string(&full)?
     } else if is_pdf(&full) {

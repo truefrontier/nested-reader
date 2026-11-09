@@ -882,6 +882,8 @@ mod ipc {
         );
         assert!(!tmp.path().parent().unwrap().join("escape.md").exists());
         assert_eq!(call(&w, "read_page", json!({ "folder": folder, "path": "notes.txt" })), Err(json!("Unsupported file type: notes.txt")));
+        // The reader shows this when a session's file has gone, so it names the page, not the OS error.
+        assert_eq!(call(&w, "read_page", json!({ "folder": folder, "path": "gone.md" })), Err(json!("No such page: gone.md")));
         assert_eq!(
             call(&w, "write_page", json!({ "folder": folder, "path": "paper.pdf", "content": "x" })),
             Err(json!("Cannot write to read-only file type: paper.pdf. Create a companion .md file instead."))
