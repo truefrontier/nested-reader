@@ -1,0 +1,3 @@
+https://github.com/jrmuizel/adobe-cmap-parser/tree/ac107d55f0d31a9d47955082238ab9e4fb157cdb
+No license text upstream: the crate, the commit it was published from (above), the repository's default branch and its README have none.
+LICENSE-MIT is GitHub's MIT license template (`gh api licenses/mit`) for the license Cargo.toml declares (MIT), with the copyright line naming its `authors`. No year: the crate gives none.

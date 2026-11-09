@@ -1,6 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { licenseTexts, requireTexts, UPSTREAM_DIR } from "../scripts/license-texts.ts";
 
 // THIRD_PARTY_NOTICES.md ships inside the app. These fail when a lockfile gains or bumps a package
 // that neither the notices nor the generator's not-shipped list accounts for. The fix is to run
@@ -98,4 +101,87 @@ test("every dependency package.json names has a notice for the version pnpm-lock
   const resolved = new Map(Array.from(deps.matchAll(/^ {6}'?([^\s']+?)'?:\n {8}specifier: .*\n {8}version: ([^\s(]+)/gm), (m) => [m[1], m[2]]));
   const missing = direct.map((name) => (resolved.has(name) ? `${name}@${resolved.get(name)}` : `${name} (not in pnpm-lock.yaml's dependencies)`)).filter((p) => !noticed.has(p));
   assert.deepEqual(missing, []);
+});
+
+// Every package the notices list needs its license text there too, not just its name: MIT and BSD ask for the
+// copyright line and the license to go out with the app. A package that ships none gets its text from
+// scripts/third-party-licenses, and the generator refuses to write the notices while one has neither.
+
+test("every package in the notices has its license text there", () => {
+  const withText = new Set(Array.from(notices.matchAll(/^### Text shipped by (.+)$/gm), (m) => Array.from(m[1].matchAll(/`([^`]+)`/g), (n) => n[1])).flat());
+  assert.deepEqual([...noticed].filter((p) => !withText.has(p)), []);
+});
+
+// A folder left behind by a bumped package, or one a package no longer needs, would otherwise sit there unread.
+test("scripts/third-party-licenses holds a folder for exactly the packages the notices take text from", () => {
+  const folders = readdirSync(UPSTREAM_DIR, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name).sort();
+  const fromUpstream = Array.from(notices.matchAll(/^- `([^`]+)`.*: text from scripts\/third-party-licenses$/gm), (m) => m[1]).sort();
+  assert.ok(fromUpstream.length > 0, "the notices should mark the packages whose text comes from scripts/third-party-licenses");
+  assert.deepEqual(folders, fromUpstream);
+});
+
+test("each folder in scripts/third-party-licenses says where its text came from", () => {
+  const folders = readdirSync(UPSTREAM_DIR, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name);
+  assert.deepEqual(folders.filter((f) => !/^https:\/\//.test(readFileSync(join(UPSTREAM_DIR, f, "SOURCE"), "utf8"))), []);
+});
+
+/** A scratch tree: `pkgs/<name>` for installed packages, `upstream/<name>@<version>` for fallback texts. */
+function scratch(files: Record<string, string>) {
+  const root = mkdtempSync(join(tmpdir(), "notices-"));
+  for (const [path, text] of Object.entries(files)) {
+    mkdirSync(join(root, path, ".."), { recursive: true });
+    writeFileSync(join(root, path), text);
+  }
+  return { root, pkg: (name: string, version = "1.0.0") => ({ name, version, dir: join(root, "pkgs", name) }), upstream: join(root, "upstream") };
+}
+
+test("a package's own license file wins over a folder in scripts/third-party-licenses", () => {
+  const t = scratch({ "pkgs/own/LICENSE": "Copyright (c) Own\r\n", "pkgs/own/index.js": "", "upstream/own@1.0.0/LICENSE": "Copyright (c) Upstream\n" });
+  try {
+    assert.deepEqual(licenseTexts(t.pkg("own"), t.upstream), { texts: ["Copyright (c) Own"], upstream: false });
+  } finally {
+    rmSync(t.root, { recursive: true });
+  }
+});
+
+test("a package with no license file takes its folder's license files, and not its SOURCE", () => {
+  const t = scratch({
+    "pkgs/bare/index.js": "",
+    "upstream/bare@1.0.0/LICENSE-MIT": "MIT License\n\nCopyright (c) Bare  \n",
+    "upstream/bare@1.0.0/SOURCE": "https://example.com/bare\n",
+    "upstream/bare@2.0.0/LICENSE-MIT": "Copyright (c) Bare 2\n",
+  });
+  try {
+    assert.deepEqual(licenseTexts(t.pkg("bare"), t.upstream), { texts: ["MIT License\n\nCopyright (c) Bare"], upstream: true });
+  } finally {
+    rmSync(t.root, { recursive: true });
+  }
+});
+
+test("the notices refuse a package with no license text from either place, naming each one", () => {
+  const t = scratch({
+    "pkgs/own/LICENSE": "Copyright (c) Own\n",
+    "pkgs/bare/index.js": "",
+    "pkgs/none/index.js": "",
+    "pkgs/stale/index.js": "",
+    "pkgs/nameonly/index.js": "",
+    "upstream/bare@1.0.0/LICENSE": "Copyright (c) Bare\n",
+    // A folder for another version doesn't count, and nor does one with only a SOURCE in it.
+    "upstream/stale@0.9.0/LICENSE": "Copyright (c) Stale\n",
+    "upstream/nameonly@1.0.0/SOURCE": "https://example.com/nameonly\n",
+  });
+  try {
+    const [own, bare, none, stale, nameonly] = ["own", "bare", "none", "stale", "nameonly"].map((n) => t.pkg(n));
+    assert.throws(() => requireTexts([own, bare, none, stale, nameonly], t.upstream), (err: Error) => {
+      assert.match(err.message, /^No license text for none@1\.0\.0, stale@1\.0\.0, nameonly@1\.0\.0:/);
+      return true;
+    });
+    const found = requireTexts([own, bare], t.upstream);
+    assert.deepEqual([found.get(own), found.get(bare)], [
+      { texts: ["Copyright (c) Own"], upstream: false },
+      { texts: ["Copyright (c) Bare"], upstream: true },
+    ]);
+  } finally {
+    rmSync(t.root, { recursive: true });
+  }
 });
