@@ -1055,3 +1055,14 @@
 ### Possible next steps
 - Show the file from Settings › General or an About window, for Kevin to decide.
 - The check can't see a crate move from `[dev-dependencies]` to `[dependencies]` at the same version; re-run the script after any `Cargo.toml` dependency change too.
+
+## Session: 2026-11-09 — the notices check reads the manifests too (#257 follow-up)
+
+### World facts
+- The lockfile tests in `src/thirdPartyNotices.test.ts` pass as long as every `name@version` is in the notices or in `third-party-notices.not-shipped.json`. A package that moves from dev-only (or build-only) to a runtime dependency at the same version keeps its "build or test only" entry, so they stayed green while the shipped app gained a package with no notice.
+- Two more tests read the manifests: every crate under `[dependencies]` or `[target.'cfg(target_os = "macos")'.dependencies]` in `src-tauri/Cargo.toml`, and every package under `dependencies` in `package.json`, must have a notice, by name. No cargo and no network.
+
+### Verification
+- `pnpm test` 148 → 150.
+- Moving `tauri-build` (build-only) into `[dependencies]` with no lockfile change fails the Cargo test, naming it; the lockfile tests stay green. Moving `vite` into `dependencies` fails the npm test the same way. Both edits were undone. (`tempfile` was no use as the probe: it already ships, through a runtime crate.)
+- Running `pnpm test` with a changed `package.json` makes pnpm rewrite `pnpm-lock.yaml` before the script runs; the lockfile was restored and `pnpm install --offline --frozen-lockfile` re-run.
