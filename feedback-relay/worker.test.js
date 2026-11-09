@@ -288,18 +288,29 @@ test("a # inside a link is left alone, and a link definition can't hide a line e
   assert.match(body, /\n> \\\[x\]: https:\/\/e\.test\/hidden/);
 });
 
-// Every screenshot is committed to the repo for good, so the cap is 2 MB, and a bigger one is refused
-// with a reason the app shows as is (an older app still lets 5 MB through).
-test("a screenshot over 2 MB is refused with a reason, before touching GitHub", async (t) => {
+// Every screenshot a private repo gets is committed for good, so the cap there is 2 MB, and a bigger one is
+// refused with a reason the app shows as is (an older app still lets 5 MB through).
+const MB = 1024 * 1024;
+const sized = (bytes) => ({ mime: "image/png", data: PNG + "A".repeat(Math.ceil((bytes * 4) / 3) - PNG.length) });
+
+test("a private repo refuses a screenshot over 2 MB with a reason, and files nothing", async (t) => {
   const calls = fakeGitHub(t, { private: true });
-  const MB = 1024 * 1024;
-  const sized = (bytes) => ({ mime: "image/png", data: PNG + "A".repeat(Math.ceil((bytes * 4) / 3) - PNG.length) });
-  assert.ok(validAttachment(sized(2 * MB - 1024)));
-  assert.equal(validAttachment(sized(2 * MB + 1024)), null);
+  assert.equal((await worker.fetch(post({ message: "fits", attachment: sized(2 * MB - 1024) }), repoEnv("o/big"))).status, 201);
+  assert.equal(calls.filter((c) => c.method === "PUT").length, 1);
+  calls.length = 0;
   const res = await worker.fetch(post({ message: "It broke", attachment: sized(3 * MB) }), repoEnv("o/big"));
   assert.equal(res.status, 413);
   assert.equal(await res.text(), "Keep the screenshot under 2 MB.");
-  assert.equal(calls.length, 0);
+  assert.deepEqual(calls.map((c) => `${c.method} ${c.url}`), ["GET https://api.github.com/repos/o/big"]);
+});
+
+// A public repo never gets a screenshot, so a big one there is held back like any other, and the note is filed.
+test("a public repo still files the note when an older app sends a screenshot over 2 MB", async (t) => {
+  const calls = fakeGitHub(t, { private: false });
+  const res = await worker.fetch(post({ message: "It broke", attachment: sized(5 * MB) }), repoEnv("o/big-public"));
+  assert.equal(res.status, 201);
+  assert.deepEqual((await res.json()).withheld, ["screenshot"]);
+  assert.equal(calls.some((c) => c.method === "PUT"), false);
 });
 
 // The file name is the caller's text, and a commit message on the repo is no place for it.

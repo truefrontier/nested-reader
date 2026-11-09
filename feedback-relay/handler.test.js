@@ -139,7 +139,11 @@ test("the limiter says so in the log, once, when everyone together reaches the h
 // cut off, so the worker can answer why it's refused, which the app shows, instead of the upload just failing.
 test("an older app's 5 MB screenshot gets the 2 MB reason through the Node side, not a hang-up", async (t) => {
   const real = globalThis.fetch;
-  globalThis.fetch = (url, init) => (String(url).startsWith("http://127.0.0.1:") ? real(url, init) : Promise.reject(new Error(`no call out: ${url}`)));
+  // GitHub, faked: the repo is private, so the screenshot would be committed. Any other call off the machine fails.
+  globalThis.fetch = (url, init) =>
+    String(url).startsWith("http://127.0.0.1:") ? real(url, init)
+    : url === "https://api.github.com/repos/o/r" ? Promise.resolve(Response.json({ private: true }))
+    : Promise.reject(new Error(`no call out: ${url}`));
   t.after(() => {
     globalThis.fetch = real;
   });

@@ -44,8 +44,6 @@ export default {
     const app = detail(body?.app);
     let attachment = null;
     if (body?.attachment !== undefined) {
-      // An older app lets 5 MB through, so say why rather than calling the picture malformed.
-      if (body.attachment?.data?.length > MAX_ATTACHMENT_BASE64) return text(413, "Keep the screenshot under 2 MB.");
       attachment = validAttachment(body.attachment);
       if (!attachment) return text(400, "That screenshot didn't look right");
     }
@@ -58,6 +56,9 @@ export default {
       email = "";
       attachment = null;
     }
+    // Only a screenshot that will be committed has to fit, so a public repo holds back a big one like any other.
+    // An older app lets 5 MB through, so say why rather than calling the picture malformed.
+    if (attachment && attachment.data.length > MAX_ATTACHMENT_BASE64) return text(413, "Keep the screenshot under 2 MB.");
 
     let attachmentUrl;
     if (attachment) {
@@ -102,13 +103,14 @@ async function repoIsPrivate(env) {
 }
 
 /**
- * The screenshot as the frontend sent it, or null when it isn't a small, supported image. Its first bytes,
- * not the type it was sent with, decide which kind it is: the Contents API commits whatever it is given.
+ * The screenshot as the frontend sent it, or null when it isn't a supported image. Its first bytes, not the
+ * type it was sent with, decide which kind it is: the Contents API commits whatever it is given. Its size is
+ * checked only once it's known to be going to a private repo.
  */
 export function validAttachment(a) {
   if (!a || typeof a !== "object" || !ATTACHMENT_EXT[a.mime]) return null;
   const data = typeof a.data === "string" ? a.data : "";
-  if (!data || data.length > MAX_ATTACHMENT_BASE64) return null;
+  if (!data) return null;
   const mime = imageType(data);
   if (!mime) return null;
   // `name` is ignored: the file is stored under a name the relay makes up (see uploadAttachment).
