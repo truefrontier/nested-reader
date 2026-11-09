@@ -51,7 +51,7 @@ export function TopBar({ children }: { children?: ReactNode }) {
       <DragBand />
       <div className="tb-left">{children}</div>
       <div className="tb-title" onContextMenu={showPathMenu} onClick={showPathMenu}>{s.folderName || "Library"}</div>
-      <div className="tb-status">
+      <div className="tb-status" role="status">
         {status && (
           <>
             <span className={STATUS[status].mark} />

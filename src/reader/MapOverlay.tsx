@@ -1,12 +1,18 @@
-import { useMemo, type MouseEvent } from "react";
+import { useEffect, useMemo, useRef, type MouseEvent } from "react";
 import { store, useReader } from "../state/store";
 import { buildTree, dotState, layoutWeb } from "../lib/tree";
 import { relTime } from "../lib/time";
 import { CloseIcon } from "./Icons";
+import { PRESS } from "../lib/keys";
 
 export function MapOverlay() {
   const s = useReader();
   const kind = s.ui.map;
+  const ref = useRef<HTMLDivElement>(null);
+  // Opening the map, or switching its view, puts the keyboard on the current page there (else on Close).
+  useEffect(() => {
+    ref.current?.querySelector<HTMLElement>(".current[role=button], .close")?.focus();
+  }, [kind]);
   if (!kind) return null;
   const open = (path: string) => (e: MouseEvent) => {
     e.preventDefault();
@@ -15,16 +21,16 @@ export function MapOverlay() {
     void store.openPage(path, placement);
   };
   return (
-    <div className="map">
+    <div className="map" ref={ref} role="dialog" aria-label="Session map">
       <div className="map-tabs">
-        <span className={kind === "web" ? "on" : ""} onClick={() => store.openMap("web")}>
+        <span className={kind === "web" ? "on" : ""} {...PRESS} aria-pressed={kind === "web"} onClick={() => store.openMap("web")}>
           Web
         </span>
-        <span className={kind === "timeline" ? "on" : ""} onClick={() => store.openMap("timeline")}>
+        <span className={kind === "timeline" ? "on" : ""} {...PRESS} aria-pressed={kind === "timeline"} onClick={() => store.openMap("timeline")}>
           Timeline
         </span>
       </div>
-      <button className="tbtn close" title="Close" onClick={() => store.closeMap()}>
+      <button className="tbtn close" title="Close" aria-label="Close map" onClick={() => store.closeMap()}>
         <CloseIcon />
       </button>
       {kind === "web" ? <Web open={open} /> : <Timeline open={open} />}
@@ -55,10 +61,18 @@ function Web({ open }: { open: Opener }) {
         if (d === "loading") cls.push("loading");
         if (d === "unread") cls.push("unread");
         return (
-          <div key={n.path} className={cls.join(" ")} style={{ left: `${n.x * 100}%`, top: `${n.y * 100}%` }} onClick={open(n.path)} title={s.pages[n.path]?.title}>
+          <div
+            key={n.path}
+            className={cls.join(" ")}
+            style={{ left: `${n.x * 100}%`, top: `${n.y * 100}%` }}
+            {...PRESS}
+            aria-current={d === "current" || undefined}
+            onClick={open(n.path)}
+            title={s.pages[n.path]?.title}
+          >
             <span className="label">{s.pages[n.path]?.title}</span>
-            {d === "unread" && <span className="udot" />}
-            {!!s.session.pending[n.path] && <span className="cdot" />}
+            {d === "unread" && <span className="udot" role="img" aria-label="unread" />}
+            {!!s.session.pending[n.path] && <span className="cdot" role="img" aria-label="changes to review" />}
           </div>
         );
       })}
@@ -86,15 +100,15 @@ function Timeline({ open }: { open: Opener }) {
           if (d === "current" && src) sub = `from ${src.title}`;
           else if (!p.source && kids) sub = `source · ${kids} ${kids === 1 ? "highlight" : "highlights"}`;
           return (
-            <div key={it.path} className={cls.join(" ")} onClick={open(it.path)}>
+            <div key={it.path} className={cls.join(" ")} {...PRESS} aria-current={d === "current" || undefined} onClick={open(it.path)}>
               {it.branch && <span className="tick" />}
               <span className={`tdot${d === "current" ? " current" : d === "loading" ? " loading" : ""}`} />
               <div className="body">
                 <div className="line1">
                   <span className="name">
                     {p.title}
-                    {d === "unread" && <span className="udot" />}
-                    {d === "pending" && <span className="cdot" />}
+                    {d === "unread" && <span className="udot" role="img" aria-label="unread" />}
+                    {d === "pending" && <span className="cdot" role="img" aria-label="changes to review" />}
                   </span>
                   <span className="when">{d === "loading" ? "loading" : relTime(p.created ?? p.modified)}</span>
                 </div>

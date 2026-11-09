@@ -8,6 +8,7 @@ import { applyWraps, rangeOffsets, type Wrap } from "../lib/wraps";
 import { AnswerCard, AskPopover, BeforeCard, FailedCard, NowCard, RefinePopover, RefineStatus, SKELETON_FADE_MS, Skeleton } from "./Popovers";
 import { TopStrip } from "./TopStrip";
 import { FindBar } from "./FindBar";
+import { PRESS } from "../lib/keys";
 
 type LinkState = "loading" | "unread" | "read" | "missing";
 
@@ -585,8 +586,10 @@ export function Page({ path, role }: Props) {
       </TopStrip>
       <div className="article" ref={articleRef} onMouseUp={onMouseUp} onMouseDown={onMouseDown} onClick={onClick} onMouseOver={onMouseOver} onMouseOut={onMouseOut}>
         {source && (
-          <div className="crumb" onClick={onCrumb} title={`Back to ${source.title}`}>
-            <span className="arrow">↩</span>
+          <div className="crumb" {...PRESS} aria-label={`Back to ${source.title}`} onClick={onCrumb} title={`Back to ${source.title}`}>
+            <span className="arrow" aria-hidden="true">
+              ↩
+            </span>
             {source.title}
           </div>
         )}

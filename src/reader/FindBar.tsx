@@ -1,6 +1,7 @@
 import { useEffect, useRef, type KeyboardEvent } from "react";
 import { store, useReader } from "../state/store";
 import { ChevronLeft, ChevronRight, CloseIcon } from "./Icons";
+import { PRESS } from "../lib/keys";
 
 /** The in-page find box. Matching and highlighting are the page's job; this shows the query and the count. ↵ selects the match. */
 export function FindBar({ count, current }: { count: number; current: number }) {
@@ -26,15 +27,17 @@ export function FindBar({ count, current }: { count: number; current: number }) 
   const label = !searching ? "" : count ? `${current + 1} of ${count}` : "No matches";
   return (
     <div className="strip find">
-      <input ref={ref} placeholder="Find in page" value={q} onChange={(e) => store.setFindQuery(e.target.value)} onKeyDown={onKey} spellCheck={false} />
-      <span className={`count${searching && !count ? " none" : ""}`}>{label}</span>
-      <span className="nav" title="Previous ⌘⇧G" onClick={() => store.findStep(-1)}>
+      <input ref={ref} placeholder="Find in page" aria-label="Find in page" value={q} onChange={(e) => store.setFindQuery(e.target.value)} onKeyDown={onKey} spellCheck={false} />
+      <span className={`count${searching && !count ? " none" : ""}`} role="status">
+        {label}
+      </span>
+      <span className="nav" {...PRESS} aria-label="Previous match" title="Previous ⌘⇧G" onClick={() => store.findStep(-1)}>
         <ChevronLeft />
       </span>
-      <span className="nav" title="Next ⌘G" onClick={() => store.findStep(1)}>
+      <span className="nav" {...PRESS} aria-label="Next match" title="Next ⌘G" onClick={() => store.findStep(1)}>
         <ChevronRight />
       </span>
-      <span className="nav" title="Close Esc" onClick={() => store.closeFind()}>
+      <span className="nav" {...PRESS} aria-label="Close find" title="Close Esc" onClick={() => store.closeFind()}>
         <CloseIcon />
       </span>
     </div>

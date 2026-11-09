@@ -2,6 +2,8 @@
 
 :root {
   --bg: #faf9f7;
+  /* The keyboard focus ring, in the blue macOS draws its own in. */
+  --ring: #3a72d8;
   --fg: #1e1c19;
   --mute: #8e887e;
   --hair: rgba(30, 28, 25, 0.09);
@@ -42,6 +44,7 @@
 }
 :root[data-theme="dark"] {
   --bg: #171614;
+  --ring: #5b9cff;
   --fg: #e8e4dd;
   --mute: #7f7a71;
   --hair: rgba(232, 228, 221, 0.1);
@@ -2277,4 +2280,74 @@ button {
 .home-offer button:disabled {
   opacity: 0.6;
   cursor: default;
+}
+
+/* ---- Keyboard focus ----
+   A ring on whatever the keyboard has reached. `:focus-visible` leaves it off after a mouse click on a
+   button or row, so the mouse sees the app as before. Text boxes match `:focus-visible` on a click too,
+   so theirs waits for `html[data-kb]`, which `trackInput` (lib/keys.ts) sets while the keyboard is driving. */
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+html[data-kb] input:focus-visible,
+html[data-kb] textarea:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+/* The filter's box is its row, not the bare input inside it. */
+html[data-kb] .side-filter input:focus-visible {
+  outline: 0;
+}
+html[data-kb] .side-filter:has(input:focus-visible) {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+/* Tree rows draw the ring inside themselves, so the tree's scroll box doesn't clip it, and show their ⋯. */
+.row:focus-visible,
+.frow:focus-visible {
+  outline-offset: -2px;
+  border-radius: 6px;
+}
+.row:focus-visible .more,
+.frow:focus-visible .more,
+.home-row:has(.label:focus-visible, .more:focus-visible) .more {
+  opacity: 1;
+}
+/* Items in a menu or list light up as they do under the pointer. */
+.menu .item[role="menuitem"]:focus-visible,
+.home-menu .item:focus-visible,
+.dd-menu [role="option"]:focus-visible {
+  background: var(--card);
+  outline: 0;
+}
+/* Home's ⋯ menu is buttons now, like the tree's. */
+.home-menu button.item {
+  display: block;
+  width: 100%;
+  text-align: left;
+}
+/* For a screen reader only: in the page, never on screen. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+/* macOS Accessibility › Display › Increase contrast: the faint grey (labels, tree rows, hints) darkens
+   to pass 4.5:1. Everyone else keeps the quieter grey the app was drawn with. */
+@media (prefers-contrast: more) {
+  :root {
+    --mute: #67625a;
+    --acc: oklch(0.5 0.1 150);
+  }
+  :root[data-theme="dark"] {
+    --mute: #a8a297;
+  }
 }

@@ -4,6 +4,9 @@ import App from "./App";
 import { SettingsApp } from "./settings/SettingsApp";
 import "./styles/app.css";
 import "./styles/settings.css";
+import { trackInput } from "./lib/keys";
+
+trackInput(window, document.documentElement);
 
 const params = new URLSearchParams(location.search);
 const win = params.get("window") ?? (location.hash === "#settings" ? "settings" : null);
