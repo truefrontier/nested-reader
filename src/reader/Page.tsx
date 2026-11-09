@@ -533,7 +533,8 @@ export function Page({ path, role }: Props) {
         />,
       );
     }
-    if (isMain && activeChange) {
+    // Either pane: a change's Before / Now card opens in the pane its tint was clicked or hovered in.
+    if (activeChange) {
       const list = changesByBlock.get(i) ?? [];
       const c = list.find((x) => x.id === activeChange);
       if (c) {
