@@ -84,7 +84,7 @@ test("a download redirects to GitHub's signed link without streaming through the
     const res = await worker.fetch(get("/updates/download/12/Nested.app.tar.gz"), env);
     assert.equal(res.status, 302);
     assert.equal(res.headers.get("location"), "https://objects.githubusercontent.com/signed/12");
-    assert.equal(calls[0].init.redirect, "manual");
+    assert.equal(calls.find((c) => c.url.endsWith("/releases/assets/12")).init.redirect, "manual");
     assert.equal((await worker.fetch(get("/updates/download/99/gone.dmg"), env)).status, 404);
   }));
 
@@ -110,3 +110,16 @@ test("helpers: asset names, origins and manifest rewriting", () => {
   assert.equal(out.platforms["linux-x86_64"].url, "https://x/none.AppImage");
   assert.deepEqual(rewriteManifest({ version: "1" }, [], "https://r"), { version: "1", platforms: {} });
 });
+
+test("a wave of update checks downloads the manifest once a minute, not once a check", () =>
+  withGitHub(async (calls) => {
+    for (let i = 0; i < 3; i++) assert.equal((await worker.fetch(get("/updates/latest.json"), env)).status, 200);
+    assert.equal(calls.filter((c) => c.url.endsWith("/releases/assets/11")).length, 1);
+  }));
+
+// The token can read every asset of the repo, drafts included, and each lookup costs a call.
+test("a download is only handed out for an asset of the newest release", () =>
+  withGitHub(async (calls) => {
+    assert.equal((await worker.fetch(get("/updates/download/555/draft-build.dmg"), env)).status, 404);
+    assert.equal(calls.some((c) => c.url.includes("/releases/assets/")), false);
+  }));
