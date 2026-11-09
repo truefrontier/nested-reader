@@ -117,9 +117,8 @@ export function validAttachment(a) {
   if (!data || data.length > MAX_ATTACHMENT_BASE64) return null;
   const mime = imageType(data);
   if (!mime) return null;
-  const ext = ATTACHMENT_EXT[mime];
-  const name = typeof a.name === "string" && a.name.trim() ? a.name.trim().slice(0, 100) : `screenshot.${ext}`;
-  return { mime, ext, name, data };
+  // `name` is ignored: the file is stored under a name the relay makes up (see uploadAttachment).
+  return { mime, ext: ATTACHMENT_EXT[mime], data };
 }
 
 /** PNG, JPEG, GIF or WebP, read from the first 12 bytes of the base64; undefined for anything else. */
@@ -148,7 +147,7 @@ async function uploadAttachment(env, attachment) {
   const path = `attachments/${Date.now()}-${crypto.randomUUID()}.${attachment.ext}`;
   const res = await gh(env, `/repos/${env.GITHUB_REPO}/contents/${path}`, {
     method: "PUT",
-    body: JSON.stringify({ message: `Feedback screenshot: ${attachment.name}`, content: attachment.data, branch }),
+    body: JSON.stringify({ message: "Feedback screenshot", content: attachment.data, branch }),
   });
   if (!res.ok) throw new Error(`GitHub refused the screenshot upload (${res.status})`);
   return `https://raw.githubusercontent.com/${env.GITHUB_REPO}/${branch}/${path}`;

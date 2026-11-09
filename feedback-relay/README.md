@@ -72,7 +72,7 @@ An email or a screenshot goes only to a private repository. Before it uses eithe
 
 `truefrontier/nested-reader` is public, so for now every email and screenshot is held back. Pointing `GITHUB_REPO` at a private repository, with a token scoped to it, brings them back.
 
-In a private repository, a screenshot (`attachment`, PNG/JPEG/GIF/WebP, up to 2 MB, base64 in `data` without a `data:` prefix; its first bytes must be one of those four, and they, not `mime`, decide which) is committed to a `feedback-attachments` branch of its own, created from the default branch the first time one is needed, and embedded in the issue by its raw URL. Uploading it costs a few extra GitHub API calls; if that upload fails, the note is still filed, just without the picture.
+In a private repository, a screenshot (`attachment`, PNG/JPEG/GIF/WebP, up to 2 MB, base64 in `data` without a `data:` prefix; its first bytes must be one of those four, and they, not `mime`, decide which) is committed to a `feedback-attachments` branch of its own, created from the default branch the first time one is needed, under a file name the relay makes up and the commit message `Feedback screenshot` (the `name` sent with it is ignored), and embedded in the issue by its raw URL. Uploading it costs a few extra GitHub API calls; if that upload fails, the note is still filed, just without the picture.
 
 Try it:
 

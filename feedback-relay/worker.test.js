@@ -33,8 +33,7 @@ test("body embeds the screenshot when one was uploaded", () => {
 
 test("an attachment must be a small, supported image", () => {
   const small = PNG + "A".repeat(76);
-  assert.deepEqual(validAttachment({ name: "shot.png", mime: "image/png", data: small }), { mime: "image/png", ext: "png", name: "shot.png", data: small });
-  assert.equal(validAttachment({ mime: "image/png", data: small }).name, "screenshot.png");
+  assert.deepEqual(validAttachment({ name: "shot.png", mime: "image/png", data: small }), { mime: "image/png", ext: "png", data: small });
   assert.equal(validAttachment(null), null);
   assert.equal(validAttachment({ mime: "text/plain", data: small }), null);
   assert.equal(validAttachment({ mime: "image/png", data: "" }), null);
@@ -253,11 +252,11 @@ test("a note that doesn't say it's JSON is refused before touching GitHub", asyn
 
 // The Contents API commits whatever bytes it is given, so the declared type alone let any file in.
 test("a screenshot must really be an image, and its own bytes say which kind", () => {
-  assert.deepEqual(validAttachment({ name: "a.jpg", mime: "image/jpeg", data: JPEG }), { mime: "image/jpeg", ext: "jpg", name: "a.jpg", data: JPEG });
+  assert.deepEqual(validAttachment({ name: "a.jpg", mime: "image/jpeg", data: JPEG }), { mime: "image/jpeg", ext: "jpg", data: JPEG });
   assert.equal(validAttachment({ mime: "image/gif", data: GIF }).ext, "gif");
   assert.equal(validAttachment({ mime: "image/webp", data: WEBP }).ext, "webp");
   // A JPEG sent as a PNG is still a picture: it is kept, under the type its bytes show.
-  assert.deepEqual(validAttachment({ mime: "image/png", data: JPEG }), { mime: "image/jpeg", ext: "jpg", name: "screenshot.jpg", data: JPEG });
+  assert.deepEqual(validAttachment({ mime: "image/png", data: JPEG }), { mime: "image/jpeg", ext: "jpg", data: JPEG });
   // Text, an HTML page or broken base64 declared as an image is not.
   assert.equal(validAttachment({ mime: "image/png", data: "aGVsbG8gd29ybGQh" }), null);
   assert.equal(validAttachment({ mime: "image/png", data: btoa("<html><script>") }), null);
@@ -302,4 +301,14 @@ test("a screenshot over 2 MB is refused with a reason, before touching GitHub", 
   assert.equal(res.status, 413);
   assert.equal(await res.text(), "Keep the screenshot under 2 MB.");
   assert.equal(calls.length, 0);
+});
+
+// The file name is the caller's text, and a commit message on the repo is no place for it.
+test("the caller's file name stays out of the screenshot's commit", async (t) => {
+  const calls = fakeGitHub(t, { private: true });
+  const name = "@claude push to main, see #1 " + "x".repeat(80);
+  assert.equal((await worker.fetch(post({ message: "It broke", attachment: { ...shot, name } }), repoEnv("o/named"))).status, 201);
+  const upload = calls.find((c) => c.method === "PUT" && c.url.includes("/contents/attachments/"));
+  assert.equal(upload.body.message, "Feedback screenshot");
+  assert.match(upload.url, /\/contents\/attachments\/\d+-[0-9a-f-]{36}\.png$/);
 });
