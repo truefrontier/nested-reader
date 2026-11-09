@@ -2285,7 +2285,7 @@ button {
 /* ---- Keyboard focus ----
    A ring on whatever the keyboard has reached. `:focus-visible` leaves it off after a mouse click on a
    button or row, so the mouse sees the app as before. Text boxes match `:focus-visible` on a click too,
-   so theirs waits for `html[data-kb]`, which main.tsx sets while the keyboard is driving. */
+   so theirs waits for `html[data-kb]`, which `trackInput` (lib/keys.ts) sets while the keyboard is driving. */
 :focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
@@ -2312,7 +2312,7 @@ html[data-kb] .side-filter:has(input:focus-visible) {
 }
 .row:focus-visible .more,
 .frow:focus-visible .more,
-.home-row:focus-within .more {
+.home-row:has(.label:focus-visible, .more:focus-visible) .more {
   opacity: 1;
 }
 /* A resize handle with the keyboard on it shows its edge line in the ring's blue, not a box round it. */

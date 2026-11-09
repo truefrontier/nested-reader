@@ -14,7 +14,16 @@ export function TopStrip({ path, role, diff, children }: { path: string; role: P
   const review = !!diff && diff.changes.length > 0 && view.viewing === undefined;
   const viewing = view.viewing !== undefined ? versions.find((v) => v.n === view.viewing) : undefined;
   const hasHistory = versions.length > 0;
-  if (!review && !viewing && !hasHistory && !children) return null;
+  // The strip mounts with its text, and a live region that mounts already full isn't read out, so the
+  // status is said by one that stays on the page while the strip comes and goes.
+  const said = review && diff ? `${diff.changes.length} ${diff.changes.length === 1 ? "change" : "changes"} to review` : viewing ? `Viewing Version ${viewing.n}` : "";
+  const status = (
+    <span className="sr-only" role="status">
+      {said}
+    </span>
+  );
+  // The same fragment shape both ways, so React keeps the one status element.
+  if (!review && !viewing && !hasHistory && !children) return <>{status}</>;
   const modified = s.pages[path]?.modified;
 
   let content: ReactElement | null = null;
@@ -22,7 +31,7 @@ export function TopStrip({ path, role, diff, children }: { path: string; role: P
     const n = diff.changes.length;
     content = (
       <div className="strip">
-        <span className="st" role="status">
+        <span className="st">
           <span className="sdot" />
           {n} {n === 1 ? "change" : "changes"}
         </span>
@@ -38,7 +47,7 @@ export function TopStrip({ path, role, diff, children }: { path: string; role: P
     content = (
       <>
         <div className="strip">
-          <span className="st" role="status">
+          <span className="st">
             <span className="sdot warn" />
             Viewing Version {viewing.n} · {relTime(viewing.at, new Date(), "long")}
           </span>
@@ -93,11 +102,14 @@ export function TopStrip({ path, role, diff, children }: { path: string; role: P
     );
   }
   return (
-    <div className="top">
-      <div className="top-inner">
-        {content}
-        {children}
+    <>
+      {status}
+      <div className="top">
+        <div className="top-inner">
+          {content}
+          {children}
+        </div>
       </div>
-    </div>
+    </>
   );
 }

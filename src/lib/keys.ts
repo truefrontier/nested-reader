@@ -135,3 +135,35 @@ export function typeAhead(names: string[], at: number, query: string): number {
   }
   return -1;
 }
+
+/**
+ * Who is driving, kept on `root` (the `<html>` element) and the focus a click gives:
+ * - `data-kb` is set on Tab, or on a key pressed outside a text box (/ to the filter, ⌘F to find), and
+ *   cleared by a pointer press. Text boxes show their focus ring only under it (app.css), since they match
+ *   `:focus-visible` on a click too. Typing inside a box doesn't count.
+ * - The spans and divs that stand in for buttons (`PRESS`) took no focus before they had a tabindex, so a
+ *   click on one left it on the body, where ↵ reaches the window (and retries a failed page). A click
+ *   focuses an element with a tabindex, so the focus a pointer press puts on one (`STAND_IN`) goes back to
+ *   the body. Real buttons, links and text boxes, tree rows (Sidebar decides those) and the resize edges keep theirs.
+ */
+export const STAND_IN = "[tabindex]:not(a, button, input, select, textarea, [contenteditable], [role=treeitem], [role=separator])";
+export function trackInput(win: Pick<EventTarget, "addEventListener">, root: { dataset: DOMStringMap }): void {
+  // True from a pointer press until it is let go: the focus a press gives is the click's, not the keyboard's.
+  let pressing = false;
+  const on = (type: string, fn: (e: Event) => void) => win.addEventListener(type, fn, true);
+  on("keydown", (e) => {
+    pressing = false;
+    const t = e.target as Element | null;
+    if ((e as KeyboardEvent).key === "Tab" || !t?.closest?.("input, textarea, [contenteditable]")) root.dataset.kb = "";
+  });
+  on("pointerdown", () => {
+    pressing = true;
+    delete root.dataset.kb;
+  });
+  on("pointerup", () => (pressing = false));
+  on("pointercancel", () => (pressing = false));
+  on("focusin", (e) => {
+    const t = e.target as HTMLElement | null;
+    if (pressing && t?.matches?.(STAND_IN)) t.blur();
+  });
+}

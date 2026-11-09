@@ -1063,6 +1063,15 @@
 - The sidebar's resize grip is mouse-only; a `separator` with ← → would cover it.
 - Type-ahead in the tree (jump to a row by its first letters), and focus back on the version pill after picking a version.
 
+### Review fixes (same session)
+- A local reviewer read the diff. Five findings were real and are fixed:
+  1. A click on a stand-in button (the filter dots, ⋯, Send feedback, the version pill, the crumb) left the focus on it, since it now has a tabindex, so a later ↵ pressed it instead of retrying a failed page. `trackInput` (moved from `main.tsx` into `keys.ts`, with tests) now hands the focus a pointer press puts on one back to the body.
+  2. Clicking another row while renaming in the tree moved the focus to that row (the tree's mousedown guard only checked that the focus was somewhere in the tree). It now keeps a click's focus only when a row has it, and leaves a press in the rename box alone.
+  3. After a keyboard Delete or Remove from session, the row went after the focus had been put back on it, and the focus fell to the body. The tree now takes it back on its Tab stop (`keepFocus`, ended by a pointer press or by the focus leaving for another control). Home's "Remove from recents" hands the focus to the first session's name.
+  4. Home's ⋯ stayed visible after a mouse click (`:focus-within`); it now shows for keyboard focus on the row's name or ⋯ only.
+  5. The review strip's status mounted with its text, so it was never read out. `TopStrip` keeps one `.sr-only` status mounted.
+- `pnpm test` 155 → 157.
+
 ## Session: 2026-11-09 — the resize edges take the keyboard, and type-ahead in the tree (#253 follow-up)
 
 ### World facts
