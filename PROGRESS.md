@@ -867,3 +867,14 @@
   - The store's `writePage`, so the front matter, always written with LF, follows the body. The Rust front matter readers already trim `\r`.
 - A mixed file comes back all in whichever ending it uses more, LF on a tie. Rendering is unchanged: `lexBlocks` still lexes LF.
 - Checks: `pnpm test` 89 → 93, and the four new tests fail on `main`, where `withLineEndings` doesn't exist. `pnpm build` passes. In the browser mock, a new page linked from a word in a CRLF page left the source CRLF throughout, front matter included. In its body only the linked line changed. Not run: the desktop app.
+
+### Follow-up — 2026-11-08: Before / Now cards in the split pane, and only the split's highlight survives a navigate
+- The split pane now draws a change's Before card (and, while it shows an old version, the Now card) like the main pane. `Page` drew them only for `isMain`; the tints, the strip and `undoChange(change, path)` already worked per pane, so dropping that guard was the whole change. Undo from the split card rewrites the split page, and the main page is untouched.
+- The 2026-09-11 session's next steps said `navigate` reset all of `ui`, dropping a split highlight. It didn't: `setUi` merges, and `selection`, `popover`, `panePopover` and `refineRetry` aren't in `initialUi`, so every one of them survived. The split highlight already stayed. The real bug was the other side: a **main** pane highlight and its ask box stayed too, and after ⌘[ they sat on the new page over the same offsets, holding the old page's text ("Forward" over "Slow os" in the mock).
+- `uiAfterNavigate(ui, lookups)` in `src/state/ui.ts` (with `initialUi` and `closedVersionView`, moved there from the store so a test can load them) now builds the whole UI afresh, and `navigate` replaces `ui` with it. It keeps a highlight and its box only when it is in the split pane, and keeps everything else that survived before, now by name.
+- Checks: `pnpm test` 103 → 108. Run against a copy of the old merge, only "a highlight in the main pane, and its box, go with the page they were on" failed. `pnpm build` passes. Browser mock (vite on 127.0.0.1:1477, Chrome DevTools in an isolated context):
+  - a page refine on the split page gave 5 changes, and clicking a tint opened "Before · 1 of 5" in the split pane; its Undo left 4, with the main page unchanged;
+  - viewing Version 1 there opened "Now · Version 2";
+  - a split highlight kept its ask box through ⌘[;
+  - a main highlight's box closed on ⌘[ (before the fix it stayed on the new page).
+  - No console errors. Not run: the desktop app.
