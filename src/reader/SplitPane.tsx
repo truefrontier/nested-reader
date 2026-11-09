@@ -1,4 +1,3 @@
-import { DEFAULT_SETTINGS } from "../platform";
 import { store, useReader } from "../state/store";
 import { CloseIcon, FullscreenIcon, SyncScrollIcon } from "./Icons";
 import { Page } from "./Page";
@@ -8,7 +7,7 @@ import { useSplitGrip } from "./useSplitGrip";
 export function SplitPane() {
   const s = useReader();
   const dir = s.session.splitDirection;
-  const { onGripDown, onGripMove, onGripUp } = useSplitGrip(dir);
+  const { gripProps } = useSplitGrip(dir, s.settings.splitShare?.[dir]);
   const path = s.session.split;
   if (!path || !s.pages[path]) return null;
   // The same page on both sides can scroll as one; the button shows only then, lit while the link is on.
@@ -18,15 +17,7 @@ export function SplitPane() {
     <>
       {/* ⌘⇧F hides the main pane, so there is no edge to drag. */}
       {!s.ui.fullscreen && (
-        <div
-          className="split-grip"
-          title="Drag to resize"
-          onPointerDown={onGripDown}
-          onPointerMove={onGripMove}
-          onPointerUp={onGripUp}
-          onPointerCancel={onGripUp}
-          onDoubleClick={() => void store.setSplitShare(dir, DEFAULT_SETTINGS.splitShare[dir])}
-        />
+        <div className="split-grip" title="Drag to resize" {...gripProps} />
       )}
       <div className="pane split">
         <div className="pane-tools">

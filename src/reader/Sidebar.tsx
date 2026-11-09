@@ -5,7 +5,6 @@ import { buildFolders, dotState, rootDirs, type FolderNode, type TreeItem } from
 import { ChevronRight, MapIcon, MoreIcon, NestedLogo } from "./Icons";
 import { RenameInput } from "./RenameInput";
 import { AnchoredLayer, DeleteConfirm, EDGE } from "./AnchoredLayer";
-import { DEFAULT_SETTINGS } from "../platform";
 import { useSidebarGrip } from "./useSidebarGrip";
 import { onEscapeFirst } from "../lib/escapeFirst";
 import { moveFocus, PRESS, treeKey } from "../lib/keys";
@@ -121,7 +120,7 @@ export function Sidebar() {
     return f.folders.map(firstShown).find(Boolean) ?? f.items.find(shows)?.path;
   };
   // Dragging the right edge resizes the sidebar; double-click resets it to the default width.
-  const { onGripDown, onGripMove, onGripUp } = useSidebarGrip(s.settings.sidebarWidth);
+  const { gripProps } = useSidebarGrip(s.settings.sidebarWidth);
   const onRow = (path: string) => (e: MouseEvent) => {
     e.preventDefault();
     void store.openPage(path, store.placementFor(e));
@@ -564,15 +563,7 @@ export function Sidebar() {
           Send feedback
         </span>
       </div>
-      <div
-        className="side-grip"
-        title="Drag to resize"
-        onPointerDown={onGripDown}
-        onPointerMove={onGripMove}
-        onPointerUp={onGripUp}
-        onPointerCancel={onGripUp}
-        onDoubleClick={() => void store.setSidebarWidth(DEFAULT_SETTINGS.sidebarWidth)}
-      />
+      <div className="side-grip" title="Drag to resize" {...gripProps} />
     </aside>
   );
 }

@@ -2315,6 +2315,21 @@ html[data-kb] .side-filter:has(input:focus-visible) {
 .home-row:focus-within .more {
   opacity: 1;
 }
+/* A resize handle with the keyboard on it shows its edge line in the ring's blue, not a box round it. */
+.side-grip:focus-visible,
+.split-grip:focus-visible {
+  outline: 0;
+}
+.side-grip:focus-visible::after,
+.split-grip:focus-visible::after {
+  opacity: 1;
+  width: 2px;
+  background: var(--ring);
+}
+.main.below .split-grip:focus-visible::after {
+  width: auto;
+  height: 2px;
+}
 /* Items in a menu or list light up as they do under the pointer. */
 .menu .item[role="menuitem"]:focus-visible,
 .home-menu .item:focus-visible,
