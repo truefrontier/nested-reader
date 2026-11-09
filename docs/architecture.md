@@ -273,7 +273,7 @@ A Quick Answer is not lost when its card closes. Once the answer has streamed in
 
 A version in the menu is a link like any other: ⌘Click and ⌘⇧Click pass the New Page and Deep Dive placement settings (via `placementFor`) to `viewVersion`. "beside" and "below" put the page in the other pane and view the version there (from the split's menu, the other pane is the main one). "window" opens a page window at that version: the window URL carries `&version=N`, which `init` hands to `openFolder` as `initialVersion`. "background" means nothing for a version, so it views the version in place like a plain click.
 
-When both panes show the same page they scroll together: `useSyncScroll` (used by `App`) links the two `.pane` scroll containers in proportion, since the split renders the same text a little shorter. The split pane's tools show a link button, lit while `ui.syncScroll` is on; clicking it turns the link off and on. Opening a page beside or below turns it back on.
+When both panes show the same page they scroll together: `useSyncScroll` (used by `App`) links the two `.pane` scroll containers in proportion, since the narrower pane wraps the same text into more lines (beside, the split is usually the taller: 1299 px against the main pane's 875 for the sample's first page at 1440×900). The split pane's tools show a link button, lit while `ui.syncScroll` is on; clicking it turns the link off and on. Opening a page beside or below turns it back on.
 
 ## Find and filter
 

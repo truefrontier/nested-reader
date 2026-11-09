@@ -55,8 +55,8 @@ export function linkScroll(main: Pane, split: Pane): () => void {
 
 /**
  * Links the scrolling of the two panes inside `container` while `active` is true. Each pane follows the
- * other in proportion: the same page renders a little taller in the main pane than in the split, so
- * matching scroll fractions keeps the same part of the text in view on both sides.
+ * other in proportion: the narrower pane wraps the same page into more lines (beside, the split is
+ * usually the taller), so matching scroll fractions keeps the same part of the text in view on both sides.
  */
 export function useSyncScroll(container: RefObject<HTMLElement | null>, active: boolean) {
   useEffect(() => {
