@@ -123,13 +123,19 @@ export function downloadUrl(origin, asset) {
   return `${origin}/updates/download/${asset.id}/${encodeURIComponent(asset.name)}`;
 }
 
+let warnedOrigin = false;
+
 /**
- * PUBLIC_ORIGIN when it's set. Otherwise the origin the app reached us on, where behind Fly's proxy the
+ * PUBLIC_ORIGIN when it's a scheme and host (a bad one is ignored, and logged once). Otherwise the origin the app reached us on, where behind Fly's proxy the
  * scheme arrives in a header; the caller writes both that and the Host, so the links are only as good as them.
  */
 export function publicOrigin(request, url, env = {}) {
   const pinned = env.PUBLIC_ORIGIN?.trim().replace(/\/+$/, "");
-  if (pinned) return pinned;
+  if (pinned && /^https?:\/\/[^/\s]+$/.test(pinned)) return pinned;
+  if (pinned && !warnedOrigin) {
+    warnedOrigin = true;
+    console.error(`PUBLIC_ORIGIN must be a scheme and host such as https://nested-feedback.fly.dev; ignoring ${JSON.stringify(pinned)}`);
+  }
   const proto = request.headers.get("x-forwarded-proto")?.split(",")[0].trim() || url.protocol.replace(":", "");
   return `${proto}://${url.host}`;
 }

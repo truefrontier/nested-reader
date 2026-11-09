@@ -164,3 +164,20 @@ test("PUBLIC_ORIGIN, when set, builds the links instead of the caller's Host", (
       assert.equal((await worker.fetch(forged("/updates/dmg"), loose)).headers.get("location"), "http://evil.test/updates/download/14/Nested_0.2.0_universal.dmg");
     }
   }));
+
+// Without a scheme, or with a path, every update link would break; today's links are the better fallback.
+test("a PUBLIC_ORIGIN that isn't a scheme and host is ignored, and the log says so once", () =>
+  withGitHub(async () => {
+    const said = [];
+    const realError = console.error;
+    console.error = (...args) => said.push(args.join(" "));
+    try {
+      for (const bad of ["nested-feedback.fly.dev", "https://nested-feedback.fly.dev/relay", "javascript:alert(1)//"]) {
+        const res = await worker.fetch(get("/updates/dmg"), { ...env, PUBLIC_ORIGIN: bad });
+        assert.equal(res.headers.get("location"), "http://relay.test/updates/download/14/Nested_0.2.0_universal.dmg");
+      }
+    } finally {
+      console.error = realError;
+    }
+    assert.equal(said.filter((line) => line.includes("PUBLIC_ORIGIN")).length, 1);
+  }));
