@@ -1,5 +1,20 @@
 import { useEffect, type RefObject } from "react";
 
+type Scroller = Pick<HTMLElement, "scrollTop" | "scrollHeight" | "clientHeight">;
+
+/**
+ * The scrollTop that puts `dst` at the same fraction of its scroll range as `src`, rounded to a whole
+ * pixel. Null when either has nothing to scroll, or `dst` is already within a pixel of it: setting it
+ * anyway would echo back as a scroll on `dst` and start the two panes chasing each other.
+ */
+export function followScrollTop(src: Scroller, dst: Scroller): number | null {
+  const srcMax = src.scrollHeight - src.clientHeight;
+  const dstMax = dst.scrollHeight - dst.clientHeight;
+  if (srcMax <= 0 || dstMax <= 0) return null;
+  const target = Math.round((src.scrollTop / srcMax) * dstMax);
+  return Math.abs(dst.scrollTop - target) < 1 ? null : target;
+}
+
 /**
  * Links the scrolling of the two panes inside `container` while `active` is true. Each pane follows the
  * other in proportion: the same page renders a little taller in the main pane than in the split, so
@@ -16,11 +31,8 @@ export function useSyncScroll(container: RefObject<HTMLElement | null>, active: 
     // The pane whose scrollTop was just set by us; its echoed scroll event is dropped so the two don't feed each other.
     let echo: HTMLElement | null = null;
     const follow = (src: HTMLElement, dst: HTMLElement) => {
-      const srcMax = src.scrollHeight - src.clientHeight;
-      const dstMax = dst.scrollHeight - dst.clientHeight;
-      if (srcMax <= 0 || dstMax <= 0) return;
-      const target = Math.round((src.scrollTop / srcMax) * dstMax);
-      if (Math.abs(dst.scrollTop - target) < 1) return;
+      const target = followScrollTop(src, dst);
+      if (target === null) return;
       echo = dst;
       dst.scrollTop = target;
       requestAnimationFrame(() => {
