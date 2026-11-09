@@ -867,3 +867,26 @@
   - The store's `writePage`, so the front matter, always written with LF, follows the body. The Rust front matter readers already trim `\r`.
 - A mixed file comes back all in whichever ending it uses more, LF on a tie. Rendering is unchanged: `lexBlocks` still lexes LF.
 - Checks: `pnpm test` 89 → 93, and the four new tests fail on `main`, where `withLineEndings` doesn't exist. `pnpm build` passes. In the browser mock, a new page linked from a word in a CRLF page left the source CRLF throughout, front matter included. In its body only the linked line changed. Not run: the desktop app.
+
+## Session: 2026-11-09 — tests for the IPC commands, ai.rs, the bridge and wraps.ts (#235)
+
+### Leading assumptions
+- Overflow task: test the `lib.rs` commands that have real logic, `ai.rs` (request building, base URLs, stream parsing, error mapping) against a local fake server, and `src/platform/tauri.ts` and `src/lib/wraps.ts`. Fix a bug a test finds only when the fix is small and plain.
+- No test may reach the keychain, a provider or the relay, so this carries the same `TEST_KEYS` harness as #114.
+
+### World facts
+- `lib.rs` `mod ipc` drives commands through Tauri's mock runtime (`tauri` with the `test` feature, dev-dependency only).
+  - `call(window, "read_page", json!({...}))` sends the same camelCase JSON `tauri.ts` sends, and gets back the value or the error text the webview reads.
+  - Commands that take `AppHandle` (dialogs, Finder, windows, settings files, the updater, the relay) can't run on the mock runtime and are left out.
+- `ai.rs` `mod requests` has its own fake server. It records each request's line, head and body, and sends a reply in pieces with a pause between, so a test can split a reply anywhere.
+- `src/platform/tauri.test.ts` runs the bridge against a stand-in `window.__TAURI_INTERNALS__`.
+  - Its contract test checks every command name and argument key against the signatures it parses from `lib.rs`. A new command must be called from `callEverything`, or the test lists it as unreached.
+  - `open_folder` is the one exception: only the native path menu reaches it.
+- `src/lib/wraps.test.ts` carries a small DOM stand-in (`splitText`, `insertBefore`, a TreeWalker over text, Range boundaries) instead of adding jsdom.
+
+### The bug a test found
+- `read_sse` and `read_ndjson` decoded each network chunk on its own. A chunk that ended inside a character ("é", "—", "’") turned both halves into U+FFFD, so an answer could read "Caf�� �� open.". Both now buffer bytes and decode whole lines. The CLI path was fine (`BufReader::lines`).
+
+### Verification
+- `cargo test --lib`: 77 → 95 passed (12 ignored). `pnpm test`: 103 → 115.
+- The contract test fails if `okLabel` is renamed in `tauri.ts`, or `n` in `lib.rs`'s `read_version`. The table-whitespace test in `wraps.test.ts` fails if that check is removed.
