@@ -33,7 +33,11 @@ export function TopStrip({ path, role, diff, children }: { path: string; role: P
     window.addEventListener("pointerdown", drop, true);
     return () => window.removeEventListener("pointerdown", drop, true);
   }, []);
-  const onFocus = (e: FocusEvent) => (inside.current = !(e.target as HTMLElement).closest(".find"));
+  // A click's focus on a stand-in button is handed back before React sees it (`trackInput`), so a focus
+  // event for an element that no longer has the focus is the mouse's, not the keyboard's.
+  const onFocus = (e: FocusEvent) => {
+    if (e.target === document.activeElement) inside.current = !(e.target as HTMLElement).closest(".find");
+  };
   // A control removed while focused leaves no blur, so only a move to somewhere else ends `inside`.
   const onBlur = (e: FocusEvent) => {
     if (e.relatedTarget && !topRef.current?.contains(e.relatedTarget as Node)) inside.current = false;

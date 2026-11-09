@@ -1128,3 +1128,4 @@
   - ↵ goes back, with the focus on the pill.
 - A mouse click on the pill and then on a version opens the same views and leaves the focus on the body.
 - `pnpm test` 164, unchanged (the effect reads the DOM; no new pure logic). `pnpm build` green. Screenshot `versions-history-keyboard.png` in Kevin's overflow notes.
+- Review fix (a second local reviewer): a mouse click on the pill, a version or Done set `inside`. The click's focus is handed back by `trackInput` during the capture phase, but React's `onFocus` still saw the event. A later Esc (which sets `html[data-kb]`) then moved the focus onto the pill with a ring, and ↵ reopened the history instead of retrying a failed refine. `onFocus` now counts only a focus the element still has. Checked in Chrome: a mouse click on Done, then on the pill, then Esc leaves the focus on the body, and the keyboard path still opens the history on its first version.
