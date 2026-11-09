@@ -139,8 +139,7 @@ test("a GitHub refusal comes back as 502", async () => {
 });
 
 // The issue is as public as the repo it lands in, so the relay asks GitHub before it posts an email or a
-// screenshot. Each test below files to a repo of its own, so the remembered answer of one can't leak
-// into the next.
+// screenshot. Each test below files to a repo of its own.
 const shot = { name: "shot.png", mime: "image/png", data: PNG };
 const repoEnv = (repo) => ({ GITHUB_TOKEN: "t", GITHUB_REPO: repo });
 
@@ -209,13 +208,13 @@ test("a visibility check that fails holds both back, files the note, and asks ag
   }
 });
 
-test("the answer is remembered, and a note with nothing personal never asks", async (t) => {
+test("each note with an email asks again, and a note with nothing personal never asks", async (t) => {
   const calls = fakeGitHub(t, { private: true });
   const env = repoEnv("o/cached");
   for (const note of [{ message: "no email" }, { message: "one", email: "a@example.com" }, { message: "two", email: "b@example.com" }]) {
     assert.equal((await worker.fetch(post(note), env)).status, 201);
   }
-  assert.equal(calls.filter((c) => c.url === "https://api.github.com/repos/o/cached").length, 1);
+  assert.equal(calls.filter((c) => c.url === "https://api.github.com/repos/o/cached").length, 2);
   assert.match(issueText(calls), /\*\*Contact:\*\* b@example\.com/);
 });
 
@@ -311,4 +310,18 @@ test("the caller's file name stays out of the screenshot's commit", async (t) =>
   const upload = calls.find((c) => c.method === "PUT" && c.url.includes("/contents/attachments/"));
   assert.equal(upload.body.message, "Feedback screenshot");
   assert.match(upload.url, /\/contents\/attachments\/\d+-[0-9a-f-]{36}\.png$/);
+});
+
+// A remembered "private" kept posting emails and screenshots for up to five minutes after the repo went public.
+test("a repo made public is caught on the very next note", async (t) => {
+  const repo = { private: true };
+  const calls = fakeGitHub(t, repo);
+  const env = repoEnv("o/flip");
+  const first = await worker.fetch(post({ message: "one", email: "a@example.com", attachment: shot }), env);
+  assert.equal((await first.json()).withheld, undefined);
+  repo.private = false;
+  const second = await worker.fetch(post({ message: "two", email: "b@example.com", attachment: shot }), env);
+  assert.deepEqual((await second.json()).withheld, ["email", "screenshot"]);
+  assert.doesNotMatch(issueText(calls), /b@example\.com|!\[Screenshot\]/);
+  assert.equal(calls.filter((c) => c.method === "PUT").length, 1);
 });

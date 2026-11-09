@@ -18,9 +18,6 @@ const MAX_ATTACHMENT_BYTES = 2 * 1024 * 1024;
 const MAX_ATTACHMENT_BASE64 = (MAX_ATTACHMENT_BYTES * 4) / 3 + 4;
 const ATTACHMENT_EXT = { "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp" };
 const ATTACHMENTS_BRANCH = "feedback-attachments";
-const VISIBILITY_MS = 5 * 60_000;
-
-let visibility = { at: 0, repo: "", private: false };
 
 export default {
   async fetch(request, env) {
@@ -89,18 +86,15 @@ export default {
 };
 
 /**
- * Whether GitHub says GITHUB_REPO is private. The answer is remembered for five minutes, so a wave of notes
- * costs one lookup. A failed lookup counts as public and isn't remembered, so the next note asks again.
+ * Whether GitHub says GITHUB_REPO is private, asked afresh for each note that carries an email or a
+ * screenshot, just before either is posted: a remembered "private" would keep posting them for as long as
+ * it was kept after the repo went public. A failed lookup counts as public.
  */
 async function repoIsPrivate(env) {
-  const now = Date.now();
-  if (visibility.repo === env.GITHUB_REPO && now - visibility.at < VISIBILITY_MS) return visibility.private;
   try {
     const res = await gh(env, `/repos/${env.GITHUB_REPO}`);
     if (!res.ok) throw new Error(`GitHub answered ${res.status}`);
-    const repo = await res.json();
-    visibility = { at: now, repo: env.GITHUB_REPO, private: repo?.private === true };
-    return visibility.private;
+    return (await res.json())?.private === true;
   } catch (e) {
     console.error("Couldn't tell whether the repo is private, so the email and screenshot are held back", e);
     return false;
