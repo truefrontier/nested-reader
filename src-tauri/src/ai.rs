@@ -200,7 +200,9 @@ where
     F: FnMut(&str) -> Result<bool>,
 {
     let mut body = resp.bytes_stream();
-    let mut buf = String::new();
+    // Bytes, not text: a chunk can end inside a character, which decoding chunk by chunk would
+    // turn into two replacement marks. A newline byte is never part of a longer character.
+    let mut buf: Vec<u8> = Vec::new();
     loop {
         let chunk = tokio::select! {
             chunk = body.next() => match chunk {
@@ -211,9 +213,9 @@ where
             // cancels, rather than waiting for the next chunk or the read timeout.
             _ = cancel.cancelled() => return Ok(()),
         };
-        buf.push_str(&String::from_utf8_lossy(&chunk));
-        while let Some(pos) = buf.find('\n') {
-            let line = buf[..pos].trim_end_matches('\r').to_string();
+        buf.extend_from_slice(&chunk);
+        while let Some(pos) = buf.iter().position(|&b| b == b'\n') {
+            let line = String::from_utf8_lossy(&buf[..pos]).trim_end_matches('\r').to_string();
             buf.drain(..=pos);
             if let Some(data) = line.strip_prefix("data:") {
                 if !on_data(data.trim())? {
@@ -230,7 +232,8 @@ where
     F: FnMut(&str) -> Result<bool>,
 {
     let mut body = resp.bytes_stream();
-    let mut buf = String::new();
+    // Bytes, for the same reason as `read_sse`.
+    let mut buf: Vec<u8> = Vec::new();
     loop {
         let chunk = tokio::select! {
             chunk = body.next() => match chunk {
@@ -241,9 +244,9 @@ where
             // cancels, rather than waiting for the next chunk or the read timeout.
             _ = cancel.cancelled() => return Ok(()),
         };
-        buf.push_str(&String::from_utf8_lossy(&chunk));
-        while let Some(pos) = buf.find('\n') {
-            let line = buf[..pos].trim().to_string();
+        buf.extend_from_slice(&chunk);
+        while let Some(pos) = buf.iter().position(|&b| b == b'\n') {
+            let line = String::from_utf8_lossy(&buf[..pos]).trim().to_string();
             buf.drain(..=pos);
             if !line.is_empty() && !on_line(&line)? {
                 return Ok(());
@@ -1485,6 +1488,29 @@ data: [DONE]\n\n";
         assert_eq!(openai_base(Some("https://models.example.com/v1//"), "custom"), "https://models.example.com/v1");
         assert_eq!(anthropic_base(&AiRequest { base_url: None, ..request("anthropic", "") }), "https://api.anthropic.com");
         assert_eq!(anthropic_base(&AiRequest { base_url: Some(" ".into()), ..request("anthropic", "") }), "https://api.anthropic.com");
+    }
+
+    /// The network splits a reply wherever it likes, including inside a character: "é" is two
+    /// bytes, and an answer full of curly quotes and dashes is full of three-byte ones.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn an_sse_reply_split_inside_a_character_streams_it_whole() {
+        let first: &[u8] = b"data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n\
+data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Caf\xc3";
+        let second: &[u8] = b"\xa9 \xe2\x80";
+        let third: &[u8] = b"\x94 open.\"}}\n\n\
+data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"}}\n\n\
+data: {\"type\":\"message_stop\"}\n\n";
+        let (_, events) = run(request("anthropic", "{base}"), vec![(200, vec![first, second, third])]).await;
+        assert_eq!(text(&events), "Café — open.");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn an_ndjson_reply_split_inside_a_character_streams_it_whole() {
+        let first: &[u8] = b"{\"model\":\"m\",\"message\":{\"role\":\"assistant\",\"content\":\"Caf\xc3";
+        let second: &[u8] = b"\xa9.\"},\"done\":false}\n\
+{\"model\":\"m\",\"message\":{\"role\":\"assistant\",\"content\":\"\"},\"done\":true,\"done_reason\":\"stop\"}\n";
+        let (_, events) = run(request("ollama", "{base}"), vec![(200, vec![first, second])]).await;
+        assert_eq!(text(&events), "Café.");
     }
 
     #[tokio::test(flavor = "multi_thread")]
