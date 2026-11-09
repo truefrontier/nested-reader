@@ -7,6 +7,7 @@ const env = {
   GITHUB_REPO: process.env.GITHUB_REPO || "truefrontier/nested-reader",
   LABEL: process.env.LABEL || "feedback",
   ATTACHMENTS_BRANCH: process.env.ATTACHMENTS_BRANCH,
+  PUBLIC_ORIGIN: process.env.PUBLIC_ORIGIN,
 };
 
 // Fly sets FLY_APP_NAME on its machines; only there does Fly-Client-IP come from Fly's proxy.

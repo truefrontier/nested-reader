@@ -149,3 +149,18 @@ test("a failed release lookup is remembered for a few seconds, then asked again"
     forgetLatest();
   }
 });
+
+// Host, an absolute-form request target and X-Forwarded-Proto all come from the caller.
+test("PUBLIC_ORIGIN, when set, builds the links instead of the caller's Host", () =>
+  withGitHub(async () => {
+    const pinned = { ...env, PUBLIC_ORIGIN: " https://nested-feedback.fly.dev/ " };
+    const forged = (path) => new Request(`http://evil.test${path}`, { headers: { "x-forwarded-proto": "http" } });
+    const dmg = await worker.fetch(forged("/updates/dmg"), pinned);
+    assert.equal(dmg.headers.get("location"), "https://nested-feedback.fly.dev/updates/download/14/Nested_0.2.0_universal.dmg");
+    const body = await (await worker.fetch(forged("/updates/latest.json"), pinned)).json();
+    assert.equal(body.platforms["darwin-aarch64"].url, "https://nested-feedback.fly.dev/updates/download/12/Nested.app.tar.gz");
+    // Unset or empty, the links follow the request, as before.
+    for (const loose of [env, { ...env, PUBLIC_ORIGIN: "" }]) {
+      assert.equal((await worker.fetch(forged("/updates/dmg"), loose)).headers.get("location"), "http://evil.test/updates/download/14/Nested_0.2.0_universal.dmg");
+    }
+  }));

@@ -42,6 +42,8 @@ Three `GET` routes read the newest published release (drafts and pre-releases le
 
 The release lookup and its `latest.json` are remembered for a minute, so a wave of launches costs two GitHub calls a minute at most. A lookup GitHub refuses (a lapsed token, a spent rate limit) is remembered for 10 seconds, so the launches don't keep the limit spent by asking again each time. A download link is handed out only for an asset of that release; any other asset id gets a `404` without a call to GitHub. The app's updater endpoint is `plugins.updater.endpoints` in `src-tauri/tauri.conf.json`; it passes `version`, `target` and `arch`, which the relay ignores (the updater compares versions itself and verifies the bundle's signature against the public key in the same file).
 
+The links in `latest.json` and the `/updates/dmg` redirect start with `PUBLIC_ORIGIN` when it is set: the scheme and host the app uses, such as `https://nested-feedback.fly.dev`, with no path. When it is unset or empty, they start with the request's own `Host` and, on Fly, its `X-Forwarded-Proto`. The caller writes both, but the answer goes back only to that caller, and the updater checks the bundle's signature anyway, so this is a pin, not a fix for an open hole. To set it, put it under `[env]` in `fly.toml` or `[vars]` in `wrangler.toml` and deploy.
+
 Try it:
 
 ```bash

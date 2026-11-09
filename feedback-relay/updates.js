@@ -22,7 +22,7 @@ export async function handleUpdates(request, env, url) {
   if (!/^[\w.-]+\/[\w.-]+$/.test(env.GITHUB_REPO || "")) return text(500, "The relay has no GITHUB_REPO set");
 
   const path = url.pathname.replace(/\/+$/, "");
-  const origin = publicOrigin(request, url);
+  const origin = publicOrigin(request, url, env);
 
   if (path === "/updates/latest.json") {
     const release = await latestRelease(env);
@@ -123,8 +123,13 @@ export function downloadUrl(origin, asset) {
   return `${origin}/updates/download/${asset.id}/${encodeURIComponent(asset.name)}`;
 }
 
-/** The origin the app reached us on; behind Fly's proxy the scheme arrives in a header. */
-export function publicOrigin(request, url) {
+/**
+ * PUBLIC_ORIGIN when it's set. Otherwise the origin the app reached us on, where behind Fly's proxy the
+ * scheme arrives in a header; the caller writes both that and the Host, so the links are only as good as them.
+ */
+export function publicOrigin(request, url, env = {}) {
+  const pinned = env.PUBLIC_ORIGIN?.trim().replace(/\/+$/, "");
+  if (pinned) return pinned;
   const proto = request.headers.get("x-forwarded-proto")?.split(",")[0].trim() || url.protocol.replace(":", "");
   return `${proto}://${url.host}`;
 }
