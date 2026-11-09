@@ -30,3 +30,11 @@ test("the page can reach nothing but the app's own backend", () => {
   assert.deepEqual(p.get("form-action"), ["'none'"]);
   assert.deepEqual(p.get("frame-src"), ["'none'"]);
 });
+
+test("the page holds no permission to send analytics events of its own", () => {
+  // Every event is tracked from Rust (src-tauri/src/analytics.rs), which needs no capability; the
+  // frontend never calls the plugin. With the permission, a script in the page could send any event,
+  // with any properties, under the app's key.
+  const caps = JSON.parse(readFileSync(new URL("../../src-tauri/capabilities/default.json", import.meta.url), "utf8"));
+  assert.deepEqual(caps.permissions.filter((p: string) => p.includes("aptabase")), []);
+});
