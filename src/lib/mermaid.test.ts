@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { registerHooks } from "node:module";
+import { readFileSync } from "node:fs";
 
 // mermaid itself needs a browser, so it is swapped for a stand-in that records how it was set up.
 // What the reader shows was checked in a browser; this keeps the setting from quietly going away.
@@ -22,4 +23,14 @@ test("diagrams are drawn with SVG text labels, which survive the sanitizer", asy
   assert.equal(config?.htmlLabels, false);
   assert.equal(config?.securityLevel, "strict");
   assert.equal(config?.theme, "dark");
+});
+
+test("no app style reaches into a diagram's boxes", () => {
+  // mermaid places each box, cluster and label with its own transform attribute. A bare app rule on
+  // one of those class names that sets `transform` (the session map's .node did) wins over it and
+  // piles every box on one spot, so these names are only styled under a parent of the app's own.
+  const css = readFileSync(new URL("../styles/app.css", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  const selectors = css.split("}").flatMap((rule) => rule.split("{")[0].split(",")).map((s) => s.trim());
+  const bare = selectors.filter((s) => /^\.(node|cluster|label|edgeLabel)\b/.test(s));
+  assert.deepEqual(bare, []);
 });

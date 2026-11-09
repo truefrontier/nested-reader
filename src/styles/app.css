@@ -1626,7 +1626,9 @@ button {
   width: 100%;
   height: 100%;
 }
-.node {
+/* Under .web only: mermaid draws its flowchart and state boxes as <g class="node">, and a bare
+   .node rule's transform overrides each box's own position, piling them on one spot. */
+.web .node {
   position: absolute;
   transform: translate(-50%, -50%);
   white-space: nowrap;
@@ -1640,21 +1642,21 @@ button {
   gap: 8px;
   max-width: 220px;
 }
-.node .label {
+.web .node .label {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.node.current {
+.web .node.current {
   background: var(--fg);
   color: var(--bg);
   border-color: var(--fg);
 }
-.node.loading {
+.web .node.loading {
   border-style: dashed;
   border-color: var(--mute);
   color: var(--mute);
 }
-.node.unread {
+.web .node.unread {
   color: var(--mute);
 }
 .timeline {
