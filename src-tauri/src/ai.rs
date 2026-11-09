@@ -102,13 +102,14 @@ fn stored_key(provider: &str) -> keyring::Result<String> {
     keys.iter().find(|(p, _)| p == provider).map(|(_, k)| k.clone()).ok_or(keyring::Error::NoEntry)
 }
 
+/// Where an OpenAI-shaped request goes. OpenAI's always go to OpenAI, since they carry its key:
+/// a base URL is Custom's, and Settings keeps it when the provider is switched back to OpenAI.
 fn openai_base(req_base: Option<&str>, provider: &str) -> String {
-    let base = match req_base {
-        Some(b) if !b.trim().is_empty() => b.trim().trim_end_matches('/').to_string(),
+    match req_base {
         _ if provider == "openai" => "https://api.openai.com/v1".to_string(),
+        Some(b) if !b.trim().is_empty() => b.trim().trim_end_matches('/').to_string(),
         _ => "http://localhost:11434/v1".to_string(),
-    };
-    base
+    }
 }
 
 /// A read timeout rather than an overall one, so a long answer that keeps streaming (a whole-page
@@ -480,11 +481,13 @@ async fn stream_openai(req: &AiRequest, channel: &Channel<StreamEvent>, cancel: 
     Ok(false)
 }
 
+const ANTHROPIC_HOST: &str = "https://api.anthropic.com";
+
 /// Anthropic's own host, or an Anthropic-compatible proxy named on the request (the tests use one).
 fn anthropic_base(req: &AiRequest) -> String {
     match req.base_url.as_deref() {
         Some(b) if !b.trim().is_empty() => b.trim().trim_end_matches('/').to_string(),
-        _ => "https://api.anthropic.com".to_string(),
+        _ => ANTHROPIC_HOST.to_string(),
     }
 }
 
@@ -517,13 +520,10 @@ fn citation_links(block: &Value) -> Option<String> {
 }
 
 async fn stream_anthropic(req: &AiRequest, channel: &Channel<StreamEvent>, cancel: &CancelToken) -> Result<bool> {
-    // A proxy at its own base URL may hold the key itself.
-    let key = match api_key("anthropic") {
-        Ok(k) => k,
-        Err(_) if req.base_url.is_some() => String::new(),
-        Err(e) => return Err(e),
-    };
     let base = anthropic_base(req);
+    // The keychain key goes to Anthropic and nowhere else. A proxy at its own base URL holds its own
+    // key; the app never names one, so only a script in the webview could point the key elsewhere.
+    let key = if base == ANTHROPIC_HOST { api_key("anthropic")? } else { String::new() };
     let mut messages: Vec<Value> = req
         .messages
         .iter()
@@ -931,7 +931,8 @@ mod tool_loops {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
 
-    /// Answers each request in turn with the given status and body, and keeps the request bodies.
+    /// Answers each request in turn with the given status and body, and keeps the request bodies,
+    /// each with its lower-cased request head under `"(head)"`.
     async fn serve(responses: Vec<(u16, &'static str)>) -> (String, Arc<Mutex<Vec<Value>>>) {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://{}", listener.local_addr().unwrap());
@@ -968,7 +969,8 @@ mod tool_loops {
                     }
                 }
                 let h = head_end.unwrap();
-                let req: Value = serde_json::from_slice(&buf[h..h + length]).unwrap();
+                let mut req: Value = serde_json::from_slice(&buf[h..h + length]).unwrap();
+                req["(head)"] = json!(String::from_utf8_lossy(&buf[..h]).to_lowercase());
                 sink.lock().unwrap().push(req);
                 let reason = if status == 200 { "OK" } else { "Bad Request" };
                 let reply = format!("HTTP/1.1 {status} {reason}\r\nContent-Type: text/event-stream\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{body}", body.len());
@@ -1033,6 +1035,35 @@ data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_d
 data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"carry it.\"}}\n\n\
 data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"}}\n\n\
 data: {\"type\":\"message_stop\"}\n\n";
+
+    /// The Anthropic key in the keychain goes to Anthropic. A request naming another host (only a
+    /// script in the webview can: the app never sends one) reaches it without the key.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn the_anthropic_key_never_goes_to_another_host() {
+        TEST_KEYS.lock().unwrap().push(("anthropic".into(), "sk-ant-kept-home".into()));
+        let (base, seen) = serve(vec![(200, ANTHROPIC_ANSWER)]).await;
+        let (channel, events) = collect();
+        let mut req = request("anthropic", &base, "");
+        req.folder = None;
+        stream(req, channel, CancelToken::default()).await;
+
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.len(), 1);
+        let head = seen[0]["(head)"].as_str().unwrap();
+        assert!(head.contains("post /v1/messages"), "{head}");
+        assert!(!head.contains("sk-ant-kept-home"), "the key went to {base}: {head}");
+        assert_eq!(events.lock().unwrap().last().unwrap()["type"], "done");
+    }
+
+    /// The OpenAI key is for OpenAI's host. A base URL is Custom's (Settings keeps it when the
+    /// provider changes back to OpenAI), never a place to send the OpenAI key.
+    #[test]
+    fn the_openai_key_only_goes_to_openai() {
+        assert_eq!(openai_base(Some("https://models.example.com/v1"), "openai"), "https://api.openai.com/v1");
+        assert_eq!(openai_base(None, "openai"), "https://api.openai.com/v1");
+        assert_eq!(openai_base(Some(" https://models.example.com/v1/ "), "custom"), "https://models.example.com/v1");
+        assert_eq!(openai_base(None, "custom"), "http://localhost:11434/v1");
+    }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn anthropic_runs_the_tool_and_sends_the_result_back() {
