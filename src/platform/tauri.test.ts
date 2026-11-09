@@ -86,6 +86,8 @@ async function callEverything() {
   await p.writeNewPage("/notes", "b.md", "# B\n");
   await p.deletePage("/notes", "a.md");
   await p.restorePage("/notes", "a.md", "a");
+  await p.trashCount("/notes");
+  await p.emptyTrash("/notes");
   await p.loadSession("/notes", undefined);
   await p.saveSession("/notes", {} as never, "a.md");
   await p.confirm("Delete?", "It goes to the trash.", "Delete");
