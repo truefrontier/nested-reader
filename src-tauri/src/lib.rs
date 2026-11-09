@@ -110,10 +110,31 @@ fn reveal_in_finder(app: AppHandle, path: String) -> Result<()> {
 /// plugin so the webview needs no `open-path` permission.
 #[tauri::command]
 fn open_folder(app: AppHandle, path: String) -> Result<()> {
-    if files::path_kind(&path) != "folder" {
+    folder_to_open(&path)?;
+    app.opener().open_path(&path, None::<&str>).map_err(|e| AppError::Message(e.to_string()))
+}
+
+/// A package (an `.app`, an `.rtfd`) is a folder on disk, but opening one runs the app or hands it to
+/// one, so it is refused like a file. Packages are told apart the way Finder does it, not by a dot in
+/// the name, so a folder called `grayscale.design` still opens.
+fn folder_to_open(path: &str) -> Result<()> {
+    if files::path_kind(path) != "folder" {
         return Err(AppError::Message(format!("not a folder: {}", path)));
     }
-    app.opener().open_path(&path, None::<&str>).map_err(|e| AppError::Message(e.to_string()))
+    if is_package(path) {
+        return Err(AppError::Message(format!("not a folder: {path} is an app or package")));
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn is_package(path: &str) -> bool {
+    objc2_app_kit::NSWorkspace::sharedWorkspace().isFilePackageAtPath(&objc2_foundation::NSString::from_str(path))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn is_package(_path: &str) -> bool {
+    false
 }
 
 /// The title bar follows the open session: its native proxy icon (right-click / ⌘-click for a
@@ -710,6 +731,25 @@ mod tests {
         assert_eq!(free_page_label(|l| open.contains(&l)), "page-1");
         let open = ["main", "settings", "page-1", "page-2"];
         assert_eq!(free_page_label(|l| open.contains(&l)), "page-3");
+    }
+
+    #[test]
+    fn open_folder_opens_plain_folders_and_refuses_packages() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = |name: &str| {
+            let p = tmp.path().join(name);
+            std::fs::create_dir(&p).unwrap();
+            p.to_str().unwrap().to_owned()
+        };
+        assert!(folder_to_open(&path("notes")).is_ok());
+        // A dot in a folder's name doesn't make it a package; only kinds macOS opens with an app do.
+        assert!(folder_to_open(&path("grayscale.design")).is_ok());
+        // Launch Services would run an app bundle, or hand a document bundle to its app.
+        let app = path("Calculator.app");
+        assert_eq!(folder_to_open(&app).unwrap_err().to_string(), format!("not a folder: {app} is an app or package"));
+        assert!(folder_to_open(&path("Report.rtfd")).is_err());
+        std::fs::write(tmp.path().join("a.md"), "# A\n").unwrap();
+        assert!(folder_to_open(tmp.path().join("a.md").to_str().unwrap()).is_err());
     }
 
     #[test]
