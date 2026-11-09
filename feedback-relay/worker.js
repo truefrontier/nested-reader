@@ -196,20 +196,29 @@ export function detail(app) {
 
 /**
  * Breaks each @mention with a zero-width space after the @, so the text reads as typed but pings no one,
- * and each #123 the same way, so a note can't leave "mentioned this" marks on this repo's issues or, as
- * owner/repo#123, on anyone else's.
+ * and each #123, owner/repo#123 and GH-123 reference the same way, so a note can't leave "mentioned this"
+ * marks on this repo's issues or anyone else's. A # inside a word or a link (page#2) is left alone. A
+ * pasted issue URL still links, and so still marks that issue.
  * The issue is filed as the token's owner, so a mention would come from that account, and an "@claude"
  * in an issue its owner opened starts .github/workflows/claude.yml. An @ after a letter or digit, as in
  * an email address, is no mention to GitHub and is left alone.
  */
 export function unmention(s) {
-  return s.replace(/(^|[^A-Za-z0-9_])@(?=[A-Za-z0-9])/g, "$1@\u200b").replace(/#(?=\d)/g, "#\u200b");
+  return s
+    .replace(/(^|[^A-Za-z0-9_])@(?=[A-Za-z0-9])/g, "$1@\u200b")
+    .replace(/(^|[^\w/#&.-])#(?=\d)/g, "$1#\u200b")
+    .replace(/(^|\s)([\w.-]+\/[\w.-]+)#(?=\d)/g, "$1$2#\u200b")
+    .replace(/(^|\W)GH-(?=\d)/g, "$1GH-\u200b");
 }
 
 export function issueBody(message, email, app, attachmentUrl, withheld = []) {
-  // A "<" shows as written, so no HTML in the note can hide text from a person reading the issue (an
-  // HTML comment is invisible on the page, yet Claude, reading the raw text, would still follow it).
-  const quoted = message.split("\n").map((l) => `> ${l.replaceAll("<", "&lt;")}`).join("\n");
+  // Nothing in the note may hide text from a person reading the issue, since Claude, reading the raw text,
+  // would still follow it: a "<" shows as written (no HTML comment), and so does a line that would be a
+  // markdown link definition ("[x]: url", which renders as nothing).
+  const quoted = message
+    .split("\n")
+    .map((l) => `> ${l.replaceAll("<", "&lt;").replace(/^(\s{0,3})\[/, "$1\\[")}`)
+    .join("\n");
   const lines = ["Sent from the app with **Send feedback**.", "", quoted, ""];
   if (attachmentUrl) lines.push(`![Screenshot](${attachmentUrl})`, "");
   const held = "withheld, because the relay couldn't confirm this repository is private";
