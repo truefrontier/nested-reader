@@ -277,7 +277,8 @@ fn claude_args(req: &AiRequest) -> Vec<String> {
         }
     }
     if !req.model.is_empty() {
-        args.extend(["--model".into(), req.model.clone()]);
+        // One argument, so a "model" that starts with `--` stays a value, never a flag of its own.
+        args.push(format!("--model={}", req.model));
     }
     if let Some(sys) = folder_note(req).or_else(|| req.system.clone()) {
         args.extend(["--system-prompt".into(), sys]);
@@ -429,10 +430,13 @@ fn codex_args(req: &AiRequest) -> Vec<String> {
     // Codex's own web search is set either way: left alone it defaults to searching a cached index.
     args.push(if req.web_access { r#"web_search="live""# } else { r#"web_search="disabled""# }.into());
     if !req.model.is_empty() {
-        args.extend(["--model".into(), req.model.clone()]);
+        // One argument, so a "model" that starts with `--` stays a value, never a flag of its own.
+        args.push(format!("--model={}", req.model));
     }
     // `codex exec` has no system-prompt flag, so the instructions lead the prompt.
     let system = folder_note(req).or_else(|| req.system.clone());
+    // After `--`, the prompt is the prompt even when it starts with a dash.
+    args.push("--".into());
     args.push(match &system {
         Some(s) if !s.trim().is_empty() => format!("{s}\n\n---\n\n{}", transcript(req)),
         _ => transcript(req),
@@ -915,6 +919,30 @@ mod args {
             assert_eq!(disabled, ["apps", "plugins"]);
             assert_eq!(after(&codex, "--sandbox"), Some("read-only"));
         }
+    }
+
+    /// The model name comes from settings and the prompt from the page, so neither may reach a CLI
+    /// as a flag of its own: `--dangerously-skip-permissions` as a "model" turns off Claude Code's
+    /// prompts, and a prompt that starts with `--` is one more option to Codex's parser.
+    #[test]
+    fn a_model_name_or_a_prompt_never_becomes_a_flag() {
+        let flag = "--dangerously-skip-permissions";
+        let mut req = request(Some("/tmp/notes"), false);
+        req.model = flag.into();
+        let claude = claude_args(&req);
+        assert!(!claude.contains(&flag.to_string()), "{claude:?}");
+        assert!(claude.contains(&format!("--model={flag}")), "{claude:?}");
+
+        req.provider = "openai".into();
+        req.model = "--dangerously-bypass-approvals-and-sandbox".into();
+        req.folder = None;
+        req.system = None;
+        req.messages[0].content = "--config=sandbox_mode=\"danger-full-access\"".into();
+        let codex = codex_args(&req);
+        assert!(!codex.contains(&req.model), "{codex:?}");
+        assert!(codex.contains(&format!("--model={}", req.model)), "{codex:?}");
+        // Everything after `--` is the prompt, whatever it starts with.
+        assert_eq!(codex[codex.len() - 2..], ["--".to_string(), req.messages[0].content.clone()]);
     }
 
     /// A Codex too old for those flags says why, not just clap's closing line.

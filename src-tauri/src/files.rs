@@ -159,7 +159,16 @@ pub fn write_page(folder: &str, rel: &str, content: &str) -> Result<()> {
             rel
         )));
     }
+    if !is_markdown(&full) {
+        return Err(not_markdown(rel));
+    }
     write_atomic(&full, content)
+}
+
+/// The page commands write pages, and pages are Markdown. Their folder comes from the webview, so
+/// this keeps them from writing anything else (a `.plist`, a shell profile) wherever it names.
+fn not_markdown(rel: &str) -> AppError {
+    AppError::Message(format!("Only Markdown pages can be written: {rel}"))
 }
 
 /// Writes a page that must be new. If anything is already at `rel` (in any case, on a volume that
@@ -168,6 +177,9 @@ pub fn write_page(folder: &str, rel: &str, content: &str) -> Result<()> {
 pub fn write_new_page(folder: &str, rel: &str, content: &str) -> Result<bool> {
     use std::io::Write;
     let full = safe_join(folder, rel)?;
+    if !is_markdown(&full) {
+        return Err(not_markdown(rel));
+    }
     if let Some(parent) = full.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -195,6 +207,9 @@ pub fn write_new_page(folder: &str, rel: &str, content: &str) -> Result<bool> {
 /// Finder). A name already sitting in the trash gets `-2`, `-3`, and so on. Returns the name used.
 pub fn delete_page(folder: &str, rel: &str) -> Result<String> {
     let full = safe_join(folder, rel)?;
+    if !is_openable_page(&full) {
+        return Err(AppError::Message(format!("Not a page: {rel}")));
+    }
     if !full.is_file() {
         return Err(AppError::Message(format!("No such page: {rel}")));
     }
@@ -1621,6 +1636,28 @@ mod tests {
         let result = write_page(folder, "test.html", "new content");
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("read-only"));
+    }
+
+    /// Pages are Markdown, so the page commands write and move only pages. The folder comes from
+    /// the webview: without this, a script there could drop a `.plist` in LaunchAgents or move away
+    /// any file it can name.
+    #[test]
+    fn the_page_commands_touch_only_pages() {
+        let dir = folder();
+        let f = dir.path().to_str().unwrap();
+        for rel in ["agent.plist", ".zshrc", "notes/run.sh", "README"] {
+            assert_eq!(write_page(f, rel, "x").unwrap_err().to_string(), format!("Only Markdown pages can be written: {rel}"));
+            assert_eq!(write_new_page(f, rel, "x").unwrap_err().to_string(), format!("Only Markdown pages can be written: {rel}"));
+            assert!(!dir.path().join(rel).exists(), "{rel} was written");
+        }
+        fs::write(dir.path().join("taxes.numbers"), "keep").unwrap();
+        assert_eq!(delete_page(f, "taxes.numbers").unwrap_err().to_string(), "Not a page: taxes.numbers");
+        assert!(dir.path().join("taxes.numbers").exists());
+
+        assert!(write_new_page(f, "a.md", "# A\n").unwrap());
+        write_page(f, "b.markdown", "# B\n").unwrap();
+        fs::write(dir.path().join("paper.pdf"), b"%PDF").unwrap();
+        assert_eq!(delete_page(f, "paper.pdf").unwrap(), "paper");
     }
 
     #[test]
