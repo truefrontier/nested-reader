@@ -723,16 +723,23 @@ export class ReaderStore {
       await new Promise((r) => window.setTimeout(r, 50));
     }
     path = this.livePath(path);
+    const file = this.pageFile(path, body, meta);
+    if (!file) return;
+    await platform.writePage(file.folder, file.rel, file.raw);
+    this.scheduleSummary(path);
+  }
+
+  /** The folder, path and text a page's write would put on disk, worked out from the session open now. */
+  private pageFile(path: string, body: string, meta?: PageMeta): { folder: string; rel: string; raw: string } | undefined {
     const live = this.state.pages[path];
     const base = live
       ? { ...live, title: meta?.title ?? live.title, question: meta?.question ?? live.question, mode: meta?.mode ?? live.mode, created: meta?.created ?? live.created, source: live.source, path: live.path }
       : meta;
-    if (!base) return;
+    if (!base) return undefined;
     const { folder, rel } = this.loc(path);
     const source = base.source?.startsWith(folder + "/") ? base.source.slice(folder.length + 1) : base.source;
     // The front matter is written with LF; a CRLF page should stay CRLF throughout.
-    await platform.writePage(folder, rel, withLineEndings(serializePage({ ...base, source }, body), body));
-    this.scheduleSummary(path);
+    return { folder, rel, raw: withLineEndings(serializePage({ ...base, source }, body), body) };
   }
 
   /**
@@ -926,6 +933,8 @@ export class ReaderStore {
         }
       }
       if (this.opening !== target) return;
+      // This open is the one that lands, so a folder being left stops its work here, before `loc` moves.
+      if (folder !== this.state.folder) this.leaveFolder();
       session.roots = roots.length ? roots : undefined;
       // A root lost above (or dropped since the exclusion was made) leaves nothing for its entries to hide.
       const excludedStill = (session.excluded ?? []).filter((e) => rootOfKey(e, rootDirs(roots, folder)));
@@ -967,6 +976,25 @@ export class ReaderStore {
     } finally {
       if (this.opening === target) this.opening = undefined;
     }
+  }
+
+  /**
+   * Stops what is still running for the folder being left. A page write works out its folder when it
+   * lands, so an answer that ended after the switch, or a write waiting on its timer, would go into
+   * the new folder, over a page of the same name. Every stream is stopped, which lets go of the
+   * tasks waiting on it, and every pending write goes to the old folder now or not at all.
+   */
+  private leaveFolder() {
+    for (const key of [...this.streams.keys()]) this.stopStream(key);
+    for (const [path, timer] of this.writeTimers) {
+      window.clearTimeout(timer);
+      // The page's latest text, while `loc` still names the old folder. Mid-rematch its `source`
+      // may be stale (see `writePage`), so the write is dropped instead.
+      const body = this.state.bodies[path];
+      const file = body === undefined || this.rematching ? undefined : this.pageFile(path, body);
+      if (file) void platform.writePage(file.folder, file.rel, file.raw).catch((e) => this.fail(e));
+    }
+    this.writeTimers.clear();
   }
 
   /** Re-reads the open folder from disk, picking up pages added, changed, or removed outside the app. */
@@ -2072,7 +2100,9 @@ export class ReaderStore {
    */
   private queue(path: string, task: () => Promise<void>): Promise<void> {
     const prev = this.chains.get(path) ?? Promise.resolve();
-    const next = prev.catch(() => {}).then(task);
+    // Work queued in a folder since left is dropped: its path now names a page of the new folder.
+    const folder = this.state.folder;
+    const next = prev.catch(() => {}).then(() => (this.state.folder === folder ? task() : undefined));
     this.chains.set(path, next);
     // Nothing behind it: the chain is dropped, so the map does not keep an entry per page ever touched.
     // A Finder rename under the task moves the chain, so this looks for it where it now lives.
