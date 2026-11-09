@@ -4,6 +4,7 @@ import { refineToRetry, refineWorking, store, useReader } from "./state/store";
 import { Sidebar } from "./reader/Sidebar";
 import { Home } from "./reader/Home";
 import { Page } from "./reader/Page";
+import { PageMenu } from "./reader/PageMenu";
 import { SplitPane } from "./reader/SplitPane";
 import { MapOverlay } from "./reader/MapOverlay";
 import { FeedbackPopover, NewFilePopover, RefinePopover, RefineStatus } from "./reader/Popovers";
@@ -156,6 +157,9 @@ export default function App() {
             <div className={`main ${s.session.splitDirection}${showMainPane ? "" : " fullscreen"}`} ref={mainRef}>
               {current && s.pages[current] ? (
                 <div className={`pane${showMainPane ? "" : " hidden"}`}>
+                  <div className="pane-tools">
+                    <PageMenu path={current} />
+                  </div>
                   <Page path={current} role="main" />
                 </div>
               ) : (

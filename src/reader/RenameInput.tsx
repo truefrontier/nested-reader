@@ -4,14 +4,16 @@ import { useRef } from "react";
 const stop = (e: MouseEvent | KeyboardEvent) => e.stopPropagation();
 
 /**
- * A row's label while it is being renamed, on Home and in the tree. Enter keeps the new name,
- * Esc drops it, and clicking away keeps it, so a rename never needs a second confirmation.
+ * A row's label while it is being renamed, on Home, in the tree and in a pane's page menu. Enter
+ * keeps the new name, Esc drops it, and clicking away keeps it, so a rename never needs a second
+ * confirmation. `label` names the box for a screen reader where no row text sits beside it.
  */
-export function RenameInput({ value, onDone }: { value: string; onDone: (name: string | null) => void }) {
+export function RenameInput({ value, label, onDone }: { value: string; label?: string; onDone: (name: string | null) => void }) {
   const cancelled = useRef(false);
   return (
     <input
       className="rename"
+      aria-label={label}
       autoFocus
       defaultValue={value}
       spellCheck={false}

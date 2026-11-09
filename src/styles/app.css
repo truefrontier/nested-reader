@@ -617,8 +617,20 @@ button {
   border-radius: 5px;
   cursor: pointer;
 }
-.row-menu .item:hover {
+.row-menu .item:hover,
+.row-menu .item:focus-visible {
   background: var(--card);
+  outline: 0;
+}
+/* A pane's page menu (`PageMenu`) is buttons, so the keyboard can reach its items. */
+.row-menu button.item {
+  display: block;
+  width: 100%;
+  text-align: left;
+}
+.row-menu [role="menu"]:focus,
+.row-confirm [role="dialog"]:focus {
+  outline: 0;
 }
 .row-menu .sep {
   margin: 4px 4px;
@@ -692,9 +704,6 @@ button {
   margin-top: 10px;
   font-size: 11.5px;
 }
-.row-confirm .acts span {
-  cursor: pointer;
-}
 .row-confirm .acts .c {
   color: var(--mute);
 }
@@ -704,6 +713,22 @@ button {
 .row-confirm .acts .d {
   color: var(--warn);
   font-weight: 500;
+}
+/* From a pane's ⋯ there is no row to take the width of. */
+.row-confirm.pane-confirm {
+  width: 260px;
+}
+.pane-rename .rename {
+  display: block;
+  width: 240px;
+  border: 0;
+  outline: 0;
+  padding: 5px 8px;
+  background: transparent;
+  font: inherit;
+  color: var(--fg);
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 /* ---------- panes ---------- */
@@ -820,6 +845,10 @@ button {
   gap: 4px;
   color: var(--mute);
   z-index: 2;
+}
+.pane-tools .tbtn.open {
+  color: var(--fg);
+  background: var(--card);
 }
 /* Against the pane's left edge or centred in it, as `--page-margin` says. Border-box either way, so
    `--reading-width` stays the width of the article's box and the Page width setting means what it
