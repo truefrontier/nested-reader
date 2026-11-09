@@ -430,9 +430,6 @@ export function Page({ path, role }: Props) {
 
   const onClick = (e: ReactMouseEvent) => {
     const t = e.target as HTMLElement;
-    // A pointer click on a mark leaves the focus on the body, as before marks took it, so ↵ still retries
-    // a failed refine. A press from the keyboard (detail 0) keeps it on the mark.
-    if (e.detail > 0 && document.activeElement instanceof HTMLElement && document.activeElement.matches(MARK)) document.activeElement.blur();
     const a = t.closest<HTMLAnchorElement>("a.wl");
     if (a) {
       e.preventDefault();
