@@ -119,3 +119,18 @@ test("an IPv6 caller counts by its /64, the block one customer is handed", () =>
   assert.equal(addressKey("203.0.113.7"), "203.0.113.7");
   assert.equal(addressKey("fe80::1%en0"), addressKey("fe80::2"));
 });
+
+test("the limiter says so in the log, once, when everyone together reaches the hourly cap", (t) => {
+  const warn = t.mock.method(console, "warn", () => {});
+  const take = noteLimiter({ perIp: 5, total: 2, now: () => 0 });
+  take("a");
+  assert.equal(warn.mock.callCount(), 0);
+  take("b");
+  take("c");
+  take("d");
+  assert.equal(warn.mock.callCount(), 1);
+  // It names the cap, never a caller.
+  const line = warn.mock.calls[0].arguments.join(" ");
+  assert.match(line, /2 notes/);
+  assert.doesNotMatch(line, /"[ab]"|: [ab]\b/);
+});

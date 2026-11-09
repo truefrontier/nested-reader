@@ -123,3 +123,29 @@ test("a download is only handed out for an asset of the newest release", () =>
     assert.equal((await worker.fetch(get("/updates/download/555/draft-build.dmg"), env)).status, 404);
     assert.equal(calls.some((c) => c.url.includes("/releases/assets/")), false);
   }));
+
+// With a lapsed token or a spent rate limit, asking again on every launch only keeps the limit spent.
+test("a failed release lookup is remembered for a few seconds, then asked again", async () => {
+  const real = globalThis.fetch;
+  const realNow = Date.now;
+  let now = 1_000_000;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    return new Response("rate limited", { status: 403 });
+  };
+  Date.now = () => now;
+  forgetLatest();
+  try {
+    for (let i = 0; i < 3; i++) assert.equal((await worker.fetch(get("/updates/latest.json"), env)).status, 204);
+    assert.equal((await worker.fetch(get("/updates/download/12/x"), env)).status, 404);
+    assert.equal(calls, 1);
+    now += 11_000;
+    await worker.fetch(get("/updates/latest.json"), env);
+    assert.equal(calls, 2);
+  } finally {
+    globalThis.fetch = real;
+    Date.now = realNow;
+    forgetLatest();
+  }
+});

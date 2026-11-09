@@ -9,10 +9,12 @@
 // The token needs Contents: read on the repository (Issues: write for feedback is not enough).
 
 const CACHE_MS = 60_000;
+/** How long a failed release lookup is remembered: long enough that a wave of launches asks once. */
+const FAILED_MS = 10_000;
 const MANIFEST = "latest.json";
 
 /** The latest release, remembered for a minute so a wave of launches costs one GitHub call. */
-let cached = { at: 0, repo: "", release: null };
+let cached = { at: 0, repo: "", release: null, for: CACHE_MS };
 
 export async function handleUpdates(request, env, url) {
   if (request.method !== "GET" && request.method !== "HEAD") return text(405, "GET only");
@@ -68,7 +70,7 @@ export async function handleUpdates(request, env, url) {
 /** The newest published release (drafts and pre-releases left out), or null when there is none. */
 async function latestRelease(env) {
   const now = Date.now();
-  if (cached.release !== null && cached.repo === env.GITHUB_REPO && now - cached.at < CACHE_MS) return cached.release || null;
+  if (cached.release !== null && cached.repo === env.GITHUB_REPO && now - cached.at < cached.for) return cached.release || null;
   const res = await fetch(`https://api.github.com/repos/${env.GITHUB_REPO}/releases/latest`, { headers: githubHeaders(env, "application/vnd.github+json") });
   let release = null;
   if (res.ok) {
@@ -76,9 +78,10 @@ async function latestRelease(env) {
     release = { tag: body.tag_name, assets: (body.assets || []).map((a) => ({ id: a.id, name: a.name })) };
   } else if (res.status !== 404) {
     console.error("GitHub refused the release lookup", res.status);
+    cached = { at: now, repo: env.GITHUB_REPO, release: false, for: FAILED_MS };
     return null;
   }
-  cached = { at: now, repo: env.GITHUB_REPO, release: release ?? false };
+  cached = { at: now, repo: env.GITHUB_REPO, release: release ?? false, for: CACHE_MS };
   return release;
 }
 
@@ -128,7 +131,7 @@ export function publicOrigin(request, url) {
 
 /** Forgets the remembered release; tests use it. */
 export function forgetLatest() {
-  cached = { at: 0, repo: "", release: null };
+  cached = { at: 0, repo: "", release: null, for: CACHE_MS };
 }
 
 function text(status, message) {
