@@ -42,6 +42,12 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # The repo is public, so anyone can comment on an issue or PR. The `if:` above checks who
+          # wrote the @claude, but the action reads the whole thread into the prompt. Keep only
+          # kevnk's comments and Claude's own replies, so a stranger's comment can't steer a run
+          # that has contents: write and runs pnpm and cargo. PR review bodies aren't filtered by
+          # this setting, so don't @claude on a stranger's review.
+          include_comments_by_actor: "kevnk,claude[bot]"
           # Lets Claude read CI results when a PR check fails.
           additional_permissions: |
             actions: read
