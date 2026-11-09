@@ -1,6 +1,6 @@
 # Feedback relay
 
-The **Send feedback** link at the bottom of the app's sidebar posts a note to this worker, and the worker files it as an issue on `truefrontier/nested-reader` labelled `feedback`. The worker also serves the app's updates: the repository is private, so installed copies ask it, not GitHub, for the newest release. The app itself never holds a GitHub token; only the worker does, as a secret.
+The **Send feedback** link at the bottom of the app's sidebar posts a note to this worker, and the worker files it as an issue on `truefrontier/nested-reader` labelled `feedback`. The worker also serves the app's updates: installed copies ask it, not GitHub, for the newest release, because its address is the update endpoint built into every copy (`plugins.updater.endpoints` in `src-tauri/tauri.conf.json`). It reads the releases with its own token, so this works whether the repository is private or public. The app itself never holds a GitHub token; only the worker does, as a secret.
 
 It is two files with no dependencies (`worker.js` for feedback, `updates.js` for updates), written for Cloudflare Workers; `server.mjs` runs the same code on Fly, through `handler.js`, which turns Node requests into the Fetch requests the worker takes.
 
