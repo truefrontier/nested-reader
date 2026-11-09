@@ -1032,3 +1032,33 @@
 ### Verification
 - `cargo test --lib`: 77 → 95 passed (12 ignored). `pnpm test`: 103 → 115.
 - The contract test fails if `okLabel` is renamed in `tauri.ts`, or `n` in `lib.rs`'s `read_version`. The table-whitespace test in `wraps.test.ts` fails if that check is removed.
+
+## Session: 2026-11-09 — a keyboard and screen-reader pass on the reader UI (#253)
+
+### Leading assumptions
+- Overflow task: make every control in the reader and Settings reachable from the keyboard and named for a screen reader, give the sidebar the tree pattern, show a focus ring where `outline: 0` hid it, and read out status that changes. Mouse users must see the same app.
+- "Same look" is read strictly: the default screenshots must match pixel for pixel. So the faint grey text that fails the contrast check stays as it is, and only darkens when macOS Increase contrast is on.
+- Real `<button>`s where a stylesheet already draws them (menu items, as the pane's ⋯ menu did); elsewhere the span or div keeps its tag and gains a role, a Tab stop and ↵/Space (`PRESS`), so no selector or layout changes.
+
+### World facts
+- `src/lib/keys.ts`, with no React in it: `pressOnKey` and `PRESS` (role, `tabIndex`, ↵ and Space, the key stopped so the window's ↵ doesn't also retry a failed page, and left alone with ⌘/⌃/⌥ or when it comes from something inside); `listStep` and `moveFocus` (↑ ↓ ← → Home End, wrapping, for menus, radio groups, tab lists, listboxes); `treeKey` (the APG tree keys over rows of `{ level, expanded }`).
+- Sidebar: `.tree-inner` is `role="tree"`; rows and folder headers are `treeitem`s with `aria-level`, `aria-expanded` (folders), `aria-selected` (current page) and an `aria-label` that says the dot marks. One Tab stop, roving: last focused row, else the current page, else the top row (set in a layout effect after each render). ⇧F10 or the context-menu key opens the ⋯ menu, now `role="menu"` with button items; the first item takes focus, ↑ ↓ move, Tab or Esc closes, and the focus goes back to the row (or the tree's Tab stop if the row went). A click on a row still sends focus to the body unless the tree already has it, so ↵ still retries a failed page after a click.
+- Home: the session name is the keyboard button (the row holds a ⋯, which can't sit inside a button), the ⋯ is Tab-reachable and opens a `role="menu"` of buttons with the same keys.
+- Settings: `tablist` (focus selects, arrows move), `Seg` is a `radiogroup` (arrows pick), `Dropdown` is a button plus `listbox` (↵ opens on the chosen option, Esc or Tab closes back to the box), `Check` is a `checkbox` on a span (a `<label>` may not take a role), each row's value is a `group` named by its label.
+- Also keyboard buttons now: the find bar's arrows and ✕ (named), the review strip's Undo all / Done / Restore / Back to current and the restore confirmation (`alertdialog`), the version pill and its history (`menu`), the session map's Web/Timeline and its pages (the map is a `dialog` that focuses the current page on open), every verb in the ask, refine, new-page and feedback boxes, the crumb back to the source page, the brand (Home), the filter dots (`aria-pressed`), Send feedback, Settings' Change… / Subfolder… / Check for updates.
+- Live status: `.tb-status` is `role="status"` (Writing… / Refining… / Couldn't be written); the toast is mirrored into an always-mounted `.sr-only` status; an answer card is `aria-live="polite"` and `aria-busy` while streaming, so it is read once it is in; a failed refine card and an answer's error are `role="alert"`; the find count and the strip's change count are statuses. `<main>` wraps the reading panes and Home's start pane.
+- Focus ring: `:focus-visible { outline: 2px solid var(--ring) }` (`#3a72d8` light, `#5b9cff` dark). Text boxes match `:focus-visible` on a click too, so their ring needs `html[data-kb]`, which `main.tsx` sets on Tab or a key pressed outside a text box and clears on pointerdown. The filter draws its ring on `.side-filter` via `:has()`. Tree rows draw it inset so `.tree` doesn't clip it, and show their ⋯ while focused.
+- `@media (prefers-contrast: more)` darkens `--mute` (`#67625a` / `#a8a297`) and `--acc` (`oklch(0.5 0.1 150)`) to pass 4.5:1.
+
+### Verification
+- `pnpm test`: 145 → 155 (`src/lib/keys.test.ts`, with a stand-in event and focusable elements, no jsdom). `pnpm build` green.
+- Lighthouse accessibility, snapshot mode, desktop, production build on localhost, fresh profile each: reader 92 → 96 (audits passed 22 → 32; `landmark-one-main` fixed), Settings 95 → 97 (agentic-browsing stays 100 after moving the checkbox role off `<label>`), Home 85 → 95. With `prefers-contrast: more` emulated: reader 100. The only remaining accessibility failure at default is `color-contrast` on the faint grey, left for the look.
+- Screenshots before and after (sidebar with a page, Settings) are pixel-identical (PIL `ImageChops.difference(...).getbbox()` is `None`). Keyboard shots: the tree with a focused row, the row menu from ⇧F10, Settings with a focused radio, Home's ⋯ menu. They and the Lighthouse reports are in Kevin's overflow notes (`2026-11-09-nested-a11y/`).
+- Driven in Chrome against the build: Tab from the filter lands on the current page's row; ← steps to its source row, ↑ moves; ⇧F10 opens the menu on "Mark unread", Esc returns focus to the row; Mark unread from the keyboard returns focus and the row's name becomes "…, unread"; ↵ opens the page; Settings tabs, a radio group, the dropdown (↵, ↓, ↵ picks and refocuses the box) and a checkbox (Space) all work; Home's ⋯ opens on Rename and Esc returns to the ⋯; a mouse click on a row opens the page and leaves focus on the body, also when the filter had it.
+- Not checked: VoiceOver itself, and the built desktop app (WKWebView). WebKit has `:focus-visible` and `:has()` since Safari 15.4.
+
+### Possible next steps
+- Decide whether the default faint grey (`--mute` `#8e887e`, 3.2:1 on the sidebar) should darken for everyone; that is the last Lighthouse failure.
+- A keyboard way into the page's own text: highlights and asked passages open cards on hover or click only, and asking needs a mouse selection.
+- The sidebar's resize grip is mouse-only; a `separator` with ← → would cover it.
+- Type-ahead in the tree (jump to a row by its first letters), and focus back on the version pill after picking a version.

@@ -5,6 +5,7 @@ import type { RefineScope } from "../lib/prompts";
 import { renderInline } from "../lib/markdown";
 import { ATTACHMENT_MAX_BYTES, FEEDBACK_MAX, type Attachment } from "../platform";
 import { CURRENT_RELEASE_NOTES } from "./releaseNotes";
+import { PRESS } from "../lib/keys";
 
 export function Kbd({ children }: { children: ReactNode }) {
   return <span className="kbd">{children}</span>;
@@ -105,22 +106,22 @@ function useAutoFocus(enabled = true) {
 export function AskVerbs({ onVerb, onEsc, onToggle }: { onVerb: (v: Verb, alt: boolean) => void; onEsc: () => void; onToggle?: () => void }) {
   return (
     <div className="verbs">
-      <span className="verb" onClick={(e) => onVerb("quick", e.altKey)}>
+      <span {...PRESS} className="verb" onClick={(e) => onVerb("quick", e.altKey)}>
         <Kbd>↵</Kbd>Quick Answer
       </span>
-      <span className="verb" onClick={(e) => onVerb("page", e.altKey)}>
+      <span {...PRESS} className="verb" onClick={(e) => onVerb("page", e.altKey)}>
         <Kbd>⌘↵</Kbd>New Page
       </span>
-      <span className="verb" onClick={(e) => onVerb("deep", e.altKey)}>
+      <span {...PRESS} className="verb" onClick={(e) => onVerb("deep", e.altKey)}>
         <Kbd>⌘⇧↵</Kbd>Deep Dive
       </span>
       <span className="tail">
         {onToggle && (
-          <span className="verb" onClick={onToggle}>
+          <span {...PRESS} className="verb" onClick={onToggle}>
             <Kbd>⌘R</Kbd>Refine
           </span>
         )}
-        <span className="verb esc" onClick={onEsc}>
+        <span {...PRESS} className="verb esc" onClick={onEsc}>
           Esc
         </span>
       </span>
@@ -184,22 +185,22 @@ export function RefineVerbs({
 }) {
   return (
     <div className="verbs">
-      <span className={`verb${selectionEnabled ? "" : " off"}`} onClick={() => selectionEnabled && onScope("selection")}>
+      <span {...PRESS} aria-disabled={!selectionEnabled || undefined} className={`verb${selectionEnabled ? "" : " off"}`} onClick={() => selectionEnabled && onScope("selection")}>
         <Kbd>↵</Kbd>Refine selection
       </span>
-      <span className="verb" onClick={() => onScope("page")}>
+      <span {...PRESS} className="verb" onClick={() => onScope("page")}>
         <Kbd>⌘↵</Kbd>Refine page
       </span>
-      <span className="verb" onClick={() => onScope("corpus")}>
+      <span {...PRESS} className="verb" onClick={() => onScope("corpus")}>
         <Kbd>⌘⇧↵</Kbd>Refine corpus
       </span>
       <span className="tail">
         {onToggle && (
-          <span className="verb" onClick={onToggle}>
+          <span {...PRESS} className="verb" onClick={onToggle}>
             <Kbd>⌘R</Kbd>Ask
           </span>
         )}
-        <span className="verb esc" onClick={onEsc}>
+        <span {...PRESS} className="verb esc" onClick={onEsc}>
           Esc
         </span>
       </span>
@@ -295,17 +296,17 @@ export function NewFilePopover({ onSubmit, onEsc }: { onSubmit: (brief: string, 
       <div className="pop">
         <input ref={ref} data-ask="1" placeholder="What should the new page cover?" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={onKey} spellCheck={false} />
         <div className="verbs">
-          <span className="verb" onClick={(e) => submit("here", e.altKey)}>
+          <span {...PRESS} className="verb" onClick={(e) => submit("here", e.altKey)}>
             <Kbd>↵</Kbd>Write here
           </span>
-          <span className="verb" onClick={(e) => submit("page", e.altKey)}>
+          <span {...PRESS} className="verb" onClick={(e) => submit("page", e.altKey)}>
             <Kbd>⌘↵</Kbd>New Page
           </span>
-          <span className="verb" onClick={(e) => submit("deep", e.altKey)}>
+          <span {...PRESS} className="verb" onClick={(e) => submit("deep", e.altKey)}>
             <Kbd>⌘⇧↵</Kbd>Deep Dive
           </span>
           <span className="tail">
-            <span className="verb esc" onClick={onEsc}>
+            <span {...PRESS} className="verb esc" onClick={onEsc}>
               Esc
             </span>
           </span>
@@ -359,14 +360,14 @@ export function RefineStatus({
     return () => window.removeEventListener("keydown", onKey);
   }, [error, hotkey, onRetry]);
   const body = error ? (
-    <div className="pop small-card status-card failed">
+    <div className="pop small-card status-card failed" role="alert">
       <div className="lab">Couldn't refine the {SCOPE_LABEL[scope]}</div>
       <div className="msg">{error}</div>
       <div className="acts">
-        <span className="do" onClick={onRetry}>
+        <span {...PRESS} className="do" onClick={onRetry}>
           <Kbd>↵</Kbd> Try again
         </span>
-        <span className="r verb esc" onClick={onDismiss}>
+        <span {...PRESS} className="r verb esc" onClick={onDismiss}>
           Esc
         </span>
       </div>
@@ -381,7 +382,7 @@ export function RefineStatus({
       </div>
       {working && <div className="working tool">{working}…</div>}
       <div className="acts">
-        <span className="r verb esc" onClick={onCancel}>
+        <span {...PRESS} className="r verb esc" onClick={onCancel}>
           Esc
         </span>
       </div>
@@ -431,7 +432,8 @@ export function AnswerCard({
     }
   };
   return (
-    <div className="card" data-lookup={id}>
+    // Read out once the answer is in, not word by word as it streams.
+    <div className="card" data-lookup={id} aria-live="polite" aria-busy={!!lookup.streaming}>
       {lookup.thread.map((t, i) => (
         <div key={i} className="answer" style={{ marginBottom: 12, color: "var(--mute)" }}>
           <div style={{ fontFamily: "var(--sans)", fontSize: 12, marginBottom: 4 }}>{t.question}</div>
@@ -440,7 +442,9 @@ export function AnswerCard({
       ))}
       {lookup.thread.length > 0 && <div style={{ fontFamily: "var(--sans)", fontSize: 12, color: "var(--mute)", marginBottom: 4 }}>{lookup.question}</div>}
       {lookup.error ? (
-        <div className="answer err">{lookup.error}</div>
+        <div className="answer err" role="alert">
+          {lookup.error}
+        </div>
       ) : skeleton.show ? (
         <>
           <Skeleton fading={skeleton.fading} />
@@ -468,7 +472,7 @@ export function BeforeCard({ change, index, total, caretLeft, onUndo }: { change
         <div className="lab">Before</div>
         <div className="old">{change.before || <em>nothing</em>}</div>
         <div className="acts">
-          <span className="do" onClick={onUndo}>
+          <span {...PRESS} className="do" onClick={onUndo}>
             Undo
           </span>
           <span className="r">
@@ -497,7 +501,7 @@ export function NowCard({ change, versionN, caretLeft }: { change: Change; versi
         <div className="lab">Now · Version {versionN}</div>
         <div className="old">{change.after || <em>removed</em>}</div>
         <div className="acts">
-          <span className="do" onClick={copy}>
+          <span {...PRESS} className="do" onClick={copy}>
             {copied ? "Copied" : "Copy"}
           </span>
           <span className="r">changed in Version {versionN}</span>
@@ -525,7 +529,7 @@ export function FailedCard({ title, error, hotkey, onRetry }: { title: string; e
       <div className="lab">{title}</div>
       {error && <div className="msg">{error}</div>}
       <div className="acts">
-        <span className="do" onClick={onRetry}>
+        <span {...PRESS} className="do" onClick={onRetry}>
           <Kbd>↵</Kbd> Try again
         </span>
       </div>
@@ -681,11 +685,11 @@ export function FeedbackPopover({
             <div className="verbs">
               <span className="note">What's new in this version.</span>
               <span className="tail">
-                <span className="verb" onClick={() => setView("form")}>
+                <span {...PRESS} className="verb" onClick={() => setView("form")}>
                   <Kbd>⌘R</Kbd>
                   Feedback
                 </span>
-                <span className="verb esc" onClick={onEsc}>
+                <span {...PRESS} className="verb esc" onClick={onEsc}>
                   Esc
                 </span>
               </span>
@@ -709,13 +713,13 @@ export function FeedbackPopover({
                   <img src={`data:${attachment.mime};base64,${attachment.data}`} alt="" />
                   <span className="name">{attachment.name}</span>
                   {!locked && (
-                    <span className="remove" onClick={() => setAttachment(null)}>
+                    <span className="remove" {...PRESS} aria-label="Remove screenshot" onClick={() => setAttachment(null)}>
                       Remove
                     </span>
                   )}
                 </div>
               ) : (
-                <span className="attach-hint" onClick={() => !locked && fileRef.current?.click()}>
+                <span className="attach-hint" {...PRESS} aria-disabled={locked || undefined} onClick={() => !locked && fileRef.current?.click()}>
                   Drop a screenshot, or click to attach
                 </span>
               )}
@@ -746,11 +750,11 @@ export function FeedbackPopover({
                 <span className="note">Goes to the people who make Nested, as an issue on GitHub.</span>
               )}
               <span className="tail">
-                <span className={`verb${canSend ? "" : " off"}`} onClick={() => void send()}>
+                <span {...PRESS} aria-disabled={!canSend || undefined} className={`verb${canSend ? "" : " off"}`} onClick={() => void send()}>
                   <Kbd>⌘↵</Kbd>
                   {busy ? "Sending…" : state.kind === "error" ? "Try again" : "Send"}
                 </span>
-                <span className="verb esc" onClick={onEsc}>
+                <span {...PRESS} className="verb esc" onClick={onEsc}>
                   Esc
                 </span>
               </span>

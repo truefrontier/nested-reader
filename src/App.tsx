@@ -154,7 +154,7 @@ export default function App() {
           </TopBar>
           <div className="body">
             {s.session.sidebar && <Sidebar />}
-            <div className={`main ${s.session.splitDirection}${showMainPane ? "" : " fullscreen"}`} ref={mainRef}>
+            <main className={`main ${s.session.splitDirection}${showMainPane ? "" : " fullscreen"}`} ref={mainRef}>
               {current && s.pages[current] ? (
                 <div className={`pane${showMainPane ? "" : " hidden"}`}>
                   <div className="pane-tools">
@@ -216,13 +216,17 @@ export default function App() {
                 </div>
               )}
               {s.ui.map && <MapOverlay />}
-            </div>
+            </main>
           </div>
         </>
       )}
       <UpdateBar />
+      {/* Always in the page, so a screen reader hears each new message; the toast itself is for the eye. */}
+      <div className="sr-only" role="status">
+        {s.ui.error}
+      </div>
       {s.ui.error && (
-        <div className="toast" role="status">
+        <div className="toast">
           {s.ui.error}
           {s.ui.toastAction && <button onClick={s.ui.toastAction.run}>{s.ui.toastAction.label}</button>}
         </div>

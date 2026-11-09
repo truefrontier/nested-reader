@@ -3,6 +3,7 @@ import { store, useReader, type PaneRole } from "../state/store";
 import type { PageDiff } from "../lib/diff";
 import { relTime } from "../lib/time";
 import { ChevronDown } from "./Icons";
+import { moveFocus, PRESS, pressOnKey } from "../lib/keys";
 
 /** Review strip, version history and viewing for either pane. Children (the find bar) stack under it. */
 export function TopStrip({ path, role, diff, children }: { path: string; role: PaneRole; diff: PageDiff | null; children?: ReactNode }) {
@@ -21,14 +22,14 @@ export function TopStrip({ path, role, diff, children }: { path: string; role: P
     const n = diff.changes.length;
     content = (
       <div className="strip">
-        <span className="st">
+        <span className="st" role="status">
           <span className="sdot" />
           {n} {n === 1 ? "change" : "changes"}
         </span>
-        <span className="quiet" onClick={() => void store.undoAll(path)}>
+        <span className="quiet" {...PRESS} onClick={() => void store.undoAll(path)}>
           Undo all
         </span>
-        <span className="loud" onClick={() => store.done(path)}>
+        <span className="loud" {...PRESS} onClick={() => store.done(path)}>
           Done
         </span>
       </div>
@@ -37,26 +38,28 @@ export function TopStrip({ path, role, diff, children }: { path: string; role: P
     content = (
       <>
         <div className="strip">
-          <span className="st">
+          <span className="st" role="status">
             <span className="sdot warn" />
             Viewing Version {viewing.n} · {relTime(viewing.at, new Date(), "long")}
           </span>
-          <span className="quiet" onClick={() => store.askRestore(role)}>
+          <span className="quiet" {...PRESS} aria-haspopup="dialog" aria-expanded={view.confirmRestore} onClick={() => store.askRestore(role)}>
             Restore
           </span>
-          <span className="loud" onClick={() => store.backToCurrent(role)}>
+          <span className="loud" {...PRESS} onClick={() => store.backToCurrent(role)}>
             Back to current
           </span>
         </div>
         {view.confirmRestore && (
-          <div className="confirm">
+          <div className="confirm" role="alertdialog" aria-label={`Restore Version ${viewing.n}?`}>
             <div>Restore Version {viewing.n}?</div>
             <div className="sub">Version {currentN} won't be kept.</div>
             <div className="acts">
-              <span className="c" onClick={() => store.cancelRestore(role)}>
+              <span className="c" {...PRESS} onClick={() => store.cancelRestore(role)}>
                 Cancel
               </span>
-              <span onClick={() => void store.restore(role)}>Restore</span>
+              <span {...PRESS} onClick={() => void store.restore(role)}>
+                Restore
+              </span>
             </div>
           </div>
         )}
@@ -65,18 +68,18 @@ export function TopStrip({ path, role, diff, children }: { path: string; role: P
   } else if (hasHistory) {
     content = (
       <>
-        <div className={`pill${view.history ? " open" : ""}`} onClick={() => store.toggleHistory(role)}>
+        <div className={`pill${view.history ? " open" : ""}`} {...PRESS} aria-haspopup="menu" aria-expanded={view.history} onClick={() => store.toggleHistory(role)}>
           Version {currentN} · edited {relTime(modified, new Date(), "long") || "just now"}
           <ChevronDown />
         </div>
         {view.history && (
-          <div className="menu">
-            <div className="item cur">
+          <div className="menu" role="menu" aria-label="Versions" onKeyDown={(e) => moveFocus(e.currentTarget, "[role=menuitem][tabindex]", e.key) && e.preventDefault()}>
+            <div className="item cur" role="menuitem" aria-current="true" aria-disabled="true">
               <span>Version {currentN} · current</span>
               <span className="t">{relTime(modified, new Date(), "long") || "just now"}</span>
             </div>
             {[...versions].reverse().map((v) => (
-              <div key={v.n} className="item" onClick={(e) => void store.viewVersion(v.n, role, store.placementFor(e))}>
+              <div key={v.n} className="item" role="menuitem" tabIndex={0} onKeyDown={pressOnKey} onClick={(e) => void store.viewVersion(v.n, role, store.placementFor(e))}>
                 <span>
                   Version {v.n}
                   {v.n === 1 ? " · original" : ""}

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FocusEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { store, useReader } from "../state/store";
 import { buildFolders, dotState, rootDirs, type FolderNode, type TreeItem } from "../lib/tree";
@@ -8,6 +8,7 @@ import { AnchoredLayer, DeleteConfirm, EDGE } from "./AnchoredLayer";
 import { DEFAULT_SETTINGS } from "../platform";
 import { useSidebarGrip } from "./useSidebarGrip";
 import { onEscapeFirst } from "../lib/escapeFirst";
+import { moveFocus, PRESS, treeKey } from "../lib/keys";
 
 const stop = (e: MouseEvent) => e.stopPropagation();
 
@@ -34,6 +35,7 @@ function PointMenu({ at, children }: { at: { x: number; y: number } | null; chil
     <div
       ref={ref}
       className={`row-menu${box ? " placed" : ""}`}
+      role="menu"
       style={{ position: "fixed", top: box?.top ?? at.y, left: box?.left ?? at.x, visibility: box ? "visible" : "hidden" }}
       onMouseDown={stop}
       onClick={stop}
@@ -136,17 +138,51 @@ export function Sidebar() {
   // Right-clicking empty space in the tree (not a row or a root header, which have their own menus)
   // opens this instead, offering "Reload" and the same "Add to Session…" flow as ⌘⇧O.
   const [treeMenuAt, setTreeMenuAt] = useState<{ x: number; y: number } | null>(null);
+  // The tree is one Tab stop (role="tree"): the row that last had focus, else the current page, else
+  // the top row takes it, and the arrow keys move from there (see `treeKey`).
+  const treeRef = useRef<HTMLDivElement>(null);
+  const layerRef = useRef<HTMLDivElement>(null);
+  const focusKey = useRef<string | null>(null);
+  const treeItems = () => [...(treeRef.current?.querySelectorAll<HTMLElement>("[role=treeitem]") ?? [])];
+  const keyOf = (el: HTMLElement) => el.dataset.page ?? `dir:${el.dataset.folder}`;
+  const rove = (to: HTMLElement | undefined, items = treeItems()) => {
+    for (const el of items) el.tabIndex = el === to ? 0 : -1;
+  };
+  useLayoutEffect(() => {
+    const items = treeItems();
+    rove(items.find((el) => keyOf(el) === focusKey.current) ?? items.find((el) => el.getAttribute("aria-selected") === "true") ?? items[0], items);
+  });
+  const onTreeFocus = (e: FocusEvent) => {
+    const el = (e.target as HTMLElement).closest<HTMLElement>("[role=treeitem]");
+    if (!el || el !== e.target) return;
+    focusKey.current = keyOf(el);
+    rove(el);
+  };
+  // The row a menu was opened from with the keyboard, which takes the focus back when the menu is done.
+  // A menu opened with the mouse leaves focus where the click put it.
+  const returnTo = useRef<HTMLElement | null>(null);
+  const refocus = () => {
+    const el = returnTo.current;
+    returnTo.current = null;
+    if (!el) return;
+    // A row that has gone (deleted, or dropped from the session) hands the focus to the tree's Tab stop.
+    requestAnimationFrame(() => (el.isConnected ? el : treeRef.current?.querySelector<HTMLElement>('[role=treeitem][tabindex="0"]'))?.focus());
+  };
   const closeMenus = () => {
     setMenuFor(null);
     setDeleting(null);
     setLayerAnchor(null);
     setTreeMenuAt(null);
+    refocus();
   };
   useEffect(() => {
     if (!menuFor && !deleting && !treeMenuAt) return;
-    const close = () => closeMenus();
+    const close = () => {
+      returnTo.current = null;
+      closeMenus();
+    };
     window.addEventListener("mousedown", close);
-    const stopEscape = onEscapeFirst(window, close);
+    const stopEscape = onEscapeFirst(window, closeMenus);
     return () => {
       window.removeEventListener("mousedown", close);
       stopEscape();
@@ -172,9 +208,58 @@ export function Sidebar() {
     }
     if (gone(renaming)) setRenaming(null);
   }, [menuFor, deleting, renaming, s.pages, roots]);
+  // From the keyboard the first item (or the confirmation's Cancel) takes the focus, once the layer is
+  // placed: it stays hidden until then, and a hidden element takes no focus.
+  useEffect(() => {
+    if (!returnTo.current || (!menuFor && !deleting)) return;
+    const id = requestAnimationFrame(() => layerRef.current?.querySelector<HTMLElement>(menuFor ? "[role=menuitem]" : ".acts .c")?.focus());
+    return () => cancelAnimationFrame(id);
+  }, [menuFor, deleting]);
+  // Keys pressed in a menu stay there, so Enter on an item doesn't also retry a failed page. Tab leaves.
+  const onMenuKey = (e: KeyboardEvent) => {
+    if (!e.metaKey) e.stopPropagation();
+    if (e.key === "Tab") {
+      e.preventDefault();
+      closeMenus();
+    } else if (moveFocus(e.currentTarget, "[role=menuitem]", e.key)) e.preventDefault();
+  };
+  // An item closes the menu, does its job, and hands the focus back to the row it was opened from.
+  const pick = (run: () => void) => () => {
+    setMenuFor(null);
+    run();
+    refocus();
+  };
+  const openMenuFromKeys = (key: string, row: HTMLElement) => {
+    setDeleting(null);
+    setMenuFor(key);
+    setLayerAnchor(row);
+    returnTo.current = row;
+  };
+  const onTreeKey = (e: KeyboardEvent<HTMLDivElement>) => {
+    const items = treeItems();
+    const at = items.indexOf(e.target as HTMLElement);
+    if (at < 0) return;
+    const rows = items.map((el) => ({
+      level: Number(el.getAttribute("aria-level")),
+      expanded: el.hasAttribute("aria-expanded") ? el.getAttribute("aria-expanded") === "true" : undefined,
+    }));
+    const move = treeKey(e.key, e.shiftKey, rows, at);
+    if (!move) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const row = items[at];
+    const { page, folder: dir, menu } = row.dataset;
+    if ("focus" in move) items[move.focus].focus();
+    else if ("expand" in move || "collapse" in move) store.toggleFolder(dir as string);
+    else if ("activate" in move) {
+      if (page) void store.openPage(page, store.placementFor(e));
+      else store.toggleFolder(dir as string);
+    } else if (menu) openMenuFromKeys(menu, row);
+  };
   const openMenu = (path: string) => (e: MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    returnTo.current = null;
     setDeleting(null);
     if (menuFor === path) {
       setMenuFor(null);
@@ -188,11 +273,13 @@ export function Sidebar() {
   const askDelete = (path: string) => {
     if (!s.settings.confirmDelete) {
       void store.deletePage(path);
+      refocus();
       return;
     }
     setDeleting(path);
   };
-  const rows = (items: TreeItem[]) => {
+  // `level` is the tree depth (aria-level) of the folder's own pages; a page hung under another sits deeper.
+  const rows = (items: TreeItem[], level: number) => {
     const visible = items.filter(shows);
     if (!visible.length) return null;
     return (
@@ -211,8 +298,23 @@ export function Sidebar() {
           const isRootFile = rootFilePaths.has(it.path);
           // A page nested inside an added root, other than the root's own file, can be dropped on its own.
           const nestedInRoot = !isRootFile && roots.some((r) => it.path.startsWith(r + "/"));
+          // The marks are dots a screen reader can't see, so the row's name says them.
+          const name = [p.title, !!s.pageErrors[it.path] && "couldn't be written", d === "loading" && "being written", unread && "unread", !!s.session.pending[it.path] && "changes to review"];
           return (
-            <div key={it.path} className={cls.join(" ")} onClick={onRow(it.path)} onContextMenu={openMenu(it.path)} title={p.title}>
+            <div
+              key={it.path}
+              className={cls.join(" ")}
+              role="treeitem"
+              aria-level={level + it.depth}
+              aria-selected={d === "current"}
+              aria-label={name.filter(Boolean).join(", ")}
+              tabIndex={-1}
+              data-page={it.path}
+              data-menu={it.path}
+              onClick={onRow(it.path)}
+              onContextMenu={openMenu(it.path)}
+              title={p.title}
+            >
               {showTick && <span className="tick" />}
               <span className={`dot ${d === "current" ? "current" : d === "loading" ? "loading" : ""}`} />
               {renaming === it.path ? (
@@ -221,6 +323,7 @@ export function Sidebar() {
                   onDone={(name) => {
                     setRenaming(null);
                     if (name !== null) void store.renamePage(it.path, name);
+                    refocus();
                   }}
                 />
               ) : (
@@ -231,83 +334,74 @@ export function Sidebar() {
                 {unread && <span className="udot" title="Unread" />}
                 {!!s.session.pending[it.path] && <span className="cdot" title="Changes to review" />}
               </span>
-              <span className="more" title="More" onMouseDown={stop} onClick={openMenu(it.path)}>
+              {/* Out of the Tab order: the keyboard opens the same menu with ⇧F10 on the row. */}
+              <span className="more" role="button" tabIndex={-1} aria-label="More" aria-haspopup="menu" aria-expanded={open} title="More" onMouseDown={stop} onClick={openMenu(it.path)}>
                 <MoreIcon />
               </span>
               {open && (
                 <AnchoredLayer anchor={layerAnchor ?? undefined} className="row-menu">
-                  <div
-                    className="item"
-                    onClick={() => {
-                      setMenuFor(null);
-                      store.toggleUnread(it.path);
-                    }}
-                  >
-                    {unread ? "Mark read" : "Mark unread"}
-                  </div>
-                  <div className="sep" />
-                  <div
-                    className="item"
-                    onClick={() => {
-                      setMenuFor(null);
-                      setRenaming(it.path);
-                    }}
-                  >
-                    Rename
-                  </div>
-                  <div
-                    className="item"
-                    onClick={() => {
-                      setMenuFor(null);
-                      void store.revealPage(it.path);
-                    }}
-                  >
-                    Reveal in Finder
-                  </div>
-                  {isRootFile && (
-                    <div
+                  <div ref={layerRef} role="menu" aria-label={`Page “${p.title}”`} tabIndex={-1} onKeyDown={onMenuKey}>
+                    <button type="button" role="menuitem" tabIndex={-1} className="item" onClick={pick(() => store.toggleUnread(it.path))}>
+                      {unread ? "Mark read" : "Mark unread"}
+                    </button>
+                    <div className="sep" role="separator" />
+                    <button
+                      type="button"
+                      role="menuitem"
+                      tabIndex={-1}
                       className="item"
                       onClick={() => {
                         setMenuFor(null);
-                        void store.removeRootFile(it.path);
+                        setRenaming(it.path);
                       }}
                     >
-                      Remove from session
-                    </div>
-                  )}
-                  {nestedInRoot && (
-                    <div
-                      className="item"
+                      Rename
+                    </button>
+                    <button type="button" role="menuitem" tabIndex={-1} className="item" onClick={pick(() => void store.revealPage(it.path))}>
+                      Reveal in Finder
+                    </button>
+                    {isRootFile && (
+                      <button type="button" role="menuitem" tabIndex={-1} className="item" onClick={pick(() => void store.removeRootFile(it.path))}>
+                        Remove from session
+                      </button>
+                    )}
+                    {nestedInRoot && (
+                      <button type="button" role="menuitem" tabIndex={-1} className="item" onClick={pick(() => void store.excludeFromSession(it.path))}>
+                        Remove from session
+                      </button>
+                    )}
+                    <div className="sep" role="separator" />
+                    <button
+                      type="button"
+                      role="menuitem"
+                      tabIndex={-1}
+                      className="item warn"
                       onClick={() => {
                         setMenuFor(null);
-                        void store.excludeFromSession(it.path);
+                        askDelete(it.path);
                       }}
                     >
-                      Remove from session
-                    </div>
-                  )}
-                  <div className="sep" />
-                  <div
-                    className="item warn"
-                    onClick={() => {
-                      setMenuFor(null);
-                      askDelete(it.path);
-                    }}
-                  >
-                    Delete
+                      Delete
+                    </button>
                   </div>
                 </AnchoredLayer>
               )}
               {confirming && (
                 <AnchoredLayer anchor={layerAnchor ?? undefined} className="row-confirm" stretch>
-                  <DeleteConfirm
-                    title={p.title}
-                    onCancel={() => setDeleting(null)}
-                    onDelete={(dontAsk) => {
-                      setDeleting(null);
-                      void store.deletePage(it.path, dontAsk);
-                    }}
-                  />
+                  <div ref={layerRef} role="dialog" aria-label="Delete page" tabIndex={-1} onKeyDown={(e) => !e.metaKey && e.stopPropagation()}>
+                    <DeleteConfirm
+                      title={p.title}
+                      onCancel={() => {
+                        setDeleting(null);
+                        refocus();
+                      }}
+                      onDelete={(dontAsk) => {
+                        setDeleting(null);
+                        void store.deletePage(it.path, dontAsk);
+                        refocus();
+                      }}
+                    />
+                  </div>
                 </AnchoredLayer>
               )}
             </div>
@@ -317,9 +411,10 @@ export function Sidebar() {
     );
   };
   // A folder is its subfolders, then its own pages. Only the session folder itself has no header.
-  const folder = (f: FolderNode): ReactNode => {
-    const kids = f.folders.map(folder).filter(Boolean);
-    const own = rows(f.items);
+  // The session folder itself has no row, so its subfolders and pages start at level 1.
+  const folder = (f: FolderNode, level: number): ReactNode => {
+    const kids = f.folders.map((sub) => folder(sub, level + 1)).filter(Boolean);
+    const own = rows(f.items, level + 1);
     if (!f.path)
       return (
         <>
@@ -335,27 +430,40 @@ export function Sidebar() {
     const menuOpen = !!removable && menuFor === menuKey;
     return (
       <div key={f.path} className={`folder${open ? " open" : ""}${f.root ? " root" : ""}`}>
-        <div className={`frow${menuOpen ? " open" : ""}`} onClick={() => store.toggleFolder(f.path)} onContextMenu={removable ? openMenu(menuKey) : undefined} title={f.path}>
+        <div
+          className={`frow${menuOpen ? " open" : ""}`}
+          role="treeitem"
+          aria-level={level}
+          aria-expanded={open}
+          aria-label={f.name}
+          tabIndex={-1}
+          data-folder={f.path}
+          data-menu={removable ? menuKey : undefined}
+          onClick={() => store.toggleFolder(f.path)}
+          onContextMenu={removable ? openMenu(menuKey) : undefined}
+          title={f.path}
+        >
           <span className="chev">
             <ChevronRight />
           </span>
           <span className="label">{f.name}</span>
           {removable && (
-            <span className="more" title="More" onMouseDown={stop} onClick={openMenu(menuKey)}>
+            <span className="more" role="button" tabIndex={-1} aria-label="More" aria-haspopup="menu" aria-expanded={menuOpen} title="More" onMouseDown={stop} onClick={openMenu(menuKey)}>
               <MoreIcon />
             </span>
           )}
           {menuOpen && (
             <AnchoredLayer anchor={layerAnchor ?? undefined} className="row-menu">
-              <div
-                className="item"
-                onClick={() => {
-                  setMenuFor(null);
-                  if (removable === "root") void store.removeRoot(f.path);
-                  else void store.excludeFromSession(f.path);
-                }}
-              >
-                Remove from session
+              <div ref={layerRef} role="menu" aria-label={`Folder “${f.name}”`} tabIndex={-1} onKeyDown={onMenuKey}>
+                <button
+                  type="button"
+                  role="menuitem"
+                  tabIndex={-1}
+                  className="item"
+                  onClick={pick(() => void (removable === "root" ? store.removeRoot(f.path) : store.excludeFromSession(f.path)))}
+                >
+                  Remove from session
+                </button>
               </div>
             </AnchoredLayer>
           )}
@@ -372,7 +480,7 @@ export function Sidebar() {
   return (
     <aside className="side">
       <div className="side-head">
-        <span className="brand" title="Home ⌘⇧H" onClick={() => store.goHome()}>
+        <span className="brand" {...PRESS} aria-label="Home" title="Home ⌘⇧H" onClick={() => store.goHome()}>
           <NestedLogo />
         </span>
         <button className={`tbtn side-map${s.ui.map ? " on" : ""}`} title="Session map ⌘K" aria-pressed={!!s.ui.map} onClick={() => store.openMap("web")}>
@@ -390,21 +498,46 @@ export function Sidebar() {
           spellCheck={false}
         />
         {anyUnread && (
-          <span className={`filter-btn${unreadOnly ? " on" : ""}`} title="Unread only" onClick={() => store.toggleUnreadOnly()}>
+          <span className={`filter-btn${unreadOnly ? " on" : ""}`} {...PRESS} aria-pressed={unreadOnly} aria-label="Unread only" title="Unread only" onClick={() => store.toggleUnreadOnly()}>
             <span className="udot" />
           </span>
         )}
         {anyChanges && (
-          <span className={`filter-btn${changesOnly ? " on" : ""}`} title="Changes to review only" onClick={() => store.toggleChangesOnly()}>
+          <span
+            className={`filter-btn${changesOnly ? " on" : ""}`}
+            {...PRESS}
+            aria-pressed={changesOnly}
+            aria-label="Changes to review only"
+            title="Changes to review only"
+            onClick={() => store.toggleChangesOnly()}
+          >
             <span className="cdot" />
           </span>
         )}
       </div>
       <div className="tree" onScroll={() => (menuFor || deleting) && closeMenus()} onContextMenu={onTreeContextMenu}>
-        <div className="tree-inner">{folder(root)}</div>
+        {/* A click on a row sends the focus to the page body, as it did before rows could take it, so the
+            window's ↵ still retries a failed page; once the keyboard is in the tree, a click moves it to that row. */}
+        <div
+          className="tree-inner"
+          ref={treeRef}
+          role="tree"
+          aria-label="Pages"
+          onKeyDown={onTreeKey}
+          onFocus={onTreeFocus}
+          onMouseDown={(e) => {
+            if (treeRef.current?.contains(document.activeElement)) return;
+            e.preventDefault();
+            (document.activeElement as HTMLElement | null)?.blur();
+          }}
+        >
+          {folder(root, 0)}
+        </div>
       </div>
       <PointMenu at={treeMenuAt}>
-        <div
+        <button
+          type="button"
+          role="menuitem"
           className="item"
           onClick={() => {
             setTreeMenuAt(null);
@@ -412,9 +545,11 @@ export function Sidebar() {
           }}
         >
           Reload
-        </div>
-        <div className="sep" />
-        <div
+        </button>
+        <div className="sep" role="separator" />
+        <button
+          type="button"
+          role="menuitem"
           className="item"
           onClick={() => {
             setTreeMenuAt(null);
@@ -422,10 +557,10 @@ export function Sidebar() {
           }}
         >
           Add to Session…
-        </div>
+        </button>
       </PointMenu>
       <div className="side-foot">
-        <span className={`link${s.ui.panePopover === "feedback" ? " on" : ""}`} onClick={() => store.toggleFeedback()} title="A bug, an idea, anything">
+        <span className={`link${s.ui.panePopover === "feedback" ? " on" : ""}`} {...PRESS} aria-expanded={s.ui.panePopover === "feedback"} onClick={() => store.toggleFeedback()} title="A bug, an idea, anything">
           Send feedback
         </span>
       </div>

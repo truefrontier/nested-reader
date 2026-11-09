@@ -4,8 +4,14 @@ import { DragBand } from "../reader/DragBand";
 import { DEFAULT_SETTINGS, READING_WIDTH_RANGE, isTauri, platform, type Auth, type DefaultApp, type OpenAtLaunch, type UpdateCheck, type Placement, type Provider, type ReadingWidthUnit, type Settings } from "../platform";
 import { authFor, chatModels, modelSlot, pickDefaultModel, webSearchFor } from "../lib/models";
 import { AiIcon, AppearanceIcon, CheckIcon, GeneralIcon, UpDownIcon } from "../reader/Icons";
+import { listStep, moveFocus, PRESS, pressOnKey } from "../lib/keys";
 
 type Tab = "general" | "appearance" | "ai";
+const TABS: [Tab, string, () => ReactNode][] = [
+  ["general", "General", GeneralIcon],
+  ["appearance", "Appearance", AppearanceIcon],
+  ["ai", "AI", AiIcon],
+];
 
 const PLACEMENTS: { value: Placement; label: string }[] = [
   { value: "beside", label: "Beside" },
@@ -118,7 +124,7 @@ export function SettingsApp({ embedded, onClose }: { embedded?: boolean; onClose
       <div className="settings-title">
         {embedded && (
           <div className="tl" style={{ position: "absolute" }}>
-            <span style={{ background: "#ff5f57" }} onClick={onClose} />
+            <span style={{ background: "#ff5f57" }} {...PRESS} aria-label="Close settings" onClick={onClose} />
             <span style={{ background: "#febc2e" }} />
             <span style={{ background: "#28c840" }} />
           </div>
@@ -126,21 +132,16 @@ export function SettingsApp({ embedded, onClose }: { embedded?: boolean; onClose
         {!embedded && <DragBand />}
         Settings
       </div>
-      <div className="tabs">
-        <div className={`tab${tab === "general" ? " on" : ""}`} onClick={() => setTab("general")}>
-          <GeneralIcon />
-          General
-        </div>
-        <div className={`tab${tab === "appearance" ? " on" : ""}`} onClick={() => setTab("appearance")}>
-          <AppearanceIcon />
-          Appearance
-        </div>
-        <div className={`tab${tab === "ai" ? " on" : ""}`} onClick={() => setTab("ai")}>
-          <AiIcon />
-          AI
-        </div>
+      {/* Tabs: ← → (or ↑ ↓) move between them, and the one with focus is shown. */}
+      <div className="tabs" role="tablist" aria-label="Settings" onKeyDown={(e) => moveFocus(e.currentTarget, "[role=tab]", e.key) && e.preventDefault()}>
+        {TABS.map(([id, label, Icon]) => (
+          <div key={id} className={`tab${tab === id ? " on" : ""}`} role="tab" aria-selected={tab === id} tabIndex={tab === id ? 0 : -1} onFocus={() => setTab(id)} onClick={() => setTab(id)}>
+            <Icon />
+            {label}
+          </div>
+        ))}
       </div>
-      <div className="settings-body-inner" key={tab}>
+      <div className="settings-body-inner" key={tab} role="tabpanel" aria-label={TABS.find(([id]) => id === tab)?.[1]}>
         {tab === "general" && <General settings={settings} save={save} dialogOpen={dialogOpen} />}
         {tab === "appearance" && <Appearance settings={settings} save={save} />}
         {tab === "ai" && <Ai settings={settings} save={save} />}
@@ -155,16 +156,38 @@ function Row({ label, children, top }: { label: string; children: ReactNode; top
   return (
     <>
       <div className={`lab${top ? " top" : ""}`}>{label}</div>
-      <div className="val">{children}</div>
+      <div className="val" role="group" aria-label={label}>
+        {children}
+      </div>
     </>
   );
 }
 
 function Seg<T extends string>({ value, options, onChange }: { value: T; options: { value: T; label: string; className?: string }[]; onChange: (v: T) => void }) {
+  const at = options.findIndex((o) => o.value === value);
   return (
-    <div className="seg">
-      {options.map((o) => (
-        <span key={o.value} className={`${o.value === value ? "on" : ""} ${o.className ?? ""}`.trim()} onClick={() => onChange(o.value)}>
+    // A radio group: one Tab stop, and the arrow keys pick the next or previous choice.
+    <div
+      className="seg"
+      role="radiogroup"
+      onKeyDown={(e) => {
+        const next = listStep(e.key, options.length, at);
+        if (next === null) return;
+        e.preventDefault();
+        onChange(options[next].value);
+        (e.currentTarget.children[next] as HTMLElement | undefined)?.focus();
+      }}
+    >
+      {options.map((o, i) => (
+        <span
+          key={o.value}
+          className={`${o.value === value ? "on" : ""} ${o.className ?? ""}`.trim()}
+          role="radio"
+          aria-checked={o.value === value}
+          tabIndex={i === Math.max(at, 0) ? 0 : -1}
+          onKeyDown={pressOnKey}
+          onClick={() => onChange(o.value)}
+        >
           {o.label}
         </span>
       ))}
@@ -174,28 +197,64 @@ function Seg<T extends string>({ value, options, onChange }: { value: T; options
 
 function Dropdown<T extends string>({ value, options, onChange }: { value: T; options: { value: T; label: string }[]; onChange: (v: T) => void }) {
   const [open, setOpen] = useState(false);
+  const button = useRef<HTMLDivElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
+  // Opened from the keyboard, the chosen option takes the focus, and closing hands it back to the box.
+  const kb = useRef(false);
   useEffect(() => {
     if (!open) return;
     const close = () => setOpen(false);
     window.addEventListener("mousedown", close);
+    if (kb.current) (menu.current?.querySelector<HTMLElement>("[aria-selected=true]") ?? menu.current?.querySelector<HTMLElement>("[role=option]"))?.focus();
     return () => window.removeEventListener("mousedown", close);
   }, [open]);
+  const shut = () => {
+    setOpen(false);
+    if (kb.current) button.current?.focus();
+  };
   const current = options.find((o) => o.value === value)?.label ?? value;
   return (
     <div className="dd-wrap" onMouseDown={(e) => e.stopPropagation()}>
-      <div className={`dd${open ? " open" : ""}`} onClick={() => setOpen(!open)}>
+      <div
+        ref={button}
+        className={`dd${open ? " open" : ""}`}
+        {...PRESS}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={(e) => {
+          // A press from Enter or Space has no mouse clicks behind it.
+          kb.current = e.detail === 0;
+          setOpen(!open);
+        }}
+      >
         {current}
         <UpDownIcon />
       </div>
       {open && (
-        <div className="dd-menu">
+        <div
+          ref={menu}
+          className="dd-menu"
+          role="listbox"
+          onKeyDown={(e) => {
+            e.stopPropagation();
+            kb.current = true;
+            if (e.key === "Escape" || e.key === "Tab") {
+              e.preventDefault();
+              shut();
+            } else if (moveFocus(e.currentTarget, "[role=option]", e.key)) e.preventDefault();
+          }}
+        >
           {options.map((o) => (
             <div
               key={o.value}
               className={o.value === value ? "on" : ""}
+              role="option"
+              aria-selected={o.value === value}
+              tabIndex={-1}
+              onKeyDown={pressOnKey}
               onClick={() => {
                 onChange(o.value);
-                setOpen(false);
+                shut();
               }}
             >
               {o.label}
@@ -226,7 +285,7 @@ function General({ settings, save, dialogOpen }: SectionProps & { dialogOpen: { 
           <span className="ell" title={settings.folder}>
             {folderLabel}
           </span>
-          <span className="act" onClick={() => void pick()}>
+          <span className="act" {...PRESS} onClick={() => void pick()}>
             Change…
           </span>
         </span>
@@ -235,7 +294,7 @@ function General({ settings, save, dialogOpen }: SectionProps & { dialogOpen: { 
         {sub === null ? (
           <span className="spread">
             <span>{settings.newPagesSubfolder ? `Saved in ${settings.newPagesSubfolder}/ as .md` : "Saved next to their source as .md"}</span>
-            <span className="act" onClick={() => setSub(settings.newPagesSubfolder)}>
+            <span className="act" {...PRESS} onClick={() => setSub(settings.newPagesSubfolder)}>
               Subfolder…
             </span>
           </span>
@@ -350,7 +409,7 @@ function DefaultAppRow({ save, dialogOpen }: { save: (patch: Partial<Settings>) 
       <span className="spread">
         <span>{status}</span>
         {!app.isNested && (
-          <span className={`act${busy ? " busy" : ""}`} onClick={() => !busy && void use()}>
+          <span className={`act${busy ? " busy" : ""}`} {...PRESS} aria-disabled={busy || undefined} onClick={() => !busy && void use()}>
             {busy ? "Waiting for macOS…" : "Use Nested"}
           </span>
         )}
@@ -488,11 +547,11 @@ function UpdateRow() {
         {busy ? (
           <span className="act busy">{state.kind === "checking" ? "Checking…" : "Working…"}</span>
         ) : version ? (
-          <span className="act" onClick={() => void install(version)}>
+          <span className="act" {...PRESS} onClick={() => void install(version)}>
             {state.kind === "error" ? "Try again" : "Update and relaunch"}
           </span>
         ) : (
-          <span className="act" onClick={() => void look()}>
+          <span className="act" {...PRESS} onClick={() => void look()}>
             Check for updates
           </span>
         )}
@@ -881,10 +940,13 @@ function shortError(e?: string): string {
 
 function Check({ on, label, onChange }: { on: boolean; label: string; onChange: (v: boolean) => void }) {
   return (
-    <label className={`check${on ? " on" : ""}`} onClick={() => onChange(!on)}>
-      <span className="box">{on && <CheckIcon />}</span>
+    // A span, not a label: a label may not take a role, and there is no input here for it to label.
+    <span className={`check${on ? " on" : ""}`} role="checkbox" aria-checked={on} tabIndex={0} onKeyDown={pressOnKey} onClick={() => onChange(!on)}>
+      <span className="box" aria-hidden="true">
+        {on && <CheckIcon />}
+      </span>
       {label}
-    </label>
+    </span>
   );
 }
 
