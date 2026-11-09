@@ -15993,9 +15993,9 @@ express Statement of Purpose.
 
 ## Apache-2.0 OR MPL-2.0
 
-- `dompurify@3.4.15` (npm package)
+- `dompurify@3.4.17` (npm package)
 
-### Text shipped by `dompurify@3.4.15`
+### Text shipped by `dompurify@3.4.17`
 
 ```text
 Apache License
@@ -16201,7 +16201,7 @@ Apache License
    limitations under the License.
 ```
 
-### Text shipped by `dompurify@3.4.15`
+### Text shipped by `dompurify@3.4.17`
 
 ```text
 Mozilla Public License Version 2.0
