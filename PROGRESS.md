@@ -1083,3 +1083,4 @@
 ### Verification
 - `pnpm test` 155 → 160 (three `gripKey` tests, two `typeAhead`). `pnpm build` green.
 - In Chrome on the production build: sidebar 224 → 240 → 320px with → and ⇧→, ↵ back to 224; split 274 → 323px with ← ←, Home to its 260px floor; a mouse click on the split edge leaves focus on the body. Screenshots `grips-*.png` in Kevin's overflow notes. From the top row, s goes to "Slow oscillations", s again to "Sharp-wave ripples", and / lands in the filter.
+- Review fix: the split edge's keys start from the pane's drawn size, which the CSS limits can hold away from the saved share (26% of `.main` at 1120px is under the 260px floor). A press toward a limit the pane already sits at then saved the drawn size, moving the share the other way (→ at the floor saved 26.6% over 26%). A press that can't move the edge (within half a pixel) now saves nothing. Checked in Chrome at 1200px: → and Home at the floor leave 26%, ← saves 29.1%.

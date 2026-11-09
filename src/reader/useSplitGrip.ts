@@ -62,7 +62,10 @@ export function useSplitGrip(dir: SplitDirection, saved: number) {
     if (px === null) return;
     e.preventDefault();
     e.stopPropagation();
-    void store.setSplitShare(dir, (px / size) * 100);
+    // An edge the CSS limits already hold can't move, and saving its drawn size would move the saved
+    // share the other way (a press to shrink a split drawn at its 260px floor would save more than 26%).
+    // (Sub-pixel layout can leave the drawn size a hair off the limit, hence the half pixel.)
+    if (Math.abs(px - split) >= 0.5) void store.setSplitShare(dir, (px / size) * 100);
   };
   const gripProps = {
     role: "separator",
