@@ -3,6 +3,7 @@ import { store, useReader } from "../state/store";
 import { AnchoredLayer, DeleteConfirm } from "./AnchoredLayer";
 import { MoreIcon } from "./Icons";
 import { RenameInput } from "./RenameInput";
+import { onEscapeFirst } from "../lib/escapeFirst";
 
 type Mode = "menu" | "rename" | "delete";
 
@@ -47,18 +48,14 @@ export function PageMenu({ path }: { path: string }) {
   useEffect(() => {
     if (mode !== "menu" && mode !== "delete") return;
     const onDown = () => setMode(null);
-    const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      e.preventDefault();
-      e.stopPropagation();
+    window.addEventListener("mousedown", onDown);
+    const stopEscape = onEscapeFirst(window, () => {
       kb.current = true;
       close();
-    };
-    window.addEventListener("mousedown", onDown);
-    window.addEventListener("keydown", onKey, true);
+    });
     return () => {
       window.removeEventListener("mousedown", onDown);
-      window.removeEventListener("keydown", onKey, true);
+      stopEscape();
     };
   }, [mode]);
 
