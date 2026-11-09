@@ -102,16 +102,35 @@ async function repoIsPrivate(env) {
   }
 }
 
-/** The screenshot as the frontend sent it, or null when it isn't a small, supported image. */
+/**
+ * The screenshot as the frontend sent it, or null when it isn't a small, supported image. Its first bytes,
+ * not the type it was sent with, decide which kind it is: the Contents API commits whatever it is given.
+ */
 export function validAttachment(a) {
-  if (!a || typeof a !== "object") return null;
-  const ext = ATTACHMENT_EXT[a.mime];
-  if (!ext) return null;
+  if (!a || typeof a !== "object" || !ATTACHMENT_EXT[a.mime]) return null;
   const data = typeof a.data === "string" ? a.data : "";
   // Base64 runs about 4/3 the size of the bytes it holds; this bounds it without decoding first.
   if (!data || data.length > (MAX_ATTACHMENT_BYTES * 4) / 3 + 4) return null;
+  const mime = imageType(data);
+  if (!mime) return null;
+  const ext = ATTACHMENT_EXT[mime];
   const name = typeof a.name === "string" && a.name.trim() ? a.name.trim().slice(0, 100) : `screenshot.${ext}`;
-  return { mime: a.mime, ext, name, data };
+  return { mime, ext, name, data };
+}
+
+/** PNG, JPEG, GIF or WebP, read from the first 12 bytes of the base64; undefined for anything else. */
+function imageType(base64) {
+  let head;
+  try {
+    head = atob(base64.slice(0, 16));
+  } catch {
+    return undefined;
+  }
+  if (head.startsWith("\x89PNG\r\n\x1a\n")) return "image/png";
+  if (head.startsWith("\xff\xd8\xff")) return "image/jpeg";
+  if (head.startsWith("GIF87a") || head.startsWith("GIF89a")) return "image/gif";
+  if (head.startsWith("RIFF") && head.slice(8, 12) === "WEBP") return "image/webp";
+  return undefined;
 }
 
 /**

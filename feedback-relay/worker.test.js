@@ -2,6 +2,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import worker, { detail, issueBody, titleFor, validAttachment } from "./worker.js";
 
+// The first bytes of real images, as base64: what a screenshot has to start with.
+const PNG = "iVBORw0KGgoAAAANSUhEUgAA";
+const JPEG = "/9j/4AAQSkZJRgAB";
+const GIF = "R0lGODlhAQABAAAA";
+const WEBP = "UklGRiQAAABXRUJQVlA4IA==";
+
 test("title is the first non-empty line, clipped", () => {
   assert.equal(titleFor("\n\n  The tree   loses my place\nmore"), "The tree loses my place");
   const long = "x".repeat(100);
@@ -26,7 +32,7 @@ test("body embeds the screenshot when one was uploaded", () => {
 });
 
 test("an attachment must be a small, supported image", () => {
-  const small = "A".repeat(100);
+  const small = PNG + "A".repeat(76);
   assert.deepEqual(validAttachment({ name: "shot.png", mime: "image/png", data: small }), { mime: "image/png", ext: "png", name: "shot.png", data: small });
   assert.equal(validAttachment({ mime: "image/png", data: small }).name, "screenshot.png");
   assert.equal(validAttachment(null), null);
@@ -92,14 +98,14 @@ test("uploads a screenshot to its own branch and embeds it in the issue", async 
     throw new Error(`unexpected call to ${url}`);
   };
   try {
-    const res = await worker.fetch(post({ message: "It broke", attachment: { name: "shot.png", mime: "image/png", data: "aGVsbG8=" } }), env);
+    const res = await worker.fetch(post({ message: "It broke", attachment: { name: "shot.png", mime: "image/png", data: PNG } }), env);
     assert.equal(res.status, 201);
     const refCreate = calls.find((c) => c.url.endsWith("/git/refs"));
     assert.deepEqual(refCreate.body, { ref: "refs/heads/feedback-attachments", sha: "base-sha" });
     const upload = calls.find((c) => c.url.includes("/contents/"));
     assert.equal(upload.init.method, "PUT");
     assert.equal(upload.body.branch, "feedback-attachments");
-    assert.equal(upload.body.content, "aGVsbG8=");
+    assert.equal(upload.body.content, PNG);
     const issueCall = calls.find((c) => c.url.endsWith("/issues"));
     assert.match(issueCall.body.body, /!\[Screenshot\]\(https:\/\/raw\.githubusercontent\.com\/o\/r\/feedback-attachments\//);
   } finally {
@@ -116,7 +122,7 @@ test("still files the note when the screenshot upload fails", async () => {
     throw new Error(`unexpected call to ${url}`);
   };
   try {
-    const res = await worker.fetch(post({ message: "hi", attachment: { mime: "image/png", data: "aGVsbG8=" } }), env);
+    const res = await worker.fetch(post({ message: "hi", attachment: { mime: "image/png", data: PNG } }), env);
     assert.equal(res.status, 201);
   } finally {
     globalThis.fetch = real;
@@ -136,7 +142,7 @@ test("a GitHub refusal comes back as 502", async () => {
 // The issue is as public as the repo it lands in, so the relay asks GitHub before it posts an email or a
 // screenshot. Each test below files to a repo of its own, so the remembered answer of one can't leak
 // into the next.
-const shot = { name: "shot.png", mime: "image/png", data: "aGVsbG8=" };
+const shot = { name: "shot.png", mime: "image/png", data: PNG };
 const repoEnv = (repo) => ({ GITHUB_TOKEN: "t", GITHUB_REPO: repo });
 
 /**
@@ -243,4 +249,17 @@ test("a note that doesn't say it's JSON is refused before touching GitHub", asyn
   assert.equal(calls.length, 0);
   const ok = await worker.fetch(new Request("https://relay.test/", { method: "POST", body: JSON.stringify({ message: "hi" }), headers: { "Content-Type": "application/json; charset=utf-8" } }), repoEnv("o/csrf"));
   assert.equal(ok.status, 201);
+});
+
+// The Contents API commits whatever bytes it is given, so the declared type alone let any file in.
+test("a screenshot must really be an image, and its own bytes say which kind", () => {
+  assert.deepEqual(validAttachment({ name: "a.jpg", mime: "image/jpeg", data: JPEG }), { mime: "image/jpeg", ext: "jpg", name: "a.jpg", data: JPEG });
+  assert.equal(validAttachment({ mime: "image/gif", data: GIF }).ext, "gif");
+  assert.equal(validAttachment({ mime: "image/webp", data: WEBP }).ext, "webp");
+  // A JPEG sent as a PNG is still a picture: it is kept, under the type its bytes show.
+  assert.deepEqual(validAttachment({ mime: "image/png", data: JPEG }), { mime: "image/jpeg", ext: "jpg", name: "screenshot.jpg", data: JPEG });
+  // Text, an HTML page or broken base64 declared as an image is not.
+  assert.equal(validAttachment({ mime: "image/png", data: "aGVsbG8gd29ybGQh" }), null);
+  assert.equal(validAttachment({ mime: "image/png", data: btoa("<html><script>") }), null);
+  assert.equal(validAttachment({ mime: "image/png", data: "%%%%not base64" }), null);
 });
