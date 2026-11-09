@@ -32,6 +32,8 @@ pdf-extract = "0.12"
 
 [dev-dependencies]
 tempfile = "3"
+# The mock runtime, so the IPC tests in lib.rs call commands the way the webview does.
+tauri = { version = "2", features = ["test"] }
 
 # ⌘O shows one Open panel for a folder or a single Markdown file. rfd, behind the dialog
 # plugin, cannot do both in one panel, so macOS talks to NSOpenPanel directly.
