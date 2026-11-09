@@ -134,3 +134,24 @@ test("the limiter says so in the log, once, when everyone together reaches the h
   assert.match(line, /2 notes/);
   assert.doesNotMatch(line, /"[ab]"|: [ab]\b/);
 });
+
+// An older app still lets a 5 MB screenshot through, about 7 MB as JSON. The body is read in full rather than
+// cut off, so the worker can answer why it's refused, which the app shows, instead of the upload just failing.
+test("an older app's 5 MB screenshot gets the 2 MB reason through the Node side, not a hang-up", async (t) => {
+  const real = globalThis.fetch;
+  globalThis.fetch = (url, init) => (String(url).startsWith("http://127.0.0.1:") ? real(url, init) : Promise.reject(new Error(`no call out: ${url}`)));
+  t.after(() => {
+    globalThis.fetch = real;
+  });
+  const server = createServer(nodeHandler({ GITHUB_TOKEN: "t", GITHUB_REPO: "o/r" }));
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  t.after(() => server.close());
+  const data = "iVBORw0KGgo" + "A".repeat(Math.ceil((5 * 1024 * 1024 * 4) / 3));
+  const res = await fetch(`http://127.0.0.1:${server.address().port}/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message: "It broke", attachment: { name: "shot.png", mime: "image/png", data } }),
+  });
+  assert.equal(res.status, 413);
+  assert.equal(await res.text(), "Keep the screenshot under 2 MB.");
+});
