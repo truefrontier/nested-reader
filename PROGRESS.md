@@ -867,3 +867,34 @@
   - The store's `writePage`, so the front matter, always written with LF, follows the body. The Rust front matter readers already trim `\r`.
 - A mixed file comes back all in whichever ending it uses more, LF on a tie. Rendering is unchanged: `lexBlocks` still lexes LF.
 - Checks: `pnpm test` 89 → 93, and the four new tests fail on `main`, where `withLineEndings` doesn't exist. `pnpm build` passes. In the browser mock, a new page linked from a word in a CRLF page left the source CRLF throughout, front matter included. In its body only the linked line changed. Not run: the desktop app.
+
+## Session: 2026-11-09 — the desktop app's security review, and its fixes (#234)
+
+### Leading assumptions
+- Overflow task: review the app outside the feedback relay (the IPC commands, what the webview can reach, the AI requests and their keys, the HTML path, PDF parsing, the updater, analytics) and fix the must-fixes, each with a test that fails first. The review itself is in Kevin's notes, not the repo: some of what it leaves open is better not published while it is open.
+- Nothing may touch the keychain, call an AI provider or contact the relay, so tests use in-memory keys and localhost fake servers.
+
+### World facts
+- Every file command takes its folder from the webview, so the webview is as strong as the app. Three layers now stand in front of it: DOMPurify on every Markdown and mermaid path, mermaid's `securityLevel: "strict"`, and a CSP (`tauri.conf.json`):
+  - scripts only from the bundle;
+  - `connect-src` only `ipc: http://ipc.localhost`, since the frontend never fetches;
+  - `form-action`, `frame-src` and `object-src` `'none'`;
+  - images and media from anywhere;
+  - `style-src 'unsafe-inline'` for mermaid's `<style>`, kept working by `dangerousDisableAssetCspModification: ["style-src"]`.
+
+  Desktop `tauri dev` loads Vite directly, so the policy applies only to built apps. `src/platform/csp.test.ts` pins it.
+- Keys: OpenAI requests always go to `api.openai.com`, and the Anthropic key only to `api.anthropic.com`. Custom keeps its own key and URL. Settings' connection check passes `settings.baseUrl` for every provider but Ollama, which used to send the OpenAI key to a leftover Custom URL.
+- `files::safe_join` resolves the existing part of a path and refuses one a symlink takes outside the folder. A link to a page in the same folder still works.
+- Under `cfg(test)`, `ai::api_key` reads `ai::TEST_KEYS`, never the keychain. Before this, `cargo test` read the real login keychain (keyring `apple-native`), sending a stored key to the localhost fake servers, or stalling on a macOS prompt.
+- Tauri 2.11.5 refuses the app's own commands from a remote origin (`webview/mod.rs`), and the capability has no `remote` URLs. So a page that navigates the window away can't reach the IPC.
+
+### Verification
+- `cargo test --lib`: 77 → 81 passed (12 ignored). `pnpm test`: 103 → 105.
+- CSP: a production build served with the policy as a header next to one without it, in Chrome.
+  - Rendered the same both ways: four mermaid types, a `data:` image, a remote image, a table, links, bundled fonts, Settings.
+  - Blocked: an inline script, a fetch to another host and a form post to it.
+- Not run: the built desktop app (Tauri's own IPC under the CSP).
+
+### Possible next steps
+- The open items from the review, in Kevin's notes.
+- Mermaid flowcharts, state and ER diagrams render as empty heaps on `main` (labels dropped by the sanitizer, and the session map's bare `.node` rule moving every box): fixed separately in #117.
