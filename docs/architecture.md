@@ -30,6 +30,9 @@ src-tauri/src/
 feedback-relay/          relay (Cloudflare Worker or Fly): files feedback as GitHub issues, serves app updates
 scripts/release.mjs      pnpm release: bump the version everywhere, commit, tag, push
 scripts/test-hooks.mjs   pnpm test: lets node --test load the TypeScript as Vite does, JSON and ?raw too (DOMPurify stubbed)
+scripts/third-party-notices.mjs  writes THIRD_PARTY_NOTICES.md from the lockfiles, offline; run it after any dependency change
+scripts/third-party-notices.not-shipped.json  the lockfile packages the app doesn't ship (build or test only, not used on macOS)
+THIRD_PARTY_NOTICES.md   the licenses of every crate and npm package the app ships; bundled into Nested.app/Contents/Resources
 .github/workflows/       Claude on GitHub: @claude replies, PR review, feedback triage; release.yml builds and publishes tags
 examples/sleep-memory/   sample corpus used by the mock backend
 design/                  Claude Design source files this app implements
@@ -228,7 +231,10 @@ pnpm tauri dev        # the app
 pnpm dev              # browser-only preview with the mock backend
 pnpm test             # unit tests beside src/lib, src/platform/stream.ts and src/state/store.ts (node --test)
 pnpm tauri build      # .app and .dmg in src-tauri/target/release/bundle
+node scripts/third-party-notices.mjs   # after a dependency change: rewrites THIRD_PARTY_NOTICES.md
 ```
+
+`THIRD_PARTY_NOTICES.md` ships inside the app (`bundle.resources` in `tauri.conf.json`). `src/thirdPartyNotices.test.ts` makes `pnpm test` fail when `Cargo.lock` or `pnpm-lock.yaml` holds a package that neither the notices nor `scripts/third-party-notices.not-shipped.json` lists, so a dependency change needs the script run again. The script reads `cargo metadata --offline` for the two macOS targets the universal build covers, walking only normal dependency edges from `nested`, and `pnpm licenses list --prod --json`. It takes the license texts from `~/.cargo/registry/src` and `node_modules`, with no network. If cargo stops with "failed to download", run `cargo fetch` in `src-tauri` once.
 
 ## Work in parallel
 
