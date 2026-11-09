@@ -773,6 +773,8 @@ mod tests {
         assert_eq!(free_page_label(|l| open.contains(&l)), "page-3");
     }
 
+    /// Packages are a macOS idea: elsewhere `is_package` is always false.
+    #[cfg(target_os = "macos")]
     #[test]
     fn open_folder_opens_plain_folders_and_refuses_packages() {
         let tmp = tempfile::tempdir().unwrap();
