@@ -26,15 +26,17 @@ export async function handleUpdates(request, env, url) {
     const release = await latestRelease(env);
     const asset = release?.assets.find((a) => a.name === MANIFEST);
     if (!asset) return new Response(null, { status: 204 });
-    const res = await githubAsset(env, asset.id);
-    if (!res.ok) return text(502, "GitHub didn't hand over the update manifest");
-    let manifest;
-    try {
-      manifest = await res.json();
-    } catch {
-      return text(502, "The update manifest isn't JSON");
+    // Kept on the remembered release, so the manifest is downloaded once a minute, not once a check.
+    if (!release.manifest) {
+      const res = await githubAsset(env, asset.id);
+      if (!res.ok) return text(502, "GitHub didn't hand over the update manifest");
+      try {
+        release.manifest = await res.json();
+      } catch {
+        return text(502, "The update manifest isn't JSON");
+      }
     }
-    return new Response(JSON.stringify(rewriteManifest(manifest, release.assets, origin)), {
+    return new Response(JSON.stringify(rewriteManifest(release.manifest, release.assets, origin)), {
       status: 200,
       headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
     });
@@ -42,6 +44,10 @@ export async function handleUpdates(request, env, url) {
 
   const download = path.match(/^\/updates\/download\/(\d+)\/[^/]+$/);
   if (download) {
+    // The token reads every asset in the repo, drafts included, and each lookup is a call on it, so
+    // only the newest release's assets (the ones latest.json and the dmg link point at) are handed out.
+    const release = await latestRelease(env);
+    if (!release?.assets.some((a) => String(a.id) === download[1])) return text(404, "No such release asset");
     const res = await githubAsset(env, download[1], "manual");
     const location = res.headers.get("location");
     if (res.status >= 300 && res.status < 400 && location) return Response.redirect(location, 302);

@@ -24,6 +24,9 @@ export default {
     const url = new URL(request.url);
     if (url.pathname.startsWith("/updates")) return handleUpdates(request, env, url);
     if (request.method !== "POST") return text(405, "POST only");
+    // A web page can have its visitors' browsers post plain text to any URL without asking first. JSON
+    // makes a browser ask (a CORS preflight), and the relay never answers yes. The app sends JSON.
+    if (!/^application\/json\s*(;|$)/i.test(request.headers.get("content-type") || "")) return text(415, "Send the note as JSON");
     if (!env.GITHUB_TOKEN) return text(500, "The relay has no GITHUB_TOKEN set");
     if (!/^[\w.-]+\/[\w.-]+$/.test(env.GITHUB_REPO || "")) return text(500, "The relay has no GITHUB_REPO set");
 
@@ -66,7 +69,7 @@ export default {
 
     const res = await gh(env, `/repos/${env.GITHUB_REPO}/issues`, {
       method: "POST",
-      body: JSON.stringify({ title: titleFor(message), body: issueBody(message, email, app, attachmentUrl, withheld), labels: [env.LABEL || "feedback"] }),
+      body: JSON.stringify({ title: unmention(titleFor(message)), body: unmention(issueBody(message, email, app, attachmentUrl, withheld)), labels: [env.LABEL || "feedback"] }),
     });
     if (!res.ok) {
       const why = await res.text().catch(() => "");
@@ -163,13 +166,23 @@ export function titleFor(message) {
   return clean.length > MAX_TITLE ? clean.slice(0, MAX_TITLE - 1).trimEnd() + "…" : clean;
 }
 
-/** What the app said about itself, kept to short plain strings. */
+/** What the app said about itself, kept to short words like "0.2.25", "macos" and "aarch64". */
 export function detail(app) {
   const out = {};
   if (app && typeof app === "object") {
-    for (const k of ["version", "os", "arch"]) if (typeof app[k] === "string" && app[k].length <= 40) out[k] = app[k];
+    for (const k of ["version", "os", "arch"]) if (typeof app[k] === "string" && /^[\w.+-]{1,40}$/.test(app[k])) out[k] = app[k];
   }
   return out;
+}
+
+/**
+ * Breaks each @mention with a zero-width space after the @, so the text reads as typed but pings no one.
+ * The issue is filed as the token's owner, so a mention would come from that account, and an "@claude"
+ * in an issue its owner opened starts .github/workflows/claude.yml. An @ after a letter or digit, as in
+ * an email address, is no mention to GitHub and is left alone.
+ */
+export function unmention(s) {
+  return s.replace(/(^|[^A-Za-z0-9_])@(?=[A-Za-z0-9])/g, "$1@\u200b");
 }
 
 export function issueBody(message, email, app, attachmentUrl, withheld = []) {

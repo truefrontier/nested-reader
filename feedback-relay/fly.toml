@@ -16,6 +16,7 @@ primary_region = 'ord'
 
 [env]
   GITHUB_REPO = "truefrontier/nested-reader"
+  # .github/workflows/claude.yml skips new issues labelled "feedback" by name, so change both together.
   LABEL = "feedback"
 
 [[http_service.checks]]
