@@ -11,20 +11,29 @@ const noticed = new Set(Array.from(notices.matchAll(/^- `([^`]+)`/gm), (m) => m[
 /** The names (versions dropped) of the noticed packages of one kind. */
 const noticedNames = (kind: "Rust crate" | "npm package") => new Set(Array.from(notices.matchAll(new RegExp(`^- \`(.+)@[^@\`]+\` \\(${kind}\\)`, "gm")), (m) => m[1]));
 const notShipped = JSON.parse(read("scripts/third-party-notices.not-shipped.json")) as Record<"cargo" | "npm", Record<string, string>>;
+// Every `name@version` each lockfile holds. The app's own crate has no `source`, so it isn't one.
+const cargoLock = read("src-tauri/Cargo.lock");
+const crates = Array.from(cargoLock.matchAll(/^name = "(.+)"\nversion = "(.+)"\nsource = /gm), (m) => `${m[1]}@${m[2]}`);
+const pnpmLock = read("pnpm-lock.yaml");
+const pnpmPackages = pnpmLock.slice(pnpmLock.indexOf("\npackages:\n"), pnpmLock.indexOf("\nsnapshots:\n"));
+const packages = Array.from(pnpmPackages.matchAll(/^ {2}'?([^\s']+)'?:$/gm), (m) => m[1]);
 
 test("every crate in Cargo.lock is in the notices or known not to ship", () => {
-  const lock = read("src-tauri/Cargo.lock");
-  const crates = Array.from(lock.matchAll(/^name = "(.+)"\nversion = "(.+)"\nsource = /gm), (m) => `${m[1]}@${m[2]}`);
   assert.ok(crates.length > 100, "Cargo.lock should parse into its crates");
   assert.deepEqual(crates.filter((c) => !noticed.has(c) && !(c in notShipped.cargo)), []);
 });
 
 test("every package in pnpm-lock.yaml is in the notices or known not to ship", () => {
-  const lock = read("pnpm-lock.yaml");
-  const block = lock.slice(lock.indexOf("\npackages:\n"), lock.indexOf("\nsnapshots:\n"));
-  const packages = Array.from(block.matchAll(/^ {2}'?([^\s']+)'?:$/gm), (m) => m[1]);
   assert.ok(packages.length > 100, "pnpm-lock.yaml should parse into its packages");
   assert.deepEqual(packages.filter((p) => !noticed.has(p) && !(p in notShipped.npm)), []);
+});
+
+// The other way round: a package dropped or bumped would otherwise leave its old notice (or not-shipped
+// entry) behind, and the file would list what the app no longer ships.
+test("every package the notices or the not-shipped list name is still in a lockfile", () => {
+  const locked = new Set([...crates, ...packages]);
+  const named = [...noticed, ...Object.keys(notShipped.cargo), ...Object.keys(notShipped.npm)];
+  assert.deepEqual(named.filter((p) => !locked.has(p)), []);
 });
 
 test("the notices are bundled into the app", () => {
