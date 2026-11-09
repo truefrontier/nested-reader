@@ -289,3 +289,17 @@ test("a # inside a link is left alone, and a link definition can't hide a line e
   // "[x]: url" on a line of its own is a link definition, which shows nothing; escaped, it reads as typed.
   assert.match(body, /\n> \\\[x\]: https:\/\/e\.test\/hidden/);
 });
+
+// Every screenshot is committed to the repo for good, so the cap is 2 MB, and a bigger one is refused
+// with a reason the app shows as is (an older app still lets 5 MB through).
+test("a screenshot over 2 MB is refused with a reason, before touching GitHub", async (t) => {
+  const calls = fakeGitHub(t, { private: true });
+  const MB = 1024 * 1024;
+  const sized = (bytes) => ({ mime: "image/png", data: PNG + "A".repeat(Math.ceil((bytes * 4) / 3) - PNG.length) });
+  assert.ok(validAttachment(sized(2 * MB - 1024)));
+  assert.equal(validAttachment(sized(2 * MB + 1024)), null);
+  const res = await worker.fetch(post({ message: "It broke", attachment: sized(3 * MB) }), repoEnv("o/big"));
+  assert.equal(res.status, 413);
+  assert.equal(await res.text(), "Keep the screenshot under 2 MB.");
+  assert.equal(calls.length, 0);
+});

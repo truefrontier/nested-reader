@@ -2,7 +2,10 @@
 // worker's `Response` back. server.mjs serves it on Fly; the tests serve it on a local port.
 import worker from "./worker.js";
 
-/** More than any note can be: the worker's 5 MB screenshot cap is about 6.7 MB as base64, plus the text. */
+/**
+ * More than any note can be. The worker's screenshot cap is 2 MB, but an older app sends up to 5 MB (about
+ * 6.7 MB as base64), and reading that in lets the worker answer why it's refused instead of hanging up.
+ */
 const MAX_BODY = 8 * 1024 * 1024;
 
 // Each note costs a GitHub call on the token's owner, an Actions run and a Claude triage, so notes are

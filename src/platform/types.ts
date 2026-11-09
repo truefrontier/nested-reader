@@ -165,7 +165,7 @@ export const FEEDBACK_MAX = 5000;
 export type Attachment = { name: string; mime: string; data: string };
 
 /** Largest screenshot the Send feedback box will attach, before base64 encoding; the relay refuses more. */
-export const ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024;
+export const ATTACHMENT_MAX_BYTES = 2 * 1024 * 1024;
 
 const IMAGE_PATH = /\.(png|jpe?g|gif|webp)$/i;
 /** Whether a path dropped on the window looks like a screenshot the feedback box can attach. */

@@ -12,7 +12,10 @@ import { handleUpdates } from "./updates.js";
 const MAX_MESSAGE = 5000;
 const MAX_EMAIL = 200;
 const MAX_TITLE = 72;
-const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+// Every screenshot is committed to the repo for good, so it stays small. Base64 runs about 4/3 the size of
+// the bytes it holds, which bounds the string without decoding it first.
+const MAX_ATTACHMENT_BYTES = 2 * 1024 * 1024;
+const MAX_ATTACHMENT_BASE64 = (MAX_ATTACHMENT_BYTES * 4) / 3 + 4;
 const ATTACHMENT_EXT = { "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp" };
 const ATTACHMENTS_BRANCH = "feedback-attachments";
 const VISIBILITY_MS = 5 * 60_000;
@@ -44,6 +47,8 @@ export default {
     const app = detail(body?.app);
     let attachment = null;
     if (body?.attachment !== undefined) {
+      // An older app lets 5 MB through, so say why rather than calling the picture malformed.
+      if (body.attachment?.data?.length > MAX_ATTACHMENT_BASE64) return text(413, "Keep the screenshot under 2 MB.");
       attachment = validAttachment(body.attachment);
       if (!attachment) return text(400, "That screenshot didn't look right");
     }
@@ -109,8 +114,7 @@ async function repoIsPrivate(env) {
 export function validAttachment(a) {
   if (!a || typeof a !== "object" || !ATTACHMENT_EXT[a.mime]) return null;
   const data = typeof a.data === "string" ? a.data : "";
-  // Base64 runs about 4/3 the size of the bytes it holds; this bounds it without decoding first.
-  if (!data || data.length > (MAX_ATTACHMENT_BYTES * 4) / 3 + 4) return null;
+  if (!data || data.length > MAX_ATTACHMENT_BASE64) return null;
   const mime = imageType(data);
   if (!mime) return null;
   const ext = ATTACHMENT_EXT[mime];
