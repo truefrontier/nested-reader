@@ -1055,3 +1055,19 @@
 ### Possible next steps
 - Show the file from Settings › General or an About window, for Kevin to decide.
 - The check can't see a crate move from `[dev-dependencies]` to `[dependencies]` at the same version; re-run the script after any `Cargo.toml` dependency change too.
+
+## Session: 2026-11-09 — the notices check reads the manifests too (#257 follow-up)
+
+### World facts
+- The lockfile tests in `src/thirdPartyNotices.test.ts` pass as long as every `name@version` is in the notices or in `third-party-notices.not-shipped.json`. A package that moves from dev-only (or build-only) to a runtime dependency at the same version keeps its "build or test only" entry, so they stayed green while the shipped app gained a package with no notice.
+- Two more tests read the manifests: every crate under `[dependencies]` or `[target.'cfg(target_os = "macos")'.dependencies]` in `src-tauri/Cargo.toml`, and every package under `dependencies` in `package.json`, must have a notice, by name. No cargo and no network.
+
+### Verification
+- `pnpm test` 148 → 150.
+- Moving `tauri-build` (build-only) into `[dependencies]` with no lockfile change fails the Cargo test, naming it; the lockfile tests stay green. Moving `vite` into `dependencies` fails the npm test the same way. Both edits were undone. (`tempfile` was no use as the probe: it already ships, through a runtime crate.)
+- Running `pnpm test` with a changed `package.json` makes pnpm rewrite `pnpm-lock.yaml` before the script runs; the lockfile was restored and `pnpm install --offline --frozen-lockfile` re-run.
+- The repo's review bot noted on #120 that nothing caught stale entries: a package dropped or bumped left its old notice (or not-shipped entry) behind. A third test now fails on any `name@version` the notices or the not-shipped list name that no lockfile holds. Adding a `react@18.0.0` notice line fails it, naming that entry, while the other tests stay green. The lockfile parsing moved to the top of the file so both directions share it. `pnpm test` 150 → 151.
+- #120's branch gained the docs the review bot asked for (the layout lists the script, its not-shipped list and the file; Running it says when to run the script), merged in here; `docs/architecture.md` now also describes the manifest and stale checks.
+- A local reviewer found the manifest tests matched by name only. Nine build-only crates share a name with a shipped version (`security-framework` 2.11.1 vs 3.7.0, `toml`, `syn` 1, `heck`, `winnow`, `foreign-types`), so promoting one passed. The tests now resolve each name to the version the lockfiles give the app: `Cargo.lock`'s own `dependencies` list for `nested`, which carries a version where a name is ambiguous, and the importer block of `pnpm-lock.yaml`. They require a notice for that exact `name@version`. Cargo.toml reading now also takes `[dependencies.<name>]` tables, dotted keys, `package =` renames, and any target section that can apply on macOS (`cfg(unix)` included).
+- Probes, run with node directly (pnpm would rewrite the lockfile) and undone after: adding `security-framework = "2"` under `[dependencies]`, under `[target.'cfg(unix)'.dependencies]`, or as a `[dependencies.security-framework]` table, with its `2.11.1` added to `nested`'s entry in `Cargo.lock`, each fails with `security-framework@2.11.1`. `vite` in `package.json`'s `dependencies` fails as not in the lockfile's dependencies. The other five tests stay green.
+- The repo's review bot noted `onMac` dropped `not(…)` target sections that do apply on macOS (`cfg(not(target_os = "windows"))`). Such a section, or anything unrecognised, now counts: asking for one notice too many is the safe side. Probe, undone afterwards: `security-framework = "2"` under `[target.'cfg(not(target_os = "windows"))'.dependencies]` fails with `security-framework@2.11.1`.
