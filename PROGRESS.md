@@ -783,6 +783,15 @@
 - Found, not fixed: Esc on the tree's own ⋯ menu also runs the window's Esc, because both listen on the window. In the mock, with the find bar open, Esc closed the tree menu and the find bar together. The same press would cancel a running refine on the page being read. The pane's menu avoids this by catching Esc in the capture phase; the tree's could do the same.
 - Checks: `pnpm test` 103 → 103 (no logic moved into a helper, so no new unit test); `pnpm build` passes. Headless Chrome against the browser mock: 46 of 46 checks, covering rename, reveal, delete, keyboard use, the split pane and the tree's own menu. The PR lists them. Not run: the desktop app.
 
+### Follow-up — 2026-11-08: Esc on the tree's ⋯ menu stays in the menu
+- The "found, not fixed" above: the tree's menu, its delete confirmation and the empty-space menu now catch Esc in the capture phase and stop it there, as the pane's menu did. So Esc closes the menu and no longer also runs `store.escape`, which closed the find bar and would cancel a running refine.
+- Both menus use one helper, `onEscapeFirst(window, close)` in `src/lib/escapeFirst.ts`, rather than two copies of the listener. `PageMenu` passes a close that also marks the keyboard as driving, as before.
+- Checks: `pnpm test` 103 → 105. "Esc on an open menu closes it, and store.escape isn't called" fails against the old bubble-phase listener and passes now. `pnpm build` passes. In the browser mock, with the find bar open:
+  - Esc on the tree menu closed only the menu, and a second Esc closed the find bar;
+  - Esc on the pane's menu closed only that menu;
+  - no console errors.
+  - Not run: the desktop app.
+
 ## Session: 2026-09-15 — the answer stream stopped at the model's first tool call
 
 ### What was wrong

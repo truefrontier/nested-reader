@@ -7,6 +7,7 @@ import { RenameInput } from "./RenameInput";
 import { AnchoredLayer, DeleteConfirm, EDGE } from "./AnchoredLayer";
 import { DEFAULT_SETTINGS } from "../platform";
 import { useSidebarGrip } from "./useSidebarGrip";
+import { onEscapeFirst } from "../lib/escapeFirst";
 
 const stop = (e: MouseEvent) => e.stopPropagation();
 
@@ -125,7 +126,7 @@ export function Sidebar() {
   };
   // Each row has a ⋯ menu (also on right-click), and so does the header of an added root, keyed "root:<folder>".
   // A menu, the rename box it opens, and the delete confirmation all close on a click anywhere else,
-  // Esc, or when the tree scrolls. The menu and confirmation sit in a body-level layer so a row
+  // Esc (caught before the window's own Esc, so it doesn't also cancel a refine), or when the tree scrolls. The menu and confirmation sit in a body-level layer so a row
   // at the foot of a long tree still shows them in full, without scrolling the tree to reach them.
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -144,14 +145,11 @@ export function Sidebar() {
   useEffect(() => {
     if (!menuFor && !deleting && !treeMenuAt) return;
     const close = () => closeMenus();
-    const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key === "Escape") close();
-    };
     window.addEventListener("mousedown", close);
-    window.addEventListener("keydown", onKey);
+    const stopEscape = onEscapeFirst(window, close);
     return () => {
       window.removeEventListener("mousedown", close);
-      window.removeEventListener("keydown", onKey);
+      stopEscape();
     };
   }, [menuFor, deleting, treeMenuAt]);
   const onTreeContextMenu = (e: MouseEvent) => {
