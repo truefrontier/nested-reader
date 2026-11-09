@@ -1,4 +1,4 @@
-import type { ReactElement, ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, type FocusEvent, type ReactElement, type ReactNode } from "react";
 import { store, useReader, type PaneRole } from "../state/store";
 import type { PageDiff } from "../lib/diff";
 import { relTime } from "../lib/time";
@@ -9,6 +9,39 @@ import { moveFocus, PRESS, pressOnKey } from "../lib/keys";
 export function TopStrip({ path, role, diff, children }: { path: string; role: PaneRole; diff: PageDiff | null; children?: ReactNode }) {
   const s = useReader();
   const view = s.ui.versionView[role];
+  const topRef = useRef<HTMLDivElement>(null);
+  // While the keyboard works the strip, each step lands somewhere: the version list opens on its first
+  // version and the restore question on Cancel, and when a step takes the focused control away (a version
+  // picked, Back to current, Esc, a restore done) the focus goes to Cancel, Back to current or the pill,
+  // whichever is there. `inside` is the keyboard's focus being in the strip; the find bar under it keeps its own.
+  const inside = useRef(false);
+  const was = useRef({ history: false, confirm: false });
+  useLayoutEffect(() => {
+    const opened = view.history && !was.current.history ? "[role=menuitem][tabindex]" : view.confirmRestore && !was.current.confirm ? ".confirm .c" : null;
+    was.current = { history: view.history, confirm: view.confirmRestore };
+    const top = topRef.current;
+    if (!top || !inside.current || !("kb" in document.documentElement.dataset)) return;
+    if (opened) return void top.querySelector<HTMLElement>(opened)?.focus();
+    if (document.activeElement !== document.body) return;
+    for (const at of [".confirm .c", ".strip .loud", ".pill"]) {
+      const el = top.querySelector<HTMLElement>(at);
+      if (el) return void el.focus();
+    }
+  });
+  useEffect(() => {
+    const drop = () => (inside.current = false);
+    window.addEventListener("pointerdown", drop, true);
+    return () => window.removeEventListener("pointerdown", drop, true);
+  }, []);
+  // A click's focus on a stand-in button is handed back before React sees it (`trackInput`), so a focus
+  // event for an element that no longer has the focus is the mouse's, not the keyboard's.
+  const onFocus = (e: FocusEvent) => {
+    if (e.target === document.activeElement) inside.current = !(e.target as HTMLElement).closest(".find");
+  };
+  // A control removed while focused leaves no blur, so only a move to somewhere else ends `inside`.
+  const onBlur = (e: FocusEvent) => {
+    if (e.relatedTarget && !topRef.current?.contains(e.relatedTarget as Node)) inside.current = false;
+  };
   const versions = s.versions[path] ?? [];
   const currentN = versions.length ? versions[versions.length - 1].n + 1 : 1;
   const review = !!diff && diff.changes.length > 0 && view.viewing === undefined;
@@ -104,7 +137,7 @@ export function TopStrip({ path, role, diff, children }: { path: string; role: P
   return (
     <>
       {status}
-      <div className="top">
+      <div className="top" ref={topRef} onFocus={onFocus} onBlur={onBlur}>
         <div className="top-inner">
           {content}
           {children}

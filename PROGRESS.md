@@ -1151,3 +1151,21 @@
 - Review fixes (a second local reviewer):
   - **Esc from anywhere.** A keyboard-opened change card took Esc wherever the focus was, so Esc in the find bar closed the card and left the find bar open. It now takes Esc only while the focus is in the article, on the change or in its card. Checked in Chrome: with the card open, ⌘F then Esc closes the find bar and leaves the card; Esc on the change closes the card.
   - **Focus on the wrong page.** `keyedMark` outlived a page change (`Page` isn't remounted per page, and `[data-asked="0"]` is on any page with an ask), so after ⌘[ it could focus, and scroll to, a passage on the next page. It now remembers its page, refocuses only there, and uses `preventScroll`.
+
+## Session: 2026-11-09 — the version strip keeps the keyboard's place (#253 follow-up)
+
+### World facts
+- Before: Enter on the version pill opened the history with the focus left on the pill, and ↓ did nothing there. Picking a version, Back to current, Esc and a finished restore each removed the focused control, so the focus fell to the body.
+- `TopStrip` now has one layout effect for this. The history opens on its first version, and the restore question opens on Cancel. When the focus falls to the body from inside the strip, it goes to the first of Cancel, Back to current and the pill that is there.
+- It acts only while the keyboard's focus is in the strip (`inside`: set on focus, but not for the find bar under it; cleared on a pointer press or a move elsewhere) and `html[data-kb]` is set. So a mouse user sees no change.
+
+### Verification
+- In Chrome on the production build, after a refine and Done (the focus moves from Done to the pill as the strip turns into it):
+  - ↵ on the pill opens the history on "Version 1 · original";
+  - ↵ views it, with the focus on Back to current and the status saying "Viewing Version 1";
+  - ⇧Tab then ↵ on Restore opens the question on Cancel;
+  - Esc closes it, with the focus on Back to current;
+  - ↵ goes back, with the focus on the pill.
+- A mouse click on the pill and then on a version opens the same views and leaves the focus on the body.
+- `pnpm test` 164, unchanged (the effect reads the DOM; no new pure logic). `pnpm build` green. Screenshot `versions-history-keyboard.png` in Kevin's overflow notes.
+- Review fix (a second local reviewer): a mouse click on the pill, a version or Done set `inside`. The click's focus is handed back by `trackInput` during the capture phase, but React's `onFocus` still saw the event. A later Esc (which sets `html[data-kb]`) then moved the focus onto the pill with a ring, and ↵ reopened the history instead of retrying a failed refine. `onFocus` now counts only a focus the element still has. Checked in Chrome: a mouse click on Done, then on the pill, then Esc leaves the focus on the body, and the keyboard path still opens the history on its first version.
