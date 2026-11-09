@@ -65,13 +65,19 @@ jobs:
                for a bug, the most likely cause.
             3. Check for an earlier issue about the same thing with
                `gh issue list --search "<a few words>" --state all` and mention it if there is one.
-            4. Post one comment with `gh issue comment`: what the feedback is asking for in a
-               sentence, where in the code it lands (file paths), a likely cause or a way to
-               do it, and what is still unknown. Keep it under 200 words. Do not address the
-               reporter; they do not see this repository. End the comment with the line
+            4. Post one comment with
+               `gh issue comment ${{ github.event.issue.number }} --body "<comment>"`, with the
+               issue number first (edits and comments on any other issue are refused): what the
+               feedback is asking for in a sentence, where in the code it lands (file paths), a
+               likely cause or a way to do it, and what is still unknown. Keep it under 200
+               words. Do not address the reporter; they do not see this repository. End the
+               comment with the line
                `<!-- feedback-triage -->` on its own line, flush left and with no code fence
                around it, so a later run can tell that triage already happened.
 
             Do not change any code and do not close the issue.
+          # Reading is open, but labelling and commenting are pinned to this issue: its text was written
+          # by whoever sent the note, so an instruction hidden in it can't reach any other issue. The
+          # space before each * makes "edit 42" stop at 42, so it doesn't also match "edit 420".
           claude_args: |
-            --allowedTools "Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh issue edit:*),Bash(gh issue comment:*),Bash(gh search issues:*)"
+            --allowedTools "Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh issue edit ${{ github.event.issue.number }} *),Bash(gh issue comment ${{ github.event.issue.number }} *),Bash(gh search issues:*)"
