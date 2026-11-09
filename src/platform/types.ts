@@ -294,7 +294,7 @@ export type AiRequest = {
   excluded?: string[];
   /** The model may search the web: Claude Code and Codex with their own tools, an Anthropic key with its server-side search. */
   webAccess?: boolean;
-  /** The kind of AI ask for analytics: "quick_answer", "new_page", "deep_dive", or "refine". */
+  /** The kind of AI request for analytics: "quick_answer", "new_page", "deep_dive", "refine", or "summary" (indexing, one per batch of pages). */
   kind?: string;
 };
 

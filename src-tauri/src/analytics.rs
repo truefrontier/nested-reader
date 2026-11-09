@@ -65,7 +65,7 @@ pub fn track_update_installed(app: &tauri::AppHandle, from_version: &str, to_ver
     }
 }
 
-/// Tracks `ai_ask` with the kind: `quick_answer`, `new_page`, `deep_dive`, or `refine`.
+/// Tracks `ai_ask` with the kind: `quick_answer`, `new_page`, `deep_dive`, `refine`, or `summary` (indexing, one per batch of pages).
 pub fn track_ai_ask(app: &tauri::AppHandle, kind: &str) {
     if !enabled() {
         return;
