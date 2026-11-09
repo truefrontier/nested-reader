@@ -128,3 +128,19 @@ test("the split lines up with the main pane when they are linked, and stops foll
   scrollBy(main, 0, main, split);
   assert.equal(split.scrollTop, 800);
 });
+
+// The common case is worse: a short page that barely scrolls in the wide main pane (3 px of range in a
+// 1440×900 window, against 427 in the split). Following an echo back there jumps the split by tens of px.
+test("scrolling one pane leaves it where the reader put it, when the other barely scrolls", () => {
+  const main = new FakePane(875, 872);
+  const split = new FakePane(1299, 872);
+  const unlink = linkScroll(main, split);
+  try {
+    const asked = [20, 40, 60, 80, 100, 120, 140, 160, 180, 200, 220, 240];
+    const landed = asked.map((top) => (scrollBy(split, top, main, split), split.scrollTop));
+    assert.deepEqual(landed, asked);
+    assert.equal(main.scrollTop, 2);
+  } finally {
+    unlink();
+  }
+});
