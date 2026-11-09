@@ -1107,3 +1107,20 @@
 ### Possible next steps
 - A keyboard way to ask about text: for example ⌘↵ on a focused paragraph, or caret browsing. It needs a design call.
 - An asked passage inside a change's tint makes a button inside a button; only possible when an ask and a pending change overlap.
+
+## Session: 2026-11-09 — the version strip keeps the keyboard's place (#253 follow-up)
+
+### World facts
+- Before: Enter on the version pill opened the history with the focus left on the pill, and ↓ did nothing there. Picking a version, Back to current, Esc and a finished restore each removed the focused control, so the focus fell to the body.
+- `TopStrip` now has one layout effect for this. The history opens on its first version, and the restore question opens on Cancel. When the focus falls to the body from inside the strip, it goes to the first of Cancel, Back to current and the pill that is there.
+- It acts only while the keyboard's focus is in the strip (`inside`: set on focus, but not for the find bar under it; cleared on a pointer press or a move elsewhere) and `html[data-kb]` is set. So a mouse user sees no change.
+
+### Verification
+- In Chrome on the production build, after a refine and Done (the focus moves from Done to the pill as the strip turns into it):
+  - ↵ on the pill opens the history on "Version 1 · original";
+  - ↵ views it, with the focus on Back to current and the status saying "Viewing Version 1";
+  - ⇧Tab then ↵ on Restore opens the question on Cancel;
+  - Esc closes it, with the focus on Back to current;
+  - ↵ goes back, with the focus on the pill.
+- A mouse click on the pill and then on a version opens the same views and leaves the focus on the body.
+- `pnpm test` 164, unchanged (the effect reads the DOM; no new pure logic). `pnpm build` green. Screenshot `versions-history-keyboard.png` in Kevin's overflow notes.
