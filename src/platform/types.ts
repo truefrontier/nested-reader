@@ -349,6 +349,10 @@ export interface Platform {
   deletePage(folder: string, path: string): Promise<string>;
   /** Puts back a page `deletePage` parked, with its snapshots. Rejects, leaving it parked, if anything has since appeared at `path`. */
   restorePage(folder: string, path: string, trashed: string): Promise<void>;
+  /** How many deleted pages wait in the folder's `.reader/trash`. */
+  trashCount(folder: string): Promise<number>;
+  /** Removes everything in the folder's `.reader/trash` for good. Resolves to how many pages went. */
+  emptyTrash(folder: string): Promise<number>;
   /** A folder's session, or with `file`, the separate session kept for a single-file session in that folder. */
   loadSession(folder: string, file?: string): Promise<Session | null>;
   saveSession(folder: string, session: Session, file?: string): Promise<void>;

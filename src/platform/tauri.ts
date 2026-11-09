@@ -74,6 +74,8 @@ export const tauriPlatform: Platform = {
   writeNewPage: (folder, path, content) => invoke<boolean>("write_new_page", { folder, path, content }),
   deletePage: (folder, path) => invoke<string>("delete_page", { folder, path }),
   restorePage: (folder, path, trashed) => invoke("restore_page", { folder, path, trashed }),
+  trashCount: (folder) => invoke<number>("trash_count", { folder }),
+  emptyTrash: (folder) => invoke<number>("empty_trash", { folder }),
 
   loadSession: (folder, file) => invoke<Session | null>("load_session", { folder, file }),
   saveSession: (folder, session, file) => invoke("save_session", { folder, session, file }),

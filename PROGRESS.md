@@ -823,6 +823,14 @@
   - no console errors.
   - Not run: the desktop app.
 
+### Follow-up — 2026-11-08: Empty trash
+- `.reader/trash` only ever grew. Settings › General › Deleting a page now has a second line: how many deleted pages the folder's trash holds, and **Empty trash…**, which asks first (the native sheet, `Platform.confirm`) and then removes them for good.
+- Rust: `files::trash_count` and `files::empty_trash` (commands `trash_count` and `empty_trash`, `Platform.trashCount` and `Platform.emptyTrash` on both backends). A page counts as a file at the top of the trash; the `-versions` snapshot folders go too but aren't counted. Nothing outside `.reader/trash` is touched, and no link is followed: entries are typed with `file_type`, a link goes as a link, and a `.reader/trash` that is itself a link is refused with ".reader/trash isn't a plain folder, so it's left alone."
+- The row empties the trash of the folder in Settings, which is the session's own folder. Pages deleted from an added root in another folder sit in that folder's trash, which this row doesn't reach.
+- An Undo still on screen after emptying fails the way `restore_page` already did when the page was gone: "The deleted page is no longer in .reader/trash."
+- The mock's trash entries now remember their folder, so it can count and empty per folder.
+- Checks: `cargo test` 77 → 83 (12 live tests ignored); the six new tests failed first against stubs that returned 0, except "no trash folder is fine", which a stub can't fail. Clippy clean. `pnpm test` 103 → 103, `pnpm build` passes. In headless Chrome against the mock: two pages deleted through the store, the row read "2 pages there now", Cancel left them, Enter on the focused button plus OK removed them ("Removed 2 pages for good."), the toast's Undo then said the page was gone, and the row read "The trash is empty" when Settings reopened (11 of 11). Not run: the desktop app.
+
 ## Session: 2026-09-15 — the answer stream stopped at the model's first tool call
 
 ### What was wrong

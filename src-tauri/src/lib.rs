@@ -229,6 +229,16 @@ fn restore_page(folder: String, path: String, trashed: String) -> Result<()> {
 }
 
 #[tauri::command]
+fn trash_count(folder: String) -> Result<u32> {
+    files::trash_count(&folder)
+}
+
+#[tauri::command]
+fn empty_trash(folder: String) -> Result<u32> {
+    files::empty_trash(&folder)
+}
+
+#[tauri::command]
 fn load_map(folder: String) -> Result<Option<Value>> {
     files::load_map(&folder)
 }
@@ -631,6 +641,8 @@ pub fn run() {
             write_new_page,
             delete_page,
             restore_page,
+            trash_count,
+            empty_trash,
             confirm,
             load_map,
             save_map,

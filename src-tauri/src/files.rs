@@ -239,6 +239,50 @@ pub fn restore_page(folder: &str, rel: &str, trashed: &str) -> Result<()> {
     Ok(())
 }
 
+/// `.reader/trash`, if the folder has one. A link in its place is refused rather than followed, so
+/// emptying the trash can never reach outside the folder.
+fn trash_dir(folder: &str) -> Result<Option<PathBuf>> {
+    let trash = reader_dir(folder).join("trash");
+    match fs::symlink_metadata(&trash) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e.into()),
+        Ok(m) if m.is_dir() => Ok(Some(trash)),
+        Ok(_) => Err(AppError::Message(".reader/trash isn't a plain folder, so it's left alone.".into())),
+    }
+}
+
+/// How many deleted pages wait in `.reader/trash`: its files, not the snapshot folders beside them.
+pub fn trash_count(folder: &str) -> Result<u32> {
+    let Some(trash) = trash_dir(folder)? else { return Ok(0) };
+    let mut n = 0;
+    for entry in fs::read_dir(trash)? {
+        if entry?.file_type()?.is_file() {
+            n += 1;
+        }
+    }
+    Ok(n)
+}
+
+/// Removes everything inside `.reader/trash` for good, and leaves the folder itself. A link in there
+/// goes as a link: `file_type` and `remove_dir_all` never follow one. Returns how many pages went.
+pub fn empty_trash(folder: &str) -> Result<u32> {
+    let Some(trash) = trash_dir(folder)? else { return Ok(0) };
+    let mut n = 0;
+    for entry in fs::read_dir(trash)? {
+        let entry = entry?;
+        let kind = entry.file_type()?;
+        if kind.is_dir() {
+            fs::remove_dir_all(entry.path())?;
+        } else {
+            fs::remove_file(entry.path())?;
+            if kind.is_file() {
+                n += 1;
+            }
+        }
+    }
+    Ok(n)
+}
+
 fn reader_dir(folder: &str) -> PathBuf {
     Path::new(folder).join(READER_DIR)
 }
@@ -1073,6 +1117,109 @@ mod tests {
         let dir = folder();
         let folder = dir.path().to_str().unwrap();
         let err = restore_page(folder, "a.md", "a").unwrap_err().to_string();
+        assert_eq!(err, "The deleted page is no longer in .reader/trash.");
+        assert!(!dir.path().join("a.md").exists());
+    }
+
+    #[test]
+    fn empty_trash_removes_deleted_pages_and_their_snapshots() {
+        let dir = folder();
+        let folder = dir.path().to_str().unwrap();
+        write_md(dir.path(), "a.md", "# A\n");
+        write_md(dir.path(), "notes/b.md", "# B\n");
+        snapshot_version(folder, "a.md").unwrap();
+        delete_page(folder, "a.md").unwrap();
+        delete_page(folder, "notes/b.md").unwrap();
+        write_md(dir.path(), "a.md", "# A again\n");
+        delete_page(folder, "a.md").unwrap();
+        assert_eq!(trash_count(folder).unwrap(), 3);
+
+        assert_eq!(empty_trash(folder).unwrap(), 3);
+
+        let trash = dir.path().join(".reader/trash");
+        assert!(trash.is_dir());
+        assert_eq!(fs::read_dir(&trash).unwrap().count(), 0);
+        assert_eq!(trash_count(folder).unwrap(), 0);
+    }
+
+    #[test]
+    fn empty_trash_leaves_live_pages_and_the_rest_of_reader_alone() {
+        let dir = folder();
+        let folder = dir.path().to_str().unwrap();
+        write_md(dir.path(), "keep.md", "# Keep\n");
+        write_md(dir.path(), "gone.md", "# Gone\n");
+        let n = snapshot_version(folder, "keep.md").unwrap();
+        save_session(folder, &json!({ "trail": ["keep.md"] }), None).unwrap();
+        delete_page(folder, "gone.md").unwrap();
+
+        assert_eq!(empty_trash(folder).unwrap(), 1);
+
+        assert_eq!(fs::read_to_string(dir.path().join("keep.md")).unwrap(), "# Keep\n");
+        assert_eq!(read_version(folder, "keep.md", n).unwrap(), "# Keep\n");
+        assert!(load_session(folder, None).unwrap().is_some());
+    }
+
+    #[test]
+    fn empty_trash_with_no_trash_folder_is_fine() {
+        let dir = folder();
+        let folder = dir.path().to_str().unwrap();
+        assert_eq!(trash_count(folder).unwrap(), 0);
+        assert_eq!(empty_trash(folder).unwrap(), 0);
+        assert!(!dir.path().join(".reader").exists());
+    }
+
+    /// A link inside the trash goes as a link; what it points at, outside the folder, stays.
+    #[cfg(unix)]
+    #[test]
+    fn empty_trash_does_not_follow_a_link_inside_it() {
+        let outer = folder();
+        let session = outer.path().join("session");
+        write_md(outer.path(), "secret.md", "# Secret\n");
+        write_md(outer.path(), "elsewhere/kept.md", "# Kept\n");
+        write_md(&session, "a.md", "# A\n");
+        let folder = session.to_str().unwrap();
+        delete_page(folder, "a.md").unwrap();
+        let trash = session.join(".reader/trash");
+        std::os::unix::fs::symlink(outer.path().join("secret.md"), trash.join("link.md")).unwrap();
+        std::os::unix::fs::symlink(outer.path().join("elsewhere"), trash.join("link-versions")).unwrap();
+        fs::create_dir(trash.join("b-versions")).unwrap();
+        std::os::unix::fs::symlink(outer.path().join("elsewhere"), trash.join("b-versions/inner")).unwrap();
+        assert_eq!(trash_count(folder).unwrap(), 1);
+
+        assert_eq!(empty_trash(folder).unwrap(), 1);
+
+        assert_eq!(fs::read_dir(&trash).unwrap().count(), 0);
+        assert_eq!(fs::read_to_string(outer.path().join("secret.md")).unwrap(), "# Secret\n");
+        assert_eq!(fs::read_to_string(outer.path().join("elsewhere/kept.md")).unwrap(), "# Kept\n");
+    }
+
+    /// A trash folder that is itself a link is left alone rather than emptied wherever it points.
+    #[cfg(unix)]
+    #[test]
+    fn empty_trash_leaves_a_linked_trash_folder_alone() {
+        let outer = folder();
+        let session = outer.path().join("session");
+        write_md(outer.path(), "elsewhere/kept.md", "# Kept\n");
+        fs::create_dir_all(session.join(".reader")).unwrap();
+        std::os::unix::fs::symlink(outer.path().join("elsewhere"), session.join(".reader/trash")).unwrap();
+        let folder = session.to_str().unwrap();
+
+        assert!(trash_count(folder).is_err());
+        assert!(empty_trash(folder).is_err());
+
+        assert_eq!(fs::read_to_string(outer.path().join("elsewhere/kept.md")).unwrap(), "# Kept\n");
+    }
+
+    #[test]
+    fn restore_page_after_the_trash_was_emptied_says_the_page_is_gone() {
+        let dir = folder();
+        let folder = dir.path().to_str().unwrap();
+        write_md(dir.path(), "a.md", "# A\n");
+        let trashed = delete_page(folder, "a.md").unwrap();
+        empty_trash(folder).unwrap();
+
+        let err = restore_page(folder, "a.md", &trashed).unwrap_err().to_string();
+
         assert_eq!(err, "The deleted page is no longer in .reader/trash.");
         assert!(!dir.path().join("a.md").exists());
     }
