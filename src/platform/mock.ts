@@ -27,7 +27,7 @@ import { trackStream } from "./stream";
 const files = new Map<string, { raw: string; modified: string; created: string }>();
 const versions = new Map<string, { n: number; at: string; content: string }[]>();
 /** Deleted pages by the name `deletePage` gave back, like `.reader/trash` on disk. */
-const trash = new Map<string, { file: { raw: string; modified: string; created: string }; versions?: { n: number; at: string; content: string }[] }>();
+const trash = new Map<string, { folder: string; file: { raw: string; modified: string; created: string }; versions?: { n: number; at: string; content: string }[] }>();
 /** One saved session per folder path, like `.reader/session.json` on disk. */
 const sessions = new Map<string, Session>();
 const maps = new Map<string, Record<string, { about: string; for: string }>>();
@@ -198,7 +198,7 @@ export const mockPlatform: Platform = {
     const file = files.get(k);
     if (!file) throw new Error(`No such page: ${path}`);
     const trashed = crypto.randomUUID();
-    trash.set(trashed, { file, versions: versions.get(k) });
+    trash.set(trashed, { folder, file, versions: versions.get(k) });
     files.delete(k);
     versions.delete(k);
     return trashed;
@@ -212,6 +212,20 @@ export const mockPlatform: Platform = {
     files.set(k, parked.file);
     if (parked.versions) versions.set(k, parked.versions);
     trash.delete(trashed);
+  },
+
+  async trashCount(folder) {
+    return [...trash.values()].filter((t) => t.folder === folder).length;
+  },
+
+  async emptyTrash(folder) {
+    let n = 0;
+    for (const [name, t] of trash) {
+      if (t.folder !== folder) continue;
+      trash.delete(name);
+      n++;
+    }
+    return n;
   },
 
   async loadSession(folder, file) {

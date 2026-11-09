@@ -266,17 +266,20 @@ function General({ settings, save, dialogOpen }: SectionProps & { dialogOpen: { 
       <Row label="Markdown files" top>
         <DefaultAppRow save={save} dialogOpen={dialogOpen} />
       </Row>
-      <Row label="Deleting a page">
-        <span className="with-note">
-          <Seg
-            value={settings.confirmDelete ? "ask" : "go"}
-            options={[
-              { value: "ask", label: "Ask first" },
-              { value: "go", label: "Delete right away" },
-            ]}
-            onChange={(v) => save({ confirmDelete: v === "ask" })}
-          />
-          <span className="note">Into .reader/trash</span>
+      <Row label="Deleting a page" top>
+        <span className="stack">
+          <span className="with-note">
+            <Seg
+              value={settings.confirmDelete ? "ask" : "go"}
+              options={[
+                { value: "ask", label: "Ask first" },
+                { value: "go", label: "Delete right away" },
+              ]}
+              onChange={(v) => save({ confirmDelete: v === "ask" })}
+            />
+            <span className="note">Into .reader/trash</span>
+          </span>
+          {settings.folder && <TrashRow folder={settings.folder} dialogOpen={dialogOpen} />}
         </span>
       </Row>
       <Row label="Updates" top>
@@ -353,6 +356,59 @@ function DefaultAppRow({ save, dialogOpen }: { save: (patch: Partial<Settings>) 
         )}
       </span>
       <span className="note wrap">{error ?? (app.isNested ? "A double‑click in Finder opens the file here." : "Also Open With in Finder. macOS may ask you to confirm.")}</span>
+    </span>
+  );
+}
+
+/** The folder's `.reader/trash`: how many deleted pages it holds, and a way to remove them for good. */
+function TrashRow({ folder, dialogOpen }: { folder: string; dialogOpen: { current: boolean } }) {
+  const [count, setCount] = useState<number | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    // Pages can be deleted in the reader while Settings stays open, so it counts again on focus.
+    const load = () => {
+      platform
+        .trashCount(folder)
+        .then((n) => {
+          setCount(n);
+          setNote(null);
+        })
+        .catch((e) => setNote(e instanceof Error ? e.message : String(e)));
+    };
+    load();
+    window.addEventListener("focus", load);
+    return () => window.removeEventListener("focus", load);
+  }, [folder]);
+  const empty = async (n: number) => {
+    dialogOpen.current = true;
+    try {
+      const ok = await platform.confirm(
+        "Empty the trash?",
+        `The ${n === 1 ? "deleted page" : `${n} deleted pages`} in .reader/trash, and ${n === 1 ? "its" : "their"} snapshots, will be removed for good. An Undo still on screen can't bring ${n === 1 ? "it" : "them"} back.`,
+        "Empty Trash",
+      );
+      if (!ok) return;
+      setBusy(true);
+      const removed = await platform.emptyTrash(folder);
+      setNote(`Removed ${removed === 1 ? "1 page" : `${removed} pages`} for good.`);
+      setCount(await platform.trashCount(folder));
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : String(e));
+    } finally {
+      dialogOpen.current = false;
+      setBusy(false);
+    }
+  };
+  if (count === null && !note) return null;
+  return (
+    <span className="with-note">
+      <span className="note">{note ?? (count ? `${count === 1 ? "1 page" : `${count} pages`} there now` : "The trash is empty")}</span>
+      {!!count && (
+        <button type="button" className={`act note${busy ? " busy" : ""}`} disabled={busy} onClick={() => void empty(count)}>
+          {busy ? "Emptying…" : "Empty trash…"}
+        </button>
+      )}
     </span>
   );
 }
