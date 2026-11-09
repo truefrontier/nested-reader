@@ -1108,6 +1108,9 @@
 ### Possible next steps
 - A keyboard way to ask about text: for example ⌘↵ on a focused paragraph, or caret browsing. It needs a design call.
 - An asked passage inside a change's tint makes a button inside a button; only possible when an ask and a pending change overlap.
+- Review fixes (a second local reviewer):
+  - **Esc from anywhere.** A keyboard-opened change card took Esc wherever the focus was, so Esc in the find bar closed the card and left the find bar open. It now takes Esc only while the focus is in the article, on the change or in its card. Checked in Chrome: with the card open, ⌘F then Esc closes the find bar and leaves the card; Esc on the change closes the card.
+  - **Focus on the wrong page.** `keyedMark` outlived a page change (`Page` isn't remounted per page, and `[data-asked="0"]` is on any page with an ask), so after ⌘[ it could focus, and scroll to, a passage on the next page. It now remembers its page, refocuses only there, and uses `preventScroll`.
 
 ## Session: 2026-11-09 — the version strip keeps the keyboard's place (#253 follow-up)
 

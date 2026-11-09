@@ -9,7 +9,6 @@ import { AnswerCard, AskPopover, BeforeCard, FailedCard, NowCard, RefinePopover,
 import { TopStrip } from "./TopStrip";
 import { FindBar } from "./FindBar";
 import { isPress, PRESS } from "../lib/keys";
-import { onEscapeFirst } from "../lib/escapeFirst";
 
 type LinkState = "loading" | "unread" | "read" | "missing";
 
@@ -451,29 +450,40 @@ export function Page({ path, role }: Props) {
   // ↵ or Space on a focused mark clicks it. A change's card opened that way also closes on Esc; one opened
   // by the pointer (a hover) leaves Esc to the window, as before.
   const [keyedChange, setKeyedChange] = useState<string | undefined>();
-  // The mark a card was opened from with the keyboard, which takes the focus back when this pane's cards are gone.
-  const keyedMark = useRef<string | undefined>(undefined);
+  // The mark a card was opened from with the keyboard, which takes the focus back when this pane's cards are
+  // gone. Its page too: Page isn't remounted per page, and `[data-asked="0"]` is on any page with an ask.
+  const keyedMark = useRef<{ path: string; at: string } | undefined>(undefined);
   const onKeyDown = (e: ReactKeyboardEvent) => {
     const t = e.target as HTMLElement;
     if (!isPress(e) || !t.matches(MARK)) return;
     e.preventDefault();
     e.stopPropagation();
-    keyedMark.current = markSelector(t);
+    keyedMark.current = { path, at: markSelector(t) };
     t.click();
     if (t.dataset.change) setKeyedChange(t.dataset.change);
   };
   useEffect(() => {
     if (!keyedChange) return;
     if (activeChange !== keyedChange) return setKeyedChange(undefined);
-    return onEscapeFirst(window, () => setActiveChange(undefined));
+    // Esc closes it while the keyboard is on the change or its card (both in the article). In the find bar
+    // or a menu, Esc is theirs: `onEscapeFirst` would take it from anywhere.
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== "Escape" || !articleRef.current?.contains(document.activeElement)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setActiveChange(undefined);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
   }, [activeChange, keyedChange]);
   useEffect(() => {
     const mark = keyedMark.current;
     if (!mark || activeChange || Object.values(ui.lookups).some((l) => l.pane === role)) return;
     keyedMark.current = undefined;
-    // Only while the keyboard drives (main.tsx's html[data-kb]): a click elsewhere keeps the focus it gave.
-    if (document.activeElement === document.body && "kb" in document.documentElement.dataset) articleRef.current?.querySelector<HTMLElement>(mark)?.focus();
-  }, [ui.lookups, activeChange, role]);
+    // Only on the page it came from, and while the keyboard drives (html[data-kb]): a click elsewhere keeps the focus it gave.
+    if (mark.path !== path || document.activeElement !== document.body || !("kb" in document.documentElement.dataset)) return;
+    articleRef.current?.querySelector<HTMLElement>(mark.at)?.focus({ preventScroll: true });
+  }, [ui.lookups, activeChange, role, path]);
 
   const onMouseOver = (e: ReactMouseEvent) => {
     const t = e.target as HTMLElement;
