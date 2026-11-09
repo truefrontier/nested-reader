@@ -2,6 +2,7 @@ import { DEFAULT_SETTINGS } from "../platform";
 import { store, useReader } from "../state/store";
 import { CloseIcon, FullscreenIcon, SyncScrollIcon } from "./Icons";
 import { Page } from "./Page";
+import { PageMenu } from "./PageMenu";
 import { useSplitGrip } from "./useSplitGrip";
 
 export function SplitPane() {
@@ -29,6 +30,7 @@ export function SplitPane() {
       )}
       <div className="pane split">
         <div className="pane-tools">
+          <PageMenu path={path} />
           {samePage && (
             <button className={`tbtn${synced ? " on" : ""}`} title={synced ? "Stop scrolling together" : "Scroll together"} aria-pressed={synced} onClick={() => store.toggleSyncScroll()}>
               <SyncScrollIcon />

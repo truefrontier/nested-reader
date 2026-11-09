@@ -774,6 +774,15 @@
 - The write is no longer temp file and rename. A new page's first write is only its heading, and a write that fails half way removes its own file.
 - Checks: `cargo test --lib` 71 → 75 (12 live tests ignored), including a note left byte for byte; `pnpm test` 89 → 92; clippy clean; `pnpm build` passes. In the browser mock, with `why-do-we-dream.md` and `-2.md` added behind the store's back, a new page for "why do we dream" went to `-3.md` and both notes were unchanged. With five names taken, the toast gave the error above and no file was written. Not run: the desktop app.
 
+### Follow-up — 2026-11-08: Rename, Reveal and Delete from the reading pane
+- Each reading pane now has a ⋯ on its tools with Rename, Reveal in Finder and Delete for the page in that pane: `src/reader/PageMenu.tsx`, in the main pane's own `.pane-tools` (new in `App.tsx`) and first in the split pane's. No store methods were added. It calls `renamePage`, `revealPage` and `deletePage`, and it honours `settings.confirmDelete` the way the tree does.
+- Shared with the tree rather than copied: `AnchoredLayer` moved out of `Sidebar.tsx` into `src/reader/AnchoredLayer.tsx`, next to a new `DeleteConfirm` that both use. The confirmation's Cancel and Delete are now buttons (they were spans), so the keyboard can reach them in the tree too. They look the same. `RenameInput` takes an optional `label`, which the pane passes as "Page title" because the box has no row text beside it.
+- Rename opens the shared `RenameInput` in a layer under the ⋯, since a pane has no row label to swap. The layer is hidden until it is placed, and a hidden element takes no focus, so `PageMenu` focuses one frame later instead of relying on `autoFocus`.
+- Keyboard: the ⋯ is in the tab order, with `aria-label="Page menu"` and `aria-haspopup="menu"`. ↵ or Space opens the menu with Rename focused; the arrow keys, Home and End move and wrap; Tab or Esc closes it, and the focus goes back to the ⋯. From the keyboard, Delete's confirmation opens with Cancel focused. A menu opened with a click focuses the menu itself, so no item lights up but the keys still work.
+- Found and fixed on the way: ↵ in the rename box gave the focus back to the ⋯, and the same key's keypress then pressed the ⋯ and opened the menu again. The box's ↵ keydown is now cancelled in `PageMenu`, which stops the keypress.
+- Found, not fixed: Esc on the tree's own ⋯ menu also runs the window's Esc, because both listen on the window. In the mock, with the find bar open, Esc closed the tree menu and the find bar together. The same press would cancel a running refine on the page being read. The pane's menu avoids this by catching Esc in the capture phase; the tree's could do the same.
+- Checks: `pnpm test` 103 → 103 (no logic moved into a helper, so no new unit test); `pnpm build` passes. Headless Chrome against the browser mock: 46 of 46 checks, covering rename, reveal, delete, keyboard use, the split pane and the tree's own menu. The PR lists them. Not run: the desktop app.
+
 ## Session: 2026-09-15 — the answer stream stopped at the model's first tool call
 
 ### What was wrong
