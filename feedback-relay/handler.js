@@ -108,7 +108,8 @@ export function noteLimiter({ perIp = NOTES_PER_CALLER, total = NOTES_IN_ALL, wi
     const full = [mine.count >= perIp && mine, all.count >= total && all].filter(Boolean);
     if (full.length) return Math.max(...full.map((w) => Math.ceil((w.start + windowMs - t) / 1000)));
     mine.count++;
-    all.count++;
+    // Once per window, so a flood shows in `fly logs` without one line per refused note. No address is logged.
+    if (++all.count === total) console.warn(`Feedback relay: ${total} notes from everyone this hour, the cap; new notes are refused until the hour is up`);
     return 0;
   };
 }
