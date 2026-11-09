@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactElement } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactElement } from "react";
 import { lookupId, refineToRetry, refineWorking, store, useReader, type PaneRole, type Selection } from "../state/store";
 import type { Ask } from "../platform";
 import { flexiblePattern, isStubBody, lexBlocks, resolveWikiTarget, type Block } from "../lib/markdown";
@@ -8,7 +8,7 @@ import { applyWraps, rangeOffsets, type Wrap } from "../lib/wraps";
 import { AnswerCard, AskPopover, BeforeCard, FailedCard, NowCard, RefinePopover, RefineStatus, SKELETON_FADE_MS, Skeleton } from "./Popovers";
 import { TopStrip } from "./TopStrip";
 import { FindBar } from "./FindBar";
-import { PRESS } from "../lib/keys";
+import { isPress, PRESS } from "../lib/keys";
 
 type LinkState = "loading" | "unread" | "read" | "missing";
 
@@ -17,6 +17,15 @@ const PEEK_GRACE_MS = 220;
 
 /** A remembered ask placed on the page as it reads now. */
 type PlacedAsk = { ask: Ask; index: number; block: number; start: number; end: number };
+
+/**
+ * A change's tint and an asked passage open their card on a click; for the keyboard their first span is
+ * a button too (one Tab stop however the text is split), named for what it is, and ↵ or Space clicks it.
+ */
+const markLead = (label: string) => ({ tabindex: "0", role: "button", "aria-label": label.trim() });
+const MARK = "[data-asked][tabindex], [data-change][tabindex]";
+/** Finds the same mark again after its block is redrawn. */
+const markSelector = (el: HTMLElement) => (el.dataset.change ? `[data-change="${el.dataset.change}"][tabindex]` : `[data-asked="${el.dataset.asked}"][tabindex]`);
 
 /**
  * Finds where each remembered ask's text sits in the page now. The saved offsets are tried first;
@@ -64,8 +73,11 @@ function BlockView({ html, wraps, className, index, linkState }: { html: string;
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
+    // Redrawing the block replaces the mark the keyboard is on, so the focus moves to its replacement.
+    const focused = document.activeElement instanceof HTMLElement && el.contains(document.activeElement) && document.activeElement.matches(MARK) ? markSelector(document.activeElement) : null;
     el.innerHTML = html;
     applyWraps(el, wraps);
+    if (focused) el.querySelector<HTMLElement>(focused)?.focus({ preventScroll: true });
     for (const a of Array.from(el.querySelectorAll<HTMLAnchorElement>("a.wl"))) {
       a.dataset.state = linkState(a.dataset.target ?? "");
     }
@@ -240,13 +252,13 @@ export function Page({ path, role }: Props) {
         i,
         list.map((c) => {
           const range = viewDiff ? displayRange(text, c.oldStart, c.oldEnd) : displayRange(text, c.start, c.end);
-          return { ...range, className: viewDiff ? "oldchg" : "chg", attrs: { "data-change": c.id } };
+          return { ...range, className: viewDiff ? "oldchg" : "chg", attrs: { "data-change": c.id }, lead: markLead(`Changed: ${text.slice(range.start, range.end)}`) };
         }),
       );
     }
     for (const p of placedAsks) {
       const list = out.get(p.block) ?? [];
-      out.set(p.block, [...list, { start: p.start, end: p.end, className: "asked", attrs: { "data-asked": String(p.index) } }]);
+      out.set(p.block, [...list, { start: p.start, end: p.end, className: "asked", attrs: { "data-asked": String(p.index) }, lead: markLead(`Asked about: ${p.ask.text}`) }]);
     }
     if (selection) {
       const list = out.get(selection.block) ?? [];
@@ -435,6 +447,44 @@ export function Page({ path, role }: Props) {
     if (chg) setActiveChange(chg.dataset.change);
   };
 
+  // ↵ or Space on a focused mark clicks it. A change's card opened that way also closes on Esc; one opened
+  // by the pointer (a hover) leaves Esc to the window, as before.
+  const [keyedChange, setKeyedChange] = useState<string | undefined>();
+  // The mark a card was opened from with the keyboard, which takes the focus back when this pane's cards are
+  // gone. Its page too: Page isn't remounted per page, and `[data-asked="0"]` is on any page with an ask.
+  const keyedMark = useRef<{ path: string; at: string } | undefined>(undefined);
+  const onKeyDown = (e: ReactKeyboardEvent) => {
+    const t = e.target as HTMLElement;
+    if (!isPress(e) || !t.matches(MARK)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    keyedMark.current = { path, at: markSelector(t) };
+    t.click();
+    if (t.dataset.change) setKeyedChange(t.dataset.change);
+  };
+  useEffect(() => {
+    if (!keyedChange) return;
+    if (activeChange !== keyedChange) return setKeyedChange(undefined);
+    // Esc closes it while the keyboard is on the change or its card (both in the article). In the find bar
+    // or a menu, Esc is theirs: `onEscapeFirst` would take it from anywhere.
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== "Escape" || !articleRef.current?.contains(document.activeElement)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setActiveChange(undefined);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [activeChange, keyedChange]);
+  useEffect(() => {
+    const mark = keyedMark.current;
+    if (!mark || activeChange || Object.values(ui.lookups).some((l) => l.pane === role)) return;
+    keyedMark.current = undefined;
+    // Only on the page it came from, and while the keyboard drives (html[data-kb]): a click elsewhere keeps the focus it gave.
+    if (mark.path !== path || document.activeElement !== document.body || !("kb" in document.documentElement.dataset)) return;
+    articleRef.current?.querySelector<HTMLElement>(mark.at)?.focus({ preventScroll: true });
+  }, [ui.lookups, activeChange, role, path]);
+
   const onMouseOver = (e: ReactMouseEvent) => {
     const t = e.target as HTMLElement;
     if (keepsPeek(t)) {
@@ -584,7 +634,7 @@ export function Page({ path, role }: Props) {
       <TopStrip path={path} role={role} diff={reviewDiff}>
         {findHere && <FindBar count={matches.length} current={findCurrent} />}
       </TopStrip>
-      <div className="article" ref={articleRef} onMouseUp={onMouseUp} onMouseDown={onMouseDown} onClick={onClick} onMouseOver={onMouseOver} onMouseOut={onMouseOut}>
+      <div className="article" ref={articleRef} onMouseUp={onMouseUp} onMouseDown={onMouseDown} onClick={onClick} onKeyDown={onKeyDown} onMouseOver={onMouseOver} onMouseOut={onMouseOut}>
         {source && (
           <div className="crumb" {...PRESS} aria-label={`Back to ${source.title}`} onClick={onCrumb} title={`Back to ${source.title}`}>
             <span className="arrow" aria-hidden="true">

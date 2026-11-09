@@ -1125,3 +1125,29 @@
 - `pnpm test` 155 → 160 (three `gripKey` tests, two `typeAhead`). `pnpm build` green.
 - In Chrome on the production build: sidebar 224 → 240 → 320px with → and ⇧→, ↵ back to 224; split 274 → 323px with ← ←, Home to its 260px floor; a mouse click on the split edge leaves focus on the body. Screenshots `grips-*.png` in Kevin's overflow notes. From the top row, s goes to "Slow oscillations", s again to "Sharp-wave ripples", and / lands in the filter.
 - Review fix: the split edge's keys start from the pane's drawn size, which the CSS limits can hold away from the saved share (26% of `.main` at 1120px is under the 260px floor). A press toward a limit the pane already sits at then saved the drawn size, moving the share the other way (→ at the floor saved 26.6% over 26%). A press that can't move the edge (within half a pixel) now saves nothing. Checked in Chrome at 1200px: → and Home at the floor leave 26%, ← saves 29.1%.
+
+## Session: 2026-11-09 — asked passages and changes open from the keyboard (#253 follow-up)
+
+### Leading assumptions
+- The #253 pass left the page's own marks mouse-only: an asked passage opens its answer on hover or click, and a change's tint opens its Before / Now card the same way. Keyboard users need to reach both. Asking itself still needs a mouse selection; a keyboard way to select text to ask about is a design call, left for Kevin.
+- Mouse users must see and get the same app, including ↵ retrying a failed refine after a click.
+
+### World facts
+- `Wrap.lead` in `src/lib/wraps.ts`: attributes set on a wrap's first span only, so a range split across inline markup is one Tab stop. `Page` gives `.asked`, `.chg` and `.oldchg` a lead of `tabindex="0"`, `role="button"` and an `aria-label` ("Asked about: …", "Changed: …").
+- `Page`'s article `onKeyDown`: ↵ or Space (`isPress`, now shared with `pressOnKey`) on a mark clicks it. A change card opened that way registers `onEscapeFirst`; one opened by a hover leaves Esc to the window, as before.
+- When a card opened from the keyboard closes and the focus fell to the body, it goes back to the mark, but only under `html[data-kb]`, so a click elsewhere keeps the focus it gave.
+- `BlockView` resets a block's `innerHTML` whenever its wraps or `linkState` change (opening a change card does this), which destroyed the focused mark. It now refocuses the matching mark in the new HTML (`preventScroll`).
+- A pointer click on a mark leaves the focus on the body, as it did before marks took it: `trackInput` hands back the focus a pointer press puts on any element with a tabindex that isn't a real control.
+
+### Verification
+- `pnpm test`: 160 → 162 (`wraps.test.ts`: lead attributes on the first span only; `keys.test.ts`: `isPress`). `pnpm build` green.
+- In Chrome on the production build, with an ask and a refine made through the mock provider: Tab from the crumb lands on the change, ↵ opens "Before … Undo · 1 of 1" with the focus kept on the change, Tab reaches Undo, Esc closes the card and returns the focus to the change; Space works the same. Tab to the asked passage, ↵ opens its answer with the focus in the card's follow-up box, Esc closes it and the focus returns to the passage with its ring. A mouse click on either opens the same card and leaves the focus on the body with no ring.
+- Lighthouse accessibility (snapshot, desktop) with both marks on the page: 96, the same as before; the only failure is still `color-contrast` on the faint grey. Screenshots `marks-*.png` and `lighthouse-marks/` are in Kevin's overflow notes (`2026-11-09-nested-a11y/`).
+- Not checked: VoiceOver itself, and the built WKWebView app.
+
+### Possible next steps
+- A keyboard way to ask about text: for example ⌘↵ on a focused paragraph, or caret browsing. It needs a design call.
+- An asked passage inside a change's tint makes a button inside a button; only possible when an ask and a pending change overlap.
+- Review fixes (a second local reviewer):
+  - **Esc from anywhere.** A keyboard-opened change card took Esc wherever the focus was, so Esc in the find bar closed the card and left the find bar open. It now takes Esc only while the focus is in the article, on the change or in its card. Checked in Chrome: with the card open, ⌘F then Esc closes the find bar and leaves the card; Esc on the change closes the card.
+  - **Focus on the wrong page.** `keyedMark` outlived a page change (`Page` isn't remounted per page, and `[data-asked="0"]` is on any page with an ask), so after ⌘[ it could focus, and scroll to, a passage on the next page. It now remembers its page, refocuses only there, and uses `preventScroll`.

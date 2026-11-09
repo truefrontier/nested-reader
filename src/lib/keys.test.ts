@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { gripKey, listStep, moveFocus, pressOnKey, STAND_IN, trackInput, treeKey, typeAhead, type TreeRow } from "./keys";
+import { gripKey, isPress, listStep, moveFocus, pressOnKey, STAND_IN, trackInput, treeKey, typeAhead, type TreeRow } from "./keys";
 
 // Node has no DOM. These stand-ins do what the DOM does for the calls keys.ts makes: an event that
 // records whether it was stopped, and elements that set `document.activeElement` when focused.
@@ -35,6 +35,11 @@ test("other keys, and Enter with a modifier, leave the span alone for the window
     pressOnKey(e);
     assert.deepEqual(seen, { clicks: 0, prevented: false, stopped: false }, `${key} ${JSON.stringify(mods)}`);
   }
+});
+
+test("isPress is Enter or Space with no modifier, the test a page mark's keys go through", () => {
+  const press = (key: string, mods: { metaKey?: boolean; ctrlKey?: boolean; altKey?: boolean } = {}) => isPress({ key, metaKey: !!mods.metaKey, ctrlKey: !!mods.ctrlKey, altKey: !!mods.altKey });
+  assert.deepEqual([press("Enter"), press(" "), press("a"), press("Tab"), press("Enter", { metaKey: true }), press(" ", { ctrlKey: true }), press("Enter", { altKey: true })], [true, true, false, false, false, false, false]);
 });
 
 test("Enter on something focused inside the span (a menu item, a rename box) is not the span's", () => {
