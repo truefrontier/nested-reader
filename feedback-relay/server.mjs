@@ -9,7 +9,8 @@ const env = {
   ATTACHMENTS_BRANCH: process.env.ATTACHMENTS_BRANCH,
 };
 
-const server = createServer(nodeHandler(env));
+// Fly sets FLY_APP_NAME on its machines; only there does Fly-Client-IP come from Fly's proxy.
+const server = createServer(nodeHandler(env, { behindFly: Boolean(process.env.FLY_APP_NAME) }));
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`Feedback relay listening on http://0.0.0.0:${PORT}`);
