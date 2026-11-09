@@ -32,6 +32,9 @@ scripts/release.mjs      pnpm release: bump the version everywhere, commit, tag,
 scripts/test-hooks.mjs   pnpm test: lets node --test load the TypeScript as Vite does, JSON and ?raw too (DOMPurify stubbed)
 scripts/third-party-notices.mjs  writes THIRD_PARTY_NOTICES.md from the lockfiles, offline; run it after any dependency change
 scripts/third-party-notices.not-shipped.json  the lockfile packages the app doesn't ship (build or test only, not used on macOS)
+scripts/license-texts.ts  where the notices find each package's license texts: its own files, else scripts/third-party-licenses
+scripts/third-party-licenses/  license texts for packages that ship none, one <name>@<version> folder each, with a SOURCE
+scripts/fetch-upstream-licenses.mjs  refetches a crate's folder there from the commit it was published from (gh api, GET)
 THIRD_PARTY_NOTICES.md   the licenses of every crate and npm package the app ships; bundled into Nested.app/Contents/Resources
 .github/workflows/       Claude on GitHub: @claude replies, PR review, feedback triage; release.yml builds and publishes tags
 examples/sleep-memory/   sample corpus used by the mock backend
@@ -231,12 +234,14 @@ Settings is its own window in the app (⌘, or the app menu) and a panel over th
 pnpm install
 pnpm tauri dev        # the app
 pnpm dev              # browser-only preview with the mock backend
-pnpm test             # unit tests beside src/lib, src/platform/stream.ts and src/state/store.ts (node --test)
+pnpm test             # unit tests beside the modules they test under src/ (node --test)
 pnpm tauri build      # .app and .dmg in src-tauri/target/release/bundle
 node scripts/third-party-notices.mjs   # after a dependency change: rewrites THIRD_PARTY_NOTICES.md
 ```
 
 `THIRD_PARTY_NOTICES.md` ships inside the app (`bundle.resources` in `tauri.conf.json`). `src/thirdPartyNotices.test.ts` makes `pnpm test` fail when `Cargo.lock` or `pnpm-lock.yaml` holds a package that neither the notices nor `scripts/third-party-notices.not-shipped.json` lists, so a dependency change needs the script run again. It also reads the manifests, since a package moved from dev-only to runtime at the same version keeps its not-shipped entry: every crate under `[dependencies]`, `[dependencies.<name>]` or a target section that can apply on macOS in `src-tauri/Cargo.toml`, and every `dependencies` entry in `package.json`, needs a notice for the exact version the lockfile gives it (from `Cargo.lock`'s own entry for `nested`, and from `pnpm-lock.yaml`'s importer). A name is not enough: `security-framework` 3 ships while its build-only 2 doesn't. And the other way round, a notice or not-shipped entry for a `name@version` no lockfile holds fails too, so a dropped or bumped package doesn't leave its old notice behind. The script reads `cargo metadata --offline` for the two macOS targets the universal build covers, walking only normal dependency edges from `nested`, and `pnpm licenses list --prod --json`. It takes the license texts from `~/.cargo/registry/src` and `node_modules`, with no network. If cargo stops with "failed to download", run `cargo fetch` in `src-tauri` once.
+
+A package that ships no license file takes its text from `scripts/third-party-licenses/<name>@<version>/` instead (`scripts/license-texts.ts`), and the script stops, naming each package, when one has neither. So every package the notices list comes with its text, and the copyright line MIT and BSD ask for. Each folder has a `SOURCE` that starts with the link its text came from: the crate's published commit (fetched again with `node scripts/fetch-upstream-licenses.mjs <name>@<version>` after a bump), a README's License section, or, where upstream has no text, the declared license from GitHub's copy with a copyright line naming the manifest's authors. The tests check the shipped file the same way: every package listed has a text there, and the folders are exactly the packages the notices mark as taking their text from one, so a folder left behind by a bump fails. A bump of objc2's crates needs a hand step the check can't see; the folder's README has it.
 
 ## Work in parallel
 
