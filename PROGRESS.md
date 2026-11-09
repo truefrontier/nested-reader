@@ -103,6 +103,14 @@
 - Checks: relay `npm test` 25 → 36, with the tests written first (10 failed on no-op stubs). `pnpm test` 103 pass. Fake `fetch` throughout; nothing deployed.
 - Not done: protecting `main` and `v*` tags, scoping Feedback Triage's tools to its own issue, checking screenshot bytes, breaking cross-repo references.
 
+### Follow-up 2026-11-09: the review's leftovers (PR #113, into #111)
+- A screenshot is capped at 2 MB, not 5 MB, since each one is committed for good. Bigger gets a `413` and "Keep the screenshot under 2 MB.", which the app shows. The app's own cap drops to match, and `handler.js` still reads 8 MB so an older app gets that reason.
+- The commit message is just `Feedback screenshot`; the caller's file name is no longer used at all.
+- The visibility cache is gone: every note with an email or screenshot asks GitHub afresh, so a repo made public is caught on the next note.
+- `PUBLIC_ORIGIN`, when set, builds the update links instead of the caller's `Host`. No value is set anywhere yet.
+- Not here: Feedback Triage's tools, which #112 fixes with a shell step. Claude Code's `Bash(gh issue edit 42:*)` doesn't match `420`, but `gh issue edit` takes several numbers, so pinning the number isn't enough.
+- Checks: relay `node --test` 41 → 46, each new test failing on the code before its fix. `pnpm test` 103 → 103, `cargo test --lib feedback` 7 pass. Nothing deployed.
+
 ## Session: 2026-09-12 — sidebar buttons gone; ⌘⇧O adds a folder or file to the session
 
 ### Leading assumptions
