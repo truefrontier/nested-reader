@@ -452,7 +452,9 @@ export function Sidebar() {
           className={`frow${menuOpen ? " open" : ""}`}
           role="treeitem"
           aria-level={level}
-          aria-expanded={open}
+          // While filtering every folder shows open and can't close, so none offers to: ← then steps out to
+          // the row above instead of folding the folder unseen (and changing what is saved for later).
+          aria-expanded={filtering ? undefined : open}
           aria-label={f.name}
           tabIndex={-1}
           data-folder={f.path}
