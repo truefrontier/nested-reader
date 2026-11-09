@@ -104,9 +104,9 @@ pub fn list_pages(folder: &str) -> Result<Vec<RawPage>> {
             continue;
         };
         // A file that can't be read (a scan with no text, a PDF the parser rejects, a note that
-        // isn't UTF-8) is left out, rather than keeping the whole folder from opening. `read_page`
-        // still gives the reason; the reader, which opens a single file from this listing, says
-        // "Not a Markdown page" for it.
+        // isn't UTF-8, a PDF or HTML file past the size cap) is left out, rather than keeping the
+        // whole folder from opening. `read_page` still gives the reason; the reader, which opens a
+        // single file from this listing, says "Not a Markdown page" for it.
         let Ok(raw) = raw else { continue };
         let meta = entry.metadata().ok();
         out.push(RawPage {
@@ -426,9 +426,29 @@ fn is_openable_page(path: &Path) -> bool {
     is_markdown(path) || is_pdf(path) || is_html(path)
 }
 
+/// The largest PDF or HTML file whose text is read. Every listing reads and parses each one whole,
+/// so a bigger file would hold up the folder every time it opens; it is left out of the listing
+/// like an unreadable file, and `read_page` gives this reason.
+const MAX_EXTRACT_BYTES: u64 = 50 * 1024 * 1024;
+
+fn check_extract_size(path: &Path) -> Result<()> {
+    let len = fs::metadata(path)?.len();
+    if len > MAX_EXTRACT_BYTES {
+        const MB: u64 = 1024 * 1024;
+        let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        return Err(AppError::Message(format!(
+            "{name} is too big to read ({} MB; Nested reads PDF and HTML files up to {} MB).",
+            len.div_ceil(MB),
+            MAX_EXTRACT_BYTES / MB
+        )));
+    }
+    Ok(())
+}
+
 /// Extract text content from a PDF file using the pdf-extract crate,
 /// then apply Markdown structure inference and paragraph consolidation.
 fn extract_pdf_text(path: &Path) -> Result<String> {
+    check_extract_size(path)?;
     let bytes = fs::read(path)?;
     
     // pdf-extract panics on some malformed files (text shown before any font is set, a missing
@@ -496,6 +516,7 @@ fn extract_pdf_text_naive(bytes: &[u8]) -> String {
 /// Extract text content from an HTML file.
 /// Simple HTML-to-text conversion that strips tags and decodes entities.
 fn extract_html_text(path: &Path) -> Result<String> {
+    check_extract_size(path)?;
     let html = fs::read_to_string(path)?;
     
     // Remove script and style tags and their content
@@ -1304,6 +1325,24 @@ mod tests {
         let mut left: Vec<String> = fs::read_dir(outer.path().join("elsewhere")).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
         left.sort();
         assert_eq!(left, vec!["session.json"]);
+    }
+
+    /// Every listing reads and parses each PDF and HTML file whole, so one huge file would hold up
+    /// the folder each time it opens. Past the cap it is left out, and opening it says why.
+    #[test]
+    fn a_pdf_or_html_file_past_the_size_cap_is_not_read() {
+        let dir = folder();
+        let folder = dir.path().to_str().unwrap();
+        write_md(dir.path(), "a.md", "# A\n");
+        for name in ["big.pdf", "big.html"] {
+            // Sparse: as big as the cap says, without the disk space.
+            fs::File::create(dir.path().join(name)).unwrap().set_len(50 * 1024 * 1024 + 1).unwrap();
+        }
+
+        let listed: Vec<String> = list_pages(folder).unwrap().into_iter().map(|p| p.path).collect();
+        assert_eq!(listed, vec!["a.md"]);
+        assert_eq!(read_page(folder, "big.pdf").err().unwrap().to_string(), "big.pdf is too big to read (51 MB; Nested reads PDF and HTML files up to 50 MB).");
+        assert_eq!(read_page(folder, "big.html").err().unwrap().to_string(), "big.html is too big to read (51 MB; Nested reads PDF and HTML files up to 50 MB).");
     }
 
     #[test]
