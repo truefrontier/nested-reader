@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { listStep, moveFocus, pressOnKey, STAND_IN, trackInput, treeKey, type TreeRow } from "./keys";
+import { gripKey, listStep, moveFocus, pressOnKey, STAND_IN, trackInput, treeKey, typeAhead, type TreeRow } from "./keys";
 
 // Node has no DOM. These stand-ins do what the DOM does for the calls keys.ts makes: an event that
 // records whether it was stopped, and elements that set `document.activeElement` when focused.
@@ -133,6 +133,55 @@ test("keys the tree doesn't use, and a row that isn't there, do nothing", () => 
   assert.equal(treeKey("Tab", false, ROWS, 1), null);
   assert.equal(treeKey("ArrowDown", false, ROWS, -1), null);
   assert.equal(treeKey("ArrowDown", false, [], 0), null);
+});
+
+test("gripKey moves a resize handle a step, five with ⇧, and stops at the ends", () => {
+  const range = { min: 180, max: 480 };
+  assert.equal(gripKey("ArrowRight", false, 224, range, 16, "ArrowRight"), 240);
+  assert.equal(gripKey("ArrowLeft", false, 224, range, 16, "ArrowRight"), 208);
+  assert.equal(gripKey("ArrowRight", true, 224, range, 16, "ArrowRight"), 304);
+  assert.equal(gripKey("ArrowLeft", true, 224, range, 16, "ArrowRight"), 180);
+  assert.equal(gripKey("ArrowRight", false, 476, range, 16, "ArrowRight"), 480);
+  assert.equal(gripKey("Home", false, 300, range, 16, "ArrowRight"), 180);
+  assert.equal(gripKey("End", false, 300, range, 16, "ArrowRight"), 480);
+});
+
+test("gripKey takes its direction from `grow`, and ignores the other axis and other keys", () => {
+  const range = { min: 0, max: 1000 };
+  // The split pane sits right of (or below) its handle, so ← (or ↑) makes it bigger.
+  assert.equal(gripKey("ArrowLeft", false, 400, range, 24, "ArrowLeft"), 424);
+  assert.equal(gripKey("ArrowRight", false, 400, range, 24, "ArrowLeft"), 376);
+  assert.equal(gripKey("ArrowUp", false, 400, range, 24, "ArrowUp"), 424);
+  assert.equal(gripKey("ArrowDown", false, 400, range, 24, "ArrowUp"), 376);
+  assert.equal(gripKey("ArrowUp", false, 400, range, 24, "ArrowLeft"), null);
+  assert.equal(gripKey("ArrowRight", false, 400, range, 24, "ArrowUp"), null);
+  assert.equal(gripKey("Enter", false, 400, range, 24, "ArrowLeft"), null);
+  assert.equal(gripKey("a", false, 400, range, 24, "ArrowLeft"), null);
+});
+
+test("gripKey keeps the minimum when a small window leaves no room for both panes", () => {
+  assert.equal(gripKey("ArrowLeft", false, 300, { min: 260, max: 200 }, 24, "ArrowLeft"), 260);
+  assert.equal(gripKey("End", false, 300, { min: 260, max: 200 }, 24, "ArrowLeft"), 260);
+});
+
+const NAMES = ["Why the brain replays the day", "Replay into cortex", "Does replay run the other way?", "Slow oscillations", "Sharp-wave ripples", "Same order"];
+
+test("typeAhead jumps to the next name with the typed letter, wrapping, and steps on with each press", () => {
+  assert.equal(typeAhead(NAMES, 0, "s"), 3);
+  assert.equal(typeAhead(NAMES, 3, "s"), 4);
+  assert.equal(typeAhead(NAMES, 4, "ss"), 5);
+  assert.equal(typeAhead(NAMES, 5, "sss"), 3);
+  assert.equal(typeAhead(NAMES, -1, "w"), 0);
+  assert.equal(typeAhead(NAMES, 0, "W"), 0);
+});
+
+test("typeAhead matches a longer prefix from the row it is on, and finds nothing for a prefix no name has", () => {
+  assert.equal(typeAhead(NAMES, 3, "sl"), 3);
+  assert.equal(typeAhead(NAMES, 3, "sa"), 5);
+  assert.equal(typeAhead(NAMES, 0, "replay i"), 1);
+  assert.equal(typeAhead(NAMES, 0, "z"), -1);
+  assert.equal(typeAhead(NAMES, 0, ""), -1);
+  assert.equal(typeAhead([], 0, "s"), -1);
 });
 
 /** `trackInput` on a stand-in window: its listeners, a root with a dataset, and elements that count blurs. */

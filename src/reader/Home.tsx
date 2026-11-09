@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { store, useReader } from "../state/store";
-import { DEFAULT_SETTINGS, type RecentSession } from "../platform";
+import type { RecentSession } from "../platform";
 import { MoreIcon } from "./Icons";
 import { RenameInput } from "./RenameInput";
 import { FeedbackPopover } from "./Popovers";
@@ -72,7 +72,7 @@ export function Home() {
   };
 
   const isCurrent = (r: RecentSession) => r.folder === s.folder && (r.file ?? "") === (s.rootFile ?? "");
-  const { onGripDown, onGripMove, onGripUp } = useSidebarGrip(s.settings.sidebarWidth);
+  const { gripProps } = useSidebarGrip(s.settings.sidebarWidth);
 
   return (
     <div className="home">
@@ -159,15 +159,7 @@ export function Home() {
             Send feedback
           </span>
         </div>
-        <div
-          className="side-grip"
-          title="Drag to resize"
-          onPointerDown={onGripDown}
-          onPointerMove={onGripMove}
-          onPointerUp={onGripUp}
-          onPointerCancel={onGripUp}
-          onDoubleClick={() => void store.setSidebarWidth(DEFAULT_SETTINGS.sidebarWidth)}
-        />
+        <div className="side-grip" title="Drag to resize" {...gripProps} />
       </aside>
       <main className="home-main">
         <div className="home-start">

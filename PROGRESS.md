@@ -1112,3 +1112,16 @@
 - `pnpm test` 155 → 157.
 - The repo's review bot noted that while the filter is on every folder shows open, so ← on a folder row "collapsed" it unseen and changed the saved `collapsed` list. Folder rows drop `aria-expanded` while filtering, so ← steps out to the row above and → into the folder's first row; ↵ still does what a click does.
 - The Settings window (`?window=settings`, its own document in the app) had no main landmark: the 95 → 97 above was measured on the embedded stand-in, inside the reader's `<main>`. Its root is now `role="main"` when standalone. Lighthouse on the standalone window: 94 → 96, with only the faint grey's contrast left.
+
+## Session: 2026-11-09 — the resize edges take the keyboard, and type-ahead in the tree (#253 follow-up)
+
+### World facts
+- `gripKey` in `src/lib/keys.ts`: an arrow moves a value by a step (five with ⇧) toward or away from `grow`, Home and End go to the range's ends, the other axis does nothing, and `min` wins when a small window turns the range upside down (as the drag already did).
+- `useSidebarGrip` and `useSplitGrip` now return `gripProps`: the pointer handlers they had, the double-click reset, and a focusable `separator` with `aria-valuenow`/`min`/`max` and a key handler. Sidebar: 16px a press, 180–480px. Split: 24px a press from the pane's drawn size, within the drag's 260/320px (160/160px below) limits, saved as the share; `aria-orientation` follows the split's direction. ↵ resets either, like a double-click.
+- Type-ahead in the tree: `typeAhead` in `keys.ts` finds the next row whose name starts with the typed text (one letter, or the same letter again, steps past the current row, as Finder does). Letters within 700ms build one prefix. A letter that matches no row is left for the window, so / from the tree still reaches the filter.
+- A focused edge draws its hover line in the ring's blue, 2px, instead of an outline box. A pointer press doesn't focus the edge (the drag's `preventDefault` on pointerdown), so ↵ after a drag still reaches the window.
+
+### Verification
+- `pnpm test` 155 → 160 (three `gripKey` tests, two `typeAhead`). `pnpm build` green.
+- In Chrome on the production build: sidebar 224 → 240 → 320px with → and ⇧→, ↵ back to 224; split 274 → 323px with ← ←, Home to its 260px floor; a mouse click on the split edge leaves focus on the body. Screenshots `grips-*.png` in Kevin's overflow notes. From the top row, s goes to "Slow oscillations", s again to "Sharp-wave ripples", and / lands in the filter.
+- Review fix: the split edge's keys start from the pane's drawn size, which the CSS limits can hold away from the saved share (26% of `.main` at 1120px is under the 260px floor). A press toward a limit the pane already sits at then saved the drawn size, moving the share the other way (→ at the floor saved 26.6% over 26%). A press that can't move the edge (within half a pixel) now saves nothing. Checked in Chrome at 1200px: → and Home at the floor leave 26%, ← saves 29.1%.

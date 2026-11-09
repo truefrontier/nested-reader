@@ -106,6 +106,37 @@ export function treeKey(key: string, shiftKey: boolean, rows: TreeRow[], at: num
 }
 
 /**
+ * Where an arrow key moves a resize handle (a `separator`): `step` per press, five steps with ⇧, Home and
+ * End to the ends of `range`. `grow` is the arrow that makes the value bigger, its opposite shrinks it,
+ * and the other two arrows do nothing. Null for keys the handle doesn't use. The result is kept in
+ * `range`, with `min` winning when the range is upside down (a window too small for both panes).
+ */
+export function gripKey(key: string, shiftKey: boolean, value: number, range: { min: number; max: number }, step: number, grow: "ArrowRight" | "ArrowLeft" | "ArrowDown" | "ArrowUp"): number | null {
+  const shrink = { ArrowRight: "ArrowLeft", ArrowLeft: "ArrowRight", ArrowDown: "ArrowUp", ArrowUp: "ArrowDown" }[grow];
+  const by = shiftKey ? step * 5 : step;
+  const next = key === "Home" ? range.min : key === "End" ? range.max : key === grow ? value + by : key === shrink ? value - by : null;
+  return next === null ? null : Math.max(range.min, Math.min(range.max, next));
+}
+
+/**
+ * Type-ahead in a list or tree: the index of the first name starting with `query` (any case), looking
+ * from `at` onward and wrapping, or -1 when none does. One letter, or the same letter typed again
+ * ("ss"), starts after `at`, so each press steps to the next name with that letter, as Finder does.
+ */
+export function typeAhead(names: string[], at: number, query: string): number {
+  const q = query.toLowerCase();
+  if (!q || !names.length) return -1;
+  const same = [...q].every((c) => c === q[0]);
+  const needle = same ? q[0] : q;
+  const from = Math.max(0, same ? at + 1 : at);
+  for (let i = 0; i < names.length; i++) {
+    const j = (from + i) % names.length;
+    if (names[j].toLowerCase().startsWith(needle)) return j;
+  }
+  return -1;
+}
+
+/**
  * Who is driving, kept on `root` (the `<html>` element) and the focus a click gives:
  * - `data-kb` is set on Tab, or on a key pressed outside a text box (/ to the filter, ⌘F to find), and
  *   cleared by a pointer press. Text boxes show their focus ring only under it (app.css), since they match
