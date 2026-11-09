@@ -125,21 +125,23 @@ fn reveal_in_finder(app: AppHandle, path: String) -> Result<()> {
 /// plugin so the webview needs no `open-path` permission.
 #[tauri::command]
 fn open_folder(app: AppHandle, path: String) -> Result<()> {
-    folder_to_open(&path)?;
-    app.opener().open_path(&path, None::<&str>).map_err(|e| AppError::Message(e.to_string()))
+    let real = folder_to_open(&path)?;
+    app.opener().open_path(real.to_string_lossy(), None::<&str>).map_err(|e| AppError::Message(e.to_string()))
 }
 
-/// A package (an `.app`, an `.rtfd`) is a folder on disk, but opening one runs the app or hands it to
-/// one, so it is refused like a file. Packages are told apart the way Finder does it, not by a dot in
-/// the name, so a folder called `grayscale.design` still opens.
-fn folder_to_open(path: &str) -> Result<()> {
+/// The real path of the folder to open. A package (an `.app`, an `.rtfd`) is a folder on disk, but
+/// opening one runs the app or hands it to one, so it is refused like a file. Packages are told apart
+/// the way Finder does it, not by a dot in the name, so a folder called `grayscale.design` still
+/// opens. The check runs on the resolved path, since it doesn't follow a link and opening does.
+fn folder_to_open(path: &str) -> Result<std::path::PathBuf> {
     if files::path_kind(path) != "folder" {
         return Err(AppError::Message(format!("not a folder: {}", path)));
     }
-    if is_package(path) {
+    let real = std::fs::canonicalize(path)?;
+    if is_package(&real.to_string_lossy()) {
         return Err(AppError::Message(format!("not a folder: {path} is an app or package")));
     }
-    Ok(())
+    Ok(real)
 }
 
 #[cfg(target_os = "macos")]
@@ -776,6 +778,9 @@ mod tests {
         assert!(folder_to_open(&path("Report.rtfd")).is_err());
         std::fs::write(tmp.path().join("a.md"), "# A\n").unwrap();
         assert!(folder_to_open(tmp.path().join("a.md").to_str().unwrap()).is_err());
+        // macOS's package check doesn't follow a link, but opening it would (/Applications/Safari.app is one).
+        std::os::unix::fs::symlink(&app, tmp.path().join("docs")).unwrap();
+        assert!(folder_to_open(tmp.path().join("docs").to_str().unwrap()).is_err());
     }
 
     #[test]
