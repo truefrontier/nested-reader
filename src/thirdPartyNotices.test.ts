@@ -44,8 +44,12 @@ test("the notices are bundled into the app", () => {
 // say which version of each it gets, so every such name@version needs a notice too. A name another version
 // of which ships doesn't count: `security-framework` 3 is noticed, its build-only 2 isn't.
 
-/** Whether a Cargo.toml target section (`'cfg(…)'`, or none) can apply to the macOS build. */
-const onMac = (target?: string) => !target || /macos|unix|apple/.test(target) || !/windows|linux|android|ios|wasm/.test(target);
+/**
+ * Whether a Cargo.toml target section (`'cfg(…)'`, or none) can apply to the macOS build. Only a section that
+ * names other platforms and nothing else is left out; a `not(…)` or anything unrecognised counts, since
+ * asking for a notice too many is the safe side of this check.
+ */
+const onMac = (target?: string) => !target || /macos|unix|apple|not\(/.test(target) || !/windows|linux|android|ios|wasm/.test(target);
 
 /**
  * The crates Cargo.toml makes the app's own: under `[dependencies]`, `[dependencies.<name>]` and the target
