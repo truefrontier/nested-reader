@@ -493,7 +493,7 @@ export const mockPlatform: Platform = {
     droppedImages.delete(path);
     if (!file) throw new Error("Couldn't read that file.");
     if (!file.type.startsWith("image/")) throw new Error("Drop a screenshot (PNG, JPEG, GIF or WebP).");
-    if (file.size > ATTACHMENT_MAX_BYTES) throw new Error("Keep the screenshot under 5 MB.");
+    if (file.size > ATTACHMENT_MAX_BYTES) throw new Error("Keep the screenshot under 2 MB.");
     return { name: file.name, mime: file.type, data: await base64OfFile(file) };
   },
 };

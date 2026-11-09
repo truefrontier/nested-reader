@@ -12,12 +12,12 @@ import { handleUpdates } from "./updates.js";
 const MAX_MESSAGE = 5000;
 const MAX_EMAIL = 200;
 const MAX_TITLE = 72;
-const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+// Every screenshot is committed to the repo for good, so it stays small. Base64 runs about 4/3 the size of
+// the bytes it holds, which bounds the string without decoding it first.
+const MAX_ATTACHMENT_BYTES = 2 * 1024 * 1024;
+const MAX_ATTACHMENT_BASE64 = (MAX_ATTACHMENT_BYTES * 4) / 3 + 4;
 const ATTACHMENT_EXT = { "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp" };
 const ATTACHMENTS_BRANCH = "feedback-attachments";
-const VISIBILITY_MS = 5 * 60_000;
-
-let visibility = { at: 0, repo: "", private: false };
 
 export default {
   async fetch(request, env) {
@@ -56,6 +56,9 @@ export default {
       email = "";
       attachment = null;
     }
+    // Only a screenshot that will be committed has to fit, so a public repo holds back a big one like any other.
+    // An older app lets 5 MB through, so say why rather than calling the picture malformed.
+    if (attachment && attachment.data.length > MAX_ATTACHMENT_BASE64) return text(413, "Keep the screenshot under 2 MB.");
 
     let attachmentUrl;
     if (attachment) {
@@ -84,18 +87,15 @@ export default {
 };
 
 /**
- * Whether GitHub says GITHUB_REPO is private. The answer is remembered for five minutes, so a wave of notes
- * costs one lookup. A failed lookup counts as public and isn't remembered, so the next note asks again.
+ * Whether GitHub says GITHUB_REPO is private, asked afresh for each note that carries an email or a
+ * screenshot, just before either is posted: a remembered "private" would keep posting them for as long as
+ * it was kept after the repo went public. A failed lookup counts as public.
  */
 async function repoIsPrivate(env) {
-  const now = Date.now();
-  if (visibility.repo === env.GITHUB_REPO && now - visibility.at < VISIBILITY_MS) return visibility.private;
   try {
     const res = await gh(env, `/repos/${env.GITHUB_REPO}`);
     if (!res.ok) throw new Error(`GitHub answered ${res.status}`);
-    const repo = await res.json();
-    visibility = { at: now, repo: env.GITHUB_REPO, private: repo?.private === true };
-    return visibility.private;
+    return (await res.json())?.private === true;
   } catch (e) {
     console.error("Couldn't tell whether the repo is private, so the email and screenshot are held back", e);
     return false;
@@ -103,19 +103,18 @@ async function repoIsPrivate(env) {
 }
 
 /**
- * The screenshot as the frontend sent it, or null when it isn't a small, supported image. Its first bytes,
- * not the type it was sent with, decide which kind it is: the Contents API commits whatever it is given.
+ * The screenshot as the frontend sent it, or null when it isn't a supported image. Its first bytes, not the
+ * type it was sent with, decide which kind it is: the Contents API commits whatever it is given. Its size is
+ * checked only once it's known to be going to a private repo.
  */
 export function validAttachment(a) {
   if (!a || typeof a !== "object" || !ATTACHMENT_EXT[a.mime]) return null;
   const data = typeof a.data === "string" ? a.data : "";
-  // Base64 runs about 4/3 the size of the bytes it holds; this bounds it without decoding first.
-  if (!data || data.length > (MAX_ATTACHMENT_BYTES * 4) / 3 + 4) return null;
+  if (!data) return null;
   const mime = imageType(data);
   if (!mime) return null;
-  const ext = ATTACHMENT_EXT[mime];
-  const name = typeof a.name === "string" && a.name.trim() ? a.name.trim().slice(0, 100) : `screenshot.${ext}`;
-  return { mime, ext, name, data };
+  // `name` is ignored: the file is stored under a name the relay makes up (see uploadAttachment).
+  return { mime, ext: ATTACHMENT_EXT[mime], data };
 }
 
 /** PNG, JPEG, GIF or WebP, read from the first 12 bytes of the base64; undefined for anything else. */
@@ -144,7 +143,7 @@ async function uploadAttachment(env, attachment) {
   const path = `attachments/${Date.now()}-${crypto.randomUUID()}.${attachment.ext}`;
   const res = await gh(env, `/repos/${env.GITHUB_REPO}/contents/${path}`, {
     method: "PUT",
-    body: JSON.stringify({ message: `Feedback screenshot: ${attachment.name}`, content: attachment.data, branch }),
+    body: JSON.stringify({ message: "Feedback screenshot", content: attachment.data, branch }),
   });
   if (!res.ok) throw new Error(`GitHub refused the screenshot upload (${res.status})`);
   return `https://raw.githubusercontent.com/${env.GITHUB_REPO}/${branch}/${path}`;

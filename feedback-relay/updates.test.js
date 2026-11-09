@@ -149,3 +149,35 @@ test("a failed release lookup is remembered for a few seconds, then asked again"
     forgetLatest();
   }
 });
+
+// Host, an absolute-form request target and X-Forwarded-Proto all come from the caller.
+test("PUBLIC_ORIGIN, when set, builds the links instead of the caller's Host", () =>
+  withGitHub(async () => {
+    const pinned = { ...env, PUBLIC_ORIGIN: " https://nested-feedback.fly.dev/ " };
+    const forged = (path) => new Request(`http://evil.test${path}`, { headers: { "x-forwarded-proto": "http" } });
+    const dmg = await worker.fetch(forged("/updates/dmg"), pinned);
+    assert.equal(dmg.headers.get("location"), "https://nested-feedback.fly.dev/updates/download/14/Nested_0.2.0_universal.dmg");
+    const body = await (await worker.fetch(forged("/updates/latest.json"), pinned)).json();
+    assert.equal(body.platforms["darwin-aarch64"].url, "https://nested-feedback.fly.dev/updates/download/12/Nested.app.tar.gz");
+    // Unset or empty, the links follow the request, as before.
+    for (const loose of [env, { ...env, PUBLIC_ORIGIN: "" }]) {
+      assert.equal((await worker.fetch(forged("/updates/dmg"), loose)).headers.get("location"), "http://evil.test/updates/download/14/Nested_0.2.0_universal.dmg");
+    }
+  }));
+
+// Without a scheme, or with a path, every update link would break; today's links are the better fallback.
+test("a PUBLIC_ORIGIN that isn't a scheme and host is ignored, and the log says so once", () =>
+  withGitHub(async () => {
+    const said = [];
+    const realError = console.error;
+    console.error = (...args) => said.push(args.join(" "));
+    try {
+      for (const bad of ["nested-feedback.fly.dev", "https://nested-feedback.fly.dev/relay", "javascript:alert(1)//"]) {
+        const res = await worker.fetch(get("/updates/dmg"), { ...env, PUBLIC_ORIGIN: bad });
+        assert.equal(res.headers.get("location"), "http://relay.test/updates/download/14/Nested_0.2.0_universal.dmg");
+      }
+    } finally {
+      console.error = realError;
+    }
+    assert.equal(said.filter((line) => line.includes("PUBLIC_ORIGIN")).length, 1);
+  }));

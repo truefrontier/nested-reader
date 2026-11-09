@@ -42,6 +42,8 @@ Three `GET` routes read the newest published release (drafts and pre-releases le
 
 The release lookup and its `latest.json` are remembered for a minute, so a wave of launches costs two GitHub calls a minute at most. A lookup GitHub refuses (a lapsed token, a spent rate limit) is remembered for 10 seconds, so the launches don't keep the limit spent by asking again each time. A download link is handed out only for an asset of that release; any other asset id gets a `404` without a call to GitHub. The app's updater endpoint is `plugins.updater.endpoints` in `src-tauri/tauri.conf.json`; it passes `version`, `target` and `arch`, which the relay ignores (the updater compares versions itself and verifies the bundle's signature against the public key in the same file).
 
+The links in `latest.json` and the `/updates/dmg` redirect start with `PUBLIC_ORIGIN` when it is set: the scheme and host the app uses, such as `https://nested-feedback.fly.dev`, with no path. A value that isn't a scheme and host is ignored, and the log says so once. When it is unset or empty, they start with the request's own `Host` and, on Fly, its `X-Forwarded-Proto`. The caller writes both, but the answer goes back only to that caller, and the updater checks the bundle's signature anyway, so this is a pin, not a fix for an open hole. To set it, put it under `[env]` in `fly.toml` or `[vars]` in `wrangler.toml` and deploy.
+
 Try it:
 
 ```bash
@@ -64,7 +66,7 @@ curl -I "$NESTED_FEEDBACK_URL/updates/dmg"
 
 `email`, `attachment` and `app` are optional. The note becomes the issue body (quoted), the first line its title, and the contact line carries the email when one was given, so a reply can go back to the person. Every `@mention`, and every `#123`, `owner/repo#123` and `GH-123` reference, in the title and body gets a zero-width space after its `@`, `#` or `-`, so it reads as typed but pings no one and marks no issue. An email address and a `#` inside a word or a link (`page#2`) are left alone, and a pasted issue URL still links. A `<` in the note shows as written, and so does a line that would be a markdown link definition (`[x]: url`), so neither an `<!-- comment -->` nor a definition can hide text from a person reading the issue. The `app` fields are kept only when each is one short word such as `0.2.25`, `macos` or `aarch64`. Notes over 5000 characters, malformed emails, and a body not sent as `Content-Type: application/json` are refused with a plain-text reason the app shows as is.
 
-An email or a screenshot goes only to a private repository. Before it uses either one, the relay asks GitHub whether `GITHUB_REPO` is private (`GET /repos/{repo}`, which any token that can file issues may read) and remembers the answer for five minutes. If the repository is public, or GitHub doesn't answer, the note is still filed, without the email and without the screenshot. The issue notes that they were withheld, and the relay's answer lists them:
+An email or a screenshot goes only to a private repository. Before it uses either one, the relay asks GitHub whether `GITHUB_REPO` is private (`GET /repos/{repo}`, which any token that can file issues may read). It asks for every note that carries either, right before posting it, so a repository made public is caught on the very next note; a note with neither never asks. If the repository is public, or GitHub doesn't answer, the note is still filed, without the email and without the screenshot. The issue notes that they were withheld, and the relay's answer lists them:
 
 ```json
 { "number": 42, "url": "https://github.com/…/issues/42", "withheld": ["email", "screenshot"] }
@@ -72,7 +74,7 @@ An email or a screenshot goes only to a private repository. Before it uses eithe
 
 `truefrontier/nested-reader` is public, so for now every email and screenshot is held back. Pointing `GITHUB_REPO` at a private repository, with a token scoped to it, brings them back.
 
-In a private repository, a screenshot (`attachment`, PNG/JPEG/GIF/WebP, up to 5 MB, base64 in `data` without a `data:` prefix; its first bytes must be one of those four, and they, not `mime`, decide which) is committed to a `feedback-attachments` branch of its own, created from the default branch the first time one is needed, and embedded in the issue by its raw URL. Uploading it costs a few extra GitHub API calls; if that upload fails, the note is still filed, just without the picture.
+In a private repository, a screenshot (`attachment`, PNG/JPEG/GIF/WebP, up to 2 MB (a bigger one gets `413` with "Keep the screenshot under 2 MB." and nothing is filed; a public repository holds it back like any other), base64 in `data` without a `data:` prefix; its first bytes must be one of those four, and they, not `mime`, decide which) is committed to a `feedback-attachments` branch of its own, created from the default branch the first time one is needed, under a file name the relay makes up and the commit message `Feedback screenshot` (the `name` sent with it is ignored), and embedded in the issue by its raw URL. Uploading it costs a few extra GitHub API calls; if that upload fails, the note is still filed, just without the picture.
 
 Try it:
 

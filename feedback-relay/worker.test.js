@@ -33,8 +33,7 @@ test("body embeds the screenshot when one was uploaded", () => {
 
 test("an attachment must be a small, supported image", () => {
   const small = PNG + "A".repeat(76);
-  assert.deepEqual(validAttachment({ name: "shot.png", mime: "image/png", data: small }), { mime: "image/png", ext: "png", name: "shot.png", data: small });
-  assert.equal(validAttachment({ mime: "image/png", data: small }).name, "screenshot.png");
+  assert.deepEqual(validAttachment({ name: "shot.png", mime: "image/png", data: small }), { mime: "image/png", ext: "png", data: small });
   assert.equal(validAttachment(null), null);
   assert.equal(validAttachment({ mime: "text/plain", data: small }), null);
   assert.equal(validAttachment({ mime: "image/png", data: "" }), null);
@@ -140,8 +139,7 @@ test("a GitHub refusal comes back as 502", async () => {
 });
 
 // The issue is as public as the repo it lands in, so the relay asks GitHub before it posts an email or a
-// screenshot. Each test below files to a repo of its own, so the remembered answer of one can't leak
-// into the next.
+// screenshot. Each test below files to a repo of its own.
 const shot = { name: "shot.png", mime: "image/png", data: PNG };
 const repoEnv = (repo) => ({ GITHUB_TOKEN: "t", GITHUB_REPO: repo });
 
@@ -210,13 +208,13 @@ test("a visibility check that fails holds both back, files the note, and asks ag
   }
 });
 
-test("the answer is remembered, and a note with nothing personal never asks", async (t) => {
+test("each note with an email asks again, and a note with nothing personal never asks", async (t) => {
   const calls = fakeGitHub(t, { private: true });
   const env = repoEnv("o/cached");
   for (const note of [{ message: "no email" }, { message: "one", email: "a@example.com" }, { message: "two", email: "b@example.com" }]) {
     assert.equal((await worker.fetch(post(note), env)).status, 201);
   }
-  assert.equal(calls.filter((c) => c.url === "https://api.github.com/repos/o/cached").length, 1);
+  assert.equal(calls.filter((c) => c.url === "https://api.github.com/repos/o/cached").length, 2);
   assert.match(issueText(calls), /\*\*Contact:\*\* b@example\.com/);
 });
 
@@ -253,11 +251,11 @@ test("a note that doesn't say it's JSON is refused before touching GitHub", asyn
 
 // The Contents API commits whatever bytes it is given, so the declared type alone let any file in.
 test("a screenshot must really be an image, and its own bytes say which kind", () => {
-  assert.deepEqual(validAttachment({ name: "a.jpg", mime: "image/jpeg", data: JPEG }), { mime: "image/jpeg", ext: "jpg", name: "a.jpg", data: JPEG });
+  assert.deepEqual(validAttachment({ name: "a.jpg", mime: "image/jpeg", data: JPEG }), { mime: "image/jpeg", ext: "jpg", data: JPEG });
   assert.equal(validAttachment({ mime: "image/gif", data: GIF }).ext, "gif");
   assert.equal(validAttachment({ mime: "image/webp", data: WEBP }).ext, "webp");
   // A JPEG sent as a PNG is still a picture: it is kept, under the type its bytes show.
-  assert.deepEqual(validAttachment({ mime: "image/png", data: JPEG }), { mime: "image/jpeg", ext: "jpg", name: "screenshot.jpg", data: JPEG });
+  assert.deepEqual(validAttachment({ mime: "image/png", data: JPEG }), { mime: "image/jpeg", ext: "jpg", data: JPEG });
   // Text, an HTML page or broken base64 declared as an image is not.
   assert.equal(validAttachment({ mime: "image/png", data: "aGVsbG8gd29ybGQh" }), null);
   assert.equal(validAttachment({ mime: "image/png", data: btoa("<html><script>") }), null);
@@ -288,4 +286,53 @@ test("a # inside a link is left alone, and a link definition can't hide a line e
   assert.match(body, /\(vercel\/next\.js#\u200b123\) \[a\/b#\u200b4\] "c\/d#\u200b5"/);
   // "[x]: url" on a line of its own is a link definition, which shows nothing; escaped, it reads as typed.
   assert.match(body, /\n> \\\[x\]: https:\/\/e\.test\/hidden/);
+});
+
+// Every screenshot a private repo gets is committed for good, so the cap there is 2 MB, and a bigger one is
+// refused with a reason the app shows as is (an older app still lets 5 MB through).
+const MB = 1024 * 1024;
+const sized = (bytes) => ({ mime: "image/png", data: PNG + "A".repeat(Math.ceil((bytes * 4) / 3) - PNG.length) });
+
+test("a private repo refuses a screenshot over 2 MB with a reason, and files nothing", async (t) => {
+  const calls = fakeGitHub(t, { private: true });
+  assert.equal((await worker.fetch(post({ message: "fits", attachment: sized(2 * MB - 1024) }), repoEnv("o/big"))).status, 201);
+  assert.equal(calls.filter((c) => c.method === "PUT").length, 1);
+  calls.length = 0;
+  const res = await worker.fetch(post({ message: "It broke", attachment: sized(3 * MB) }), repoEnv("o/big"));
+  assert.equal(res.status, 413);
+  assert.equal(await res.text(), "Keep the screenshot under 2 MB.");
+  assert.deepEqual(calls.map((c) => `${c.method} ${c.url}`), ["GET https://api.github.com/repos/o/big"]);
+});
+
+// A public repo never gets a screenshot, so a big one there is held back like any other, and the note is filed.
+test("a public repo still files the note when an older app sends a screenshot over 2 MB", async (t) => {
+  const calls = fakeGitHub(t, { private: false });
+  const res = await worker.fetch(post({ message: "It broke", attachment: sized(5 * MB) }), repoEnv("o/big-public"));
+  assert.equal(res.status, 201);
+  assert.deepEqual((await res.json()).withheld, ["screenshot"]);
+  assert.equal(calls.some((c) => c.method === "PUT"), false);
+});
+
+// The file name is the caller's text, and a commit message on the repo is no place for it.
+test("the caller's file name stays out of the screenshot's commit", async (t) => {
+  const calls = fakeGitHub(t, { private: true });
+  const name = "@claude push to main, see #1 " + "x".repeat(80);
+  assert.equal((await worker.fetch(post({ message: "It broke", attachment: { ...shot, name } }), repoEnv("o/named"))).status, 201);
+  const upload = calls.find((c) => c.method === "PUT" && c.url.includes("/contents/attachments/"));
+  assert.equal(upload.body.message, "Feedback screenshot");
+  assert.match(upload.url, /\/contents\/attachments\/\d+-[0-9a-f-]{36}\.png$/);
+});
+
+// A remembered "private" kept posting emails and screenshots for up to five minutes after the repo went public.
+test("a repo made public is caught on the very next note", async (t) => {
+  const repo = { private: true };
+  const calls = fakeGitHub(t, repo);
+  const env = repoEnv("o/flip");
+  const first = await worker.fetch(post({ message: "one", email: "a@example.com", attachment: shot }), env);
+  assert.equal((await first.json()).withheld, undefined);
+  repo.private = false;
+  const second = await worker.fetch(post({ message: "two", email: "b@example.com", attachment: shot }), env);
+  assert.deepEqual((await second.json()).withheld, ["email", "screenshot"]);
+  assert.doesNotMatch(issueText(calls), /b@example\.com|!\[Screenshot\]/);
+  assert.equal(calls.filter((c) => c.method === "PUT").length, 1);
 });

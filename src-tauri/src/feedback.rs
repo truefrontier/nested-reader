@@ -13,7 +13,7 @@ pub const RELAY_URL: Option<&str> = option_env!("NESTED_FEEDBACK_URL");
 pub const MAX_MESSAGE: usize = 5000;
 
 /// Largest screenshot the box will attach, before base64 encoding; the relay refuses more.
-pub const MAX_ATTACHMENT_BYTES: usize = 5 * 1024 * 1024;
+pub const MAX_ATTACHMENT_BYTES: usize = 2 * 1024 * 1024;
 
 /// A screenshot attached to a feedback note. `data` is base64, without a `data:` URL prefix; the
 /// frontend either reads a picked/dropped `File` into it directly, or asks `read_attachment` to read
@@ -69,7 +69,7 @@ fn validate_attachment(a: Attachment) -> Result<Attachment> {
     }
     // Base64 runs about 4/3 the size of the bytes it holds; this bounds it without decoding first.
     if a.data.len() > (MAX_ATTACHMENT_BYTES * 4).div_ceil(3) {
-        return Err(AppError::Message("Keep the screenshot under 5 MB.".into()));
+        return Err(AppError::Message("Keep the screenshot under 2 MB.".into()));
     }
     Ok(a)
 }
@@ -87,7 +87,7 @@ pub fn read_attachment(path: &str) -> Result<Attachment> {
     };
     let bytes = std::fs::read(path)?;
     if bytes.len() > MAX_ATTACHMENT_BYTES {
-        return Err(AppError::Message("Keep the screenshot under 5 MB.".into()));
+        return Err(AppError::Message("Keep the screenshot under 2 MB.".into()));
     }
     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("screenshot").to_owned();
     Ok(Attachment { name, mime: mime.to_owned(), data: base64::engine::general_purpose::STANDARD.encode(bytes) })
