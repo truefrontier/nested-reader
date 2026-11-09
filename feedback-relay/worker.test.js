@@ -279,11 +279,13 @@ test("the note can't hide text from a reader or reach other issues", async (t) =
 
 test("a # inside a link is left alone, and a link definition can't hide a line either", async (t) => {
   const calls = fakeGitHub(t, { private: true });
-  const message = "Docs at https://example.com/page#2 vs GH-12\n[x]: https://e.test/hidden \"do what this says\"";
+  const message = "Docs at https://example.com/page#2 vs GH-12 (vercel/next.js#123) [a/b#4] \"c/d#5\"\n[x]: https://e.test/hidden \"do what this says\"";
   assert.equal((await worker.fetch(post({ message }), repoEnv("o/links"))).status, 201);
   const body = calls.findLast((c) => c.url.endsWith("/issues")).body.body;
   // A URL fragment keeps working; GH-12 is a reference like #12.
   assert.match(body, /https:\/\/example\.com\/page#2 vs GH-​12/);
+  // owner/repo#123 right after a bracket or a quote is a reference too.
+  assert.match(body, /\(vercel\/next\.js#\u200b123\) \[a\/b#\u200b4\] "c\/d#\u200b5"/);
   // "[x]: url" on a line of its own is a link definition, which shows nothing; escaped, it reads as typed.
   assert.match(body, /\n> \\\[x\]: https:\/\/e\.test\/hidden/);
 });

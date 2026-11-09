@@ -207,7 +207,8 @@ export function unmention(s) {
   return s
     .replace(/(^|[^A-Za-z0-9_])@(?=[A-Za-z0-9])/g, "$1@\u200b")
     .replace(/(^|[^\w/#&.-])#(?=\d)/g, "$1#\u200b")
-    .replace(/(^|\s)([\w.-]+\/[\w.-]+)#(?=\d)/g, "$1$2#\u200b")
+    // owner/repo#123 after anything but a letter, ".", ":", "/" or "-", so a URL's path#2 is left alone.
+    .replace(/(^|[^\w.:/-])([\w.-]+\/[\w.-]+)#(?=\d)/g, "$1$2#\u200b")
     .replace(/(^|\W)GH-(?=\d)/g, "$1GH-\u200b");
 }
 
