@@ -114,4 +114,4 @@ See [docs/architecture.md](docs/architecture.md) for how the pieces fit, what is
 
 ## License
 
-[MIT](LICENSE). Forks and ports (for example an Obsidian plugin) are welcome with attribution; please keep the copyright notice.
+[MIT](LICENSE). Forks and ports (for example an Obsidian plugin) are welcome with attribution; please keep the copyright notice. The open-source packages Nested is built with, and their licenses, are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), which also ships inside the app.
