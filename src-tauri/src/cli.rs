@@ -571,8 +571,15 @@ exec sleep 30
     fn install_script(script: &str, idle_cap: Option<Duration>) -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
         let bin = dir.path().join("claude");
+        // macOS checks a brand-new executable the first time it runs, one at a time. With the other
+        // tests starting theirs too, that took seconds (40 at once: 2.7 s median, 5.2 s worst), so a
+        // script could miss SHORT_CAP before its first line. One run here, which exits at once,
+        // gets the check done before the test starts its clock; the next start takes milliseconds.
+        let script = script.replacen("#!/bin/sh\n", "#!/bin/sh\n[ -n \"$NESTED_WARM_UP\" ] && exit 0\n", 1);
         std::fs::write(&bin, script).unwrap();
         std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let warm = std::process::Command::new(&bin).env("NESTED_WARM_UP", "1").stdin(Stdio::null()).status().unwrap();
+        assert!(warm.success(), "the fake CLI's warm-up run failed");
         BIN.with(|b| *b.borrow_mut() = Some(bin));
         IDLE_CAP.with(|c| c.set(idle_cap));
         dir
