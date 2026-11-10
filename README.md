@@ -39,7 +39,7 @@ The tracked events are:
 - **feedback_sent**: after successful feedback submission (includes whether an email was provided)
 - **update_checked**: after an update check settles (includes result: latest, available, unsupported, or error)
 - **update_installed**: after an update installs successfully (includes from and to versions)
-- **ai_ask**: when an AI ask is submitted (includes kind: quick_answer, new_page, deep_dive, or refine)
+- **ai_ask**: when an AI request starts (includes kind: quick_answer, new_page, deep_dive, refine, or summary; summary is the background indexing that describes pages for the session map, one event per batch of pages)
 
 No content, file paths, prompts, API keys, or user data is ever tracked.
 
