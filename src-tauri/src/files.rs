@@ -595,6 +595,10 @@ pub fn list_versions(folder: &str, rel: &str) -> Result<Vec<VersionInfo>> {
         return Ok(out);
     }
     for entry in fs::read_dir(&dir)?.filter_map(|e| e.ok()) {
+        // Only the app's own snapshots; `read_version` refuses a link, so it isn't offered either.
+        if entry.file_type().is_ok_and(|t| t.is_symlink()) {
+            continue;
+        }
         let name = entry.file_name().to_string_lossy().to_string();
         let Some(num) = name.strip_prefix('v').and_then(|s| s.strip_suffix(".md")) else { continue };
         let Ok(n) = num.parse::<u32>() else { continue };
@@ -605,8 +609,14 @@ pub fn list_versions(folder: &str, rel: &str) -> Result<Vec<VersionInfo>> {
     Ok(out)
 }
 
+/// A snapshot is the app's own copy of a page, so a link in its place is refused: a cloned folder
+/// could ship `v1.md` pointing at any file on disk, for the version pill to show and Restore to
+/// write into the page.
 pub fn read_version(folder: &str, rel: &str, n: u32) -> Result<String> {
     let path = versions_dir(folder, rel)?.join(format!("v{n}.md"));
+    if fs::symlink_metadata(&path).is_ok_and(|m| m.file_type().is_symlink()) {
+        return Err(AppError::Message(format!("Version {n} of {rel} is a link, so Nested won't read it.")));
+    }
     Ok(fs::read_to_string(path)?)
 }
 
@@ -1358,6 +1368,29 @@ mod tests {
         let err = read_page(folder, "locked/a.md").err().unwrap().to_string();
         fs::set_permissions(dir.path().join("locked"), fs::Permissions::from_mode(0o755)).unwrap();
         assert!(err.contains("Permission denied"), "{err}");
+    }
+
+    /// A snapshot is the app's own copy of a page. A cloned folder could ship `v1.md` as a link to
+    /// any file on disk, which the version pill would then show and Restore would write into the page.
+    #[cfg(unix)]
+    #[test]
+    fn a_version_that_is_a_link_is_neither_listed_nor_read() {
+        let outer = folder();
+        let session = outer.path().join("session");
+        write_md(&session, "notes.md", "# Notes\n");
+        fs::write(outer.path().join("id_ed25519"), "PRIVATE KEY").unwrap();
+        fs::create_dir_all(session.join(".reader/versions/notes")).unwrap();
+        std::os::unix::fs::symlink("../../../../id_ed25519", session.join(".reader/versions/notes/v1.md")).unwrap();
+        let folder = session.to_str().unwrap();
+
+        assert!(list_versions(folder, "notes.md").unwrap().is_empty());
+        assert_eq!(read_version(folder, "notes.md", 1).unwrap_err().to_string(), "Version 1 of notes.md is a link, so Nested won't read it.");
+        assert!(restore_version(folder, "notes.md", 1).is_err());
+        assert_eq!(fs::read_to_string(session.join("notes.md")).unwrap(), "# Notes\n");
+        // A new snapshot takes the link's name, replacing the link rather than writing through it.
+        assert_eq!(snapshot_version(folder, "notes.md").unwrap(), 1);
+        assert_eq!(read_version(folder, "notes.md", 1).unwrap(), "# Notes\n");
+        assert_eq!(fs::read_to_string(outer.path().join("id_ed25519")).unwrap(), "PRIVATE KEY");
     }
 
     /// A real `.reader` can still hold links one level down. Deleting `notes.md` with
