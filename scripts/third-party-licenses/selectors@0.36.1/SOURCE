@@ -1,0 +1,3 @@
+https://github.com/servo/stylo/tree/635e1a19d02960588a00e189bd4bd5bdb150ec3d/selectors
+No license file in the crate, its folder or the repository root at the commit it was published from (above). Each source file opens with MPL-2.0's notice: "If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/."
+LICENSE is that license, from GitHub's copy (`gh api licenses/mpl-2.0`).

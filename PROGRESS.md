@@ -1169,3 +1169,36 @@
 - A mouse click on the pill and then on a version opens the same views and leaves the focus on the body.
 - `pnpm test` 164, unchanged (the effect reads the DOM; no new pure logic). `pnpm build` green. Screenshot `versions-history-keyboard.png` in Kevin's overflow notes.
 - Review fix (a second local reviewer): a mouse click on the pill, a version or Done set `inside`. The click's focus is handed back by `trackInput` during the capture phase, but React's `onFocus` still saw the event. A later Esc (which sets `html[data-kb]`) then moved the focus onto the pill with a ring, and ↵ reopened the history instead of retrying a failed refine. `onFocus` now counts only a focus the element still has. Checked in Chrome: a mouse click on Done, then on the pill, then Esc leaves the focus on the body, and the keyboard path still opens the history on its first version.
+
+## Session: 2026-11-09 — license texts for the 26 packages that ship none (#281)
+
+### Leading assumptions
+- Overflow task: `THIRD_PARTY_NOTICES.md` listed 26 packages as "no license file in the package", by name only, so the MIT and BSD ones went out without the copyright line their licenses ask for. Fetch each upstream license with read-only `gh api`, keep it in a folder the generator reads, and make the check fail when a package has no text from either place. Also fix `README.md:56` (draft vs `releaseDraft: false`) and move `useSyncScroll`'s mapping into a pure tested function. One PR into `overflow/nested-combined-3`.
+- Where upstream has no text at all, the declared license with a copyright line naming the manifest's authors is the least-invented text that still meets the license. Each one says so in its `SOURCE`.
+
+### World facts
+- Every crate on crates.io carries `.cargo_vcs_info.json` with the commit it was published from (and `path_in_vcs` for newer ones), so the texts can come from that exact commit, not a branch tip.
+- 20 of the 26 have license files upstream: `defmt-parser`, the five `unic-*` crates (`COPYRIGHT.md` plus Apache and MIT), `alloc-stdlib` (BSD, Dropbox), and 13 of objc2's crates. objc2's root `LICENSE.md` only names the license (MIT for `objc2`, `block2`, `objc2-foundation`, `objc2-encode`; Zlib, Apache-2.0 or MIT for the rest) and notes the Apple SDK question; it has no license text or copyright line, so a `LICENSE-MIT` sits beside it.
+- No license file upstream: `fastdom` (its README's License section has the full MIT text, copied word for word), `strictdom`, `adobe-cmap-parser`, `pdf-extract`, `type1-encoding-parser` (MIT, nothing anywhere), and `selectors` (MPL-2.0; each source file points to mozilla.org). GitHub's MPL-2.0 text matches the one `option-ext` ships, so the notices share one copy.
+- `scripts/license-texts.ts` is TypeScript so the test can import it under `tsc`; the generator, a `.mjs`, imports it through Node's type stripping (Node 22.18+ and 26 here; CI's Node 22 already needs it for the tests).
+
+### Verification
+- Before → after: `pnpm test` 174 → 186; `pnpm build` passes both times; `node scripts/third-party-notices.mjs` gives no diff before, and no diff on a second run after (351 crates, 120 npm packages, 0 marked "no license file").
+- The new notices tests, run against the old `THIRD_PARTY_NOTICES.md`: "every package in the notices has its license text there" fails naming exactly the 26, and the folder test fails too. `requireTexts` over the 26 real package folders with an empty fallback folder throws, naming all 26.
+- Not run: the desktop app, and sync scroll in a browser (the change moves the code without changing it).
+
+### Possible next steps
+- Ask upstream for license files (jrmuizel's three crates, strictdom, objc2's MIT text), so the filled-in texts can be swapped for theirs. Not done: it means posting.
+- `pdf-extract`'s `core_fonts.rs` embeds Adobe's Core 14 font metrics; whether those carry a notice of their own wasn't checked.
+
+## Session: 2026-11-09 — sync scroll no longer nudges the pane being scrolled (#281 follow-up)
+
+### World facts
+- `useSyncScroll` dropped the follower's echo (the scroll event its own `scrollTop` write causes) by a flag that a `requestAnimationFrame` cleared. In Chrome the echo arrives a frame later, after that callback, so it was taken for the reader's scroll and followed back. When one pane's scroll range is more than twice the other's (a narrow split), rounding that round trip moves the pane the reader is scrolling: asking the split for 202 left it at 203, 209 at 210, 211 at 212 (browser mock, 1200×380 window, ranges 523 and 1219 px).
+- Worse in the common case: a short page barely scrolls in the wide main pane. At 1440×900, split beside, the sample's first page has 3 px of range in the main pane and 427 in the split; asking the split for 80 left it at 142, and 220 at 285.
+- The effect's body is now `linkScroll(main, split)` beside the hook, which remembers where it put each pane and drops that pane's next scroll event only if the pane is still there. No frame timing, no `requestAnimationFrame`.
+
+### Verification
+- `pnpm test` 186 → 190. The new tests drive `linkScroll` with stand-in panes that fire a write's scroll event at the next frame, after the frame callbacks, as Chrome did. On the old logic the reader's pane lands at `[200, 203, 203, 205, 205, 206, 207, 208, 210, 210, 212, 212]` for 201–212, and at 142 for 80 and 285 for 220 in the 3-against-427 case, as in Chrome; now at each one asked for.
+- Browser mock in Chrome, both windows: every single step lands where asked, and a one-pixel-a-frame run of 60 frames on either pane ends exactly where asked, with the other pane following.
+- Not run: the desktop app (WKWebView may order these events differently; the fix doesn't depend on the order).
