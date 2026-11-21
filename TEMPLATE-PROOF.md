@@ -19,8 +19,17 @@ Nested’s updater endpoint, minisign public key, bundle identifier, version, an
 
 ## Build and launch evidence
 
-- Rust check:
-- Rust clippy:
-- Frontend build:
-- Frontend tests:
-- Launch:
+Run on Kevin's M4 (macOS, arm64), Sat Nov 21, 2026, on branch `feat/tf-template-baseline` at `f345a45`.
+
+- `pnpm install --frozen-lockfile`: ok
+- `pnpm build` (`tsc && vite build`): ok
+- `pnpm test`: 190 tests, 190 pass, 0 fail
+- `cd src-tauri && cargo check`: ok
+- `cd src-tauri && cargo clippy --all-targets -- -D warnings`: ok (no warnings)
+- `pnpm tauri build --no-bundle` (unsigned, not notarized, no bundle, no updater artifacts): ok, release build in 2m 16s
+  - Output: `src-tauri/target/release/nested` (Mach-O 64-bit arm64, ~14.9 MB)
+- Launch: ran `src-tauri/target/release/nested` directly. The process stayed up, the support log printed
+  `[nested_support][INFO] application_ready`, macOS listed an on-screen 1120x720 window titled "Nested",
+  and the menu bar showed `Nested, File, Edit, View, Go, Window, Help` (Help is new).
+- Single-instance lock: a second launch of the same binary exited by itself (code 0) within 5 seconds while the first kept running.
+- Not run: signing, notarization, `.app`/`.dmg` bundling, release or tag. Those need Kevin's OK.
