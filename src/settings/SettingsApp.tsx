@@ -5,6 +5,7 @@ import { DEFAULT_SETTINGS, READING_WIDTH_RANGE, isTauri, platform, type Auth, ty
 import { authFor, chatModels, modelSlot, pickDefaultModel, webSearchFor } from "../lib/models";
 import { AiIcon, AppearanceIcon, CheckIcon, GeneralIcon, UpDownIcon } from "../reader/Icons";
 import { listStep, moveFocus, PRESS, pressOnKey } from "../lib/keys";
+import { configureCrashReporting, crashReportingConfigured } from "../lib/crashReporting";
 
 type Tab = "general" | "appearance" | "ai";
 const TABS: [Tab, string, () => ReactNode][] = [
@@ -110,6 +111,7 @@ export function SettingsApp({ embedded, onClose }: { embedded?: boolean; onClose
     if (!settings) return;
     const next = { ...settings, ...patch };
     setSettings(next);
+    if (patch.crashReportingEnabled !== undefined) configureCrashReporting(patch.crashReportingEnabled);
     if (!embedded) applyTheme(next);
     window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(() => {
@@ -346,6 +348,16 @@ function General({ settings, save, dialogOpen }: SectionProps & { dialogOpen: { 
       <Row label="Updates" top>
         <UpdateRow />
       </Row>
+      <Row label="Privacy" top>
+        <span className="stack">
+          <label><input type="checkbox" checked={settings.analyticsEnabled} onChange={(e) => save({ analyticsEnabled: e.target.checked })} /> Share anonymous usage analytics</label>
+          <label><input type="checkbox" checked={settings.crashReportingEnabled} onChange={(e) => save({ crashReportingEnabled: e.target.checked })} /> Share crash and error reports (opt-in)</label>
+          <span className="note">{crashReportingConfigured() ? "This build has a crash-report destination." : "This build has no crash-report destination."}</span>
+        </span>
+      </Row>
+      <Row label="Diagnostics" top>
+        <DiagnosticsRow />
+      </Row>
       <div className="divider" />
       <Row label="⌘‑click opens">
         <span className="with-note">
@@ -365,6 +377,22 @@ function General({ settings, save, dialogOpen }: SectionProps & { dialogOpen: { 
       </div>
     </div>
   );
+}
+
+function DiagnosticsRow() {
+  const [status, setStatus] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const exportDiagnostics = async () => {
+    setBusy(true);
+    setStatus(null);
+    try {
+      const result = await platform.exportDiagnostics();
+      setStatus(result ? `Saved local diagnostics with ${result.logFiles} log file${result.logFiles === 1 ? "" : "s"}.` : "Export cancelled.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    } finally { setBusy(false); }
+  };
+  return <span className="stack"><span className="note">Creates a local redacted ZIP. Nothing is uploaded; review it before sharing.</span><button disabled={busy} onClick={() => void exportDiagnostics()}>{busy ? "Exporting…" : "Export diagnostics…"}</button>{status && <span className="note">{status}</span>}</span>;
 }
 
 /**

@@ -114,6 +114,7 @@ async function callEverything() {
   await p.readDroppedImage("/shot.png");
   await p.checkForUpdate();
   await p.installUpdate(() => undefined);
+  await p.exportDiagnostics();
   await p.relaunch();
 }
 

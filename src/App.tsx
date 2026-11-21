@@ -13,10 +13,13 @@ import { TopBar } from "./reader/TopBar";
 import { UpdateBar } from "./reader/UpdateBar";
 import { useSyncScroll } from "./reader/useSyncScroll";
 import { SettingsApp } from "./settings/SettingsApp";
+import { configureCrashReporting } from "./lib/crashReporting";
+import { DEFAULT_SHORTCUTS } from "./lib/shortcuts";
 
 export default function App() {
   const s = useReader();
   const [mockSettings, setMockSettings] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
 
   useEffect(() => {
     void store.init();
@@ -30,6 +33,15 @@ export default function App() {
       window.removeEventListener("ml:open-settings", onOpenSettings);
     };
   }, []);
+
+  useEffect(() => {
+    configureCrashReporting(s.settings.crashReportingEnabled);
+  }, [s.settings.crashReportingEnabled]);
+
+  useEffect(() => platform.onCommand((command) => {
+    if (command === "feedback") store.toggleFeedback();
+    if (command === "shortcuts") setShowShortcuts(true);
+  }), []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -234,6 +246,17 @@ export default function App() {
       {mockSettings && (
         <div className="modal-back" onMouseDown={(e) => e.target === e.currentTarget && setMockSettings(false)}>
           <SettingsApp embedded onClose={() => setMockSettings(false)} />
+        </div>
+      )}
+      {showShortcuts && (
+        <div className="modal-back" onMouseDown={(e) => e.target === e.currentTarget && setShowShortcuts(false)}>
+          <section className="settings embedded" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
+            <div className="settings-title">Keyboard shortcuts</div>
+            <div className="settings-body-inner">
+              {DEFAULT_SHORTCUTS.map((shortcut) => <div className="spread" key={shortcut.id}><span>{shortcut.label}</span><kbd>{shortcut.keys}</kbd></div>)}
+              <button onClick={() => setShowShortcuts(false)}>Close</button>
+            </div>
+          </section>
         </div>
       )}
     </div>

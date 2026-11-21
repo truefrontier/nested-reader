@@ -9,6 +9,7 @@ import {
   type Attachment,
   type Auth,
   type DefaultApp,
+  type DiagnosticsExport,
   type Page,
   type PageMeta,
   type PathKind,
@@ -173,6 +174,8 @@ export const tauriPlatform: Platform = {
     channel.onmessage = onProgress;
     return invoke("install_update", { channel });
   },
+
+  exportDiagnostics: () => invoke<DiagnosticsExport | null>("export_diagnostics"),
 
   relaunch: () => invoke("relaunch"),
 };

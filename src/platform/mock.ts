@@ -455,6 +455,10 @@ export const mockPlatform: Platform = {
     onProgress({ type: "installed" });
   },
 
+  async exportDiagnostics() {
+    return { path: "nested-diagnostics-browser-mock.zip", logFiles: 0 };
+  },
+
   /** The browser build cannot swap itself; a reload stands in for the relaunch, after the beat the real install takes. */
   async relaunch() {
     await new Promise((r) => setTimeout(r, 900));
