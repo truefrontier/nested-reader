@@ -4,18 +4,45 @@
 //! When `APTABASE_APP_KEY` is not set at compile time, every call becomes a no-op.
 
 use serde_json::json;
+use tauri::{AppHandle, Manager};
 
 /// Compiled in from the environment; when absent or empty, tracking is disabled.
 pub const APP_KEY: Option<&str> = option_env!("APTABASE_APP_KEY");
 
 /// Whether tracking is enabled (i.e. an app key was compiled in).
-pub fn enabled() -> bool {
-    APP_KEY.and_then(|k| if k.trim().is_empty() { None } else { Some(k) }).is_some()
+pub fn key_configured() -> bool {
+    cfg!(feature = "aptabase") && APP_KEY.is_some_and(|key| !key.trim().is_empty())
+}
+
+/// The preference is deliberately read for every event: an opt-out takes effect without restart.
+/// Unreadable manually-edited settings fail closed instead of accidentally tracking.
+fn user_enabled(app: &AppHandle) -> bool {
+    let Ok(path) = app.path().app_config_dir().map(|dir| dir.join("settings.json")) else {
+        return false;
+    };
+    if !path.exists() {
+        return true;
+    }
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return false;
+    };
+    let Ok(settings) = serde_json::from_str::<serde_json::Value>(&raw) else {
+        return false;
+    };
+    match settings.get("analyticsEnabled") {
+        None => true,
+        Some(serde_json::Value::Bool(enabled)) => *enabled,
+        Some(_) => false,
+    }
+}
+
+pub fn enabled(app: &AppHandle) -> bool {
+    key_configured() && user_enabled(app)
 }
 
 /// Tracks `app_opened` with the app version.
-pub fn track_app_opened(app: &tauri::AppHandle) {
-    if !enabled() {
+pub fn track_app_opened(app: &AppHandle) {
+    if !enabled(app) {
         return;
     }
     #[cfg(feature = "aptabase")]
@@ -27,8 +54,8 @@ pub fn track_app_opened(app: &tauri::AppHandle) {
 }
 
 /// Tracks `feedback_sent` with whether an email was provided (0 or 1).
-pub fn track_feedback_sent(app: &tauri::AppHandle, has_email: bool) {
-    if !enabled() {
+pub fn track_feedback_sent(app: &AppHandle, has_email: bool) {
+    if !enabled(app) {
         return;
     }
     #[cfg(feature = "aptabase")]
@@ -39,8 +66,8 @@ pub fn track_feedback_sent(app: &tauri::AppHandle, has_email: bool) {
 }
 
 /// Tracks `update_checked` with the result: `latest`, `available`, `unsupported`, or `error`.
-pub fn track_update_checked(app: &tauri::AppHandle, result: &str) {
-    if !enabled() {
+pub fn track_update_checked(app: &AppHandle, result: &str) {
+    if !enabled(app) {
         return;
     }
     #[cfg(feature = "aptabase")]
@@ -51,8 +78,8 @@ pub fn track_update_checked(app: &tauri::AppHandle, result: &str) {
 }
 
 /// Tracks `update_installed` with the from and to versions.
-pub fn track_update_installed(app: &tauri::AppHandle, from_version: &str, to_version: &str) {
-    if !enabled() {
+pub fn track_update_installed(app: &AppHandle, from_version: &str, to_version: &str) {
+    if !enabled(app) {
         return;
     }
     #[cfg(feature = "aptabase")]
@@ -66,8 +93,8 @@ pub fn track_update_installed(app: &tauri::AppHandle, from_version: &str, to_ver
 }
 
 /// Tracks `ai_ask` with the kind: `quick_answer`, `new_page`, `deep_dive`, `refine`, or `summary` (indexing, one per batch of pages).
-pub fn track_ai_ask(app: &tauri::AppHandle, kind: &str) {
-    if !enabled() {
+pub fn track_ai_ask(app: &AppHandle, kind: &str) {
+    if !enabled(app) {
         return;
     }
     #[cfg(feature = "aptabase")]
@@ -82,8 +109,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn enabled_requires_a_nonempty_key() {
+    fn key_requires_a_nonempty_value() {
         // This tests the logic; the actual compile-time value depends on the environment.
-        assert_eq!(enabled(), APP_KEY.and_then(|k| if k.trim().is_empty() { None } else { Some(k) }).is_some());
+        assert_eq!(key_configured(), cfg!(feature = "aptabase") && APP_KEY.is_some_and(|key| !key.trim().is_empty()));
     }
 }

@@ -121,6 +121,10 @@ export type ReadingWidthUnit = "em" | "percent";
 export type ReadingWidth = { unit: ReadingWidthUnit; em: number; percent: number };
 
 export type Settings = {
+  /** Anonymous Aptabase events are on by default, but can be disabled here. */
+  analyticsEnabled: boolean;
+  /** Webview errors are only sent when this opt-in is enabled and a build DSN exists. */
+  crashReportingEnabled: boolean;
   folder?: string;
   /** "" means new pages are saved next to their source. */
   newPagesSubfolder: string;
@@ -188,10 +192,17 @@ export type UpdateInfo = { version: string; notes?: string };
 /** What a check for updates found. `supported` is false where nothing can be swapped in: the browser preview and `tauri dev`. */
 export type UpdateCheck = { current: string; supported: boolean; update?: UpdateInfo };
 
-/** Download progress while an update installs; `installed` comes once, just before the app relaunches. */
-export type UpdateProgress = { type: "progress"; downloaded: number; total?: number | null } | { type: "installed" };
+/** Update-install events; `downloaded` marks a completed download and `installed` comes before relaunch. */
+export type UpdateProgress =
+  | { type: "progress"; downloaded: number; total?: number | null }
+  | { type: "downloaded" }
+  | { type: "installed" };
+
+export type DiagnosticsExport = { path: string; logFiles: number };
 
 export const DEFAULT_SETTINGS: Settings = {
+  analyticsEnabled: true,
+  crashReportingEnabled: false,
   newPagesSubfolder: "",
   openAtLaunch: "last-session",
   theme: "system",
@@ -407,6 +418,8 @@ export interface Platform {
   checkForUpdate(): Promise<UpdateCheck>;
   /** Downloads and installs the update the last check found; resolves once it is in place, ready for `relaunch`. */
   installUpdate(onProgress: (p: UpdateProgress) => void): Promise<void>;
+  /** Saves a local, redacted ZIP of diagnostic logs and safe settings. */
+  exportDiagnostics(): Promise<DiagnosticsExport | null>;
   /** Starts the app again, on the new version. */
   relaunch(): Promise<void>;
 }
