@@ -7,7 +7,7 @@ Template reference: `tf-mac-app` main at `b477db9` (read-only snapshot).
 | Analytics (Aptabase) | `src-tauri/src/analytics.rs`; Settings > General privacy controls | `src-tauri/src/analytics.rs` | adopted |
 | Updater, minisign, release feed | `src-tauri/src/updater.rs`, `src-tauri/tauri.conf.json`, `src/reader/UpdateBar.tsx` | `src-tauri/src/updater.rs`, `src-tauri/tauri.conf.json` | already present |
 | Settings panel | `src/settings/SettingsApp.tsx`, `src/platform/types.ts` | `src/settings/SettingsApp.tsx` | adopted |
-| Keyboard shortcuts | `src/lib/shortcuts.ts`, `src/App.tsx`, `src-tauri/src/lib.rs` | `src/lib/shortcuts.ts` | adopted |
+| Keyboard shortcuts | `src/lib/shortcuts.ts`, `src/App.tsx`, `src-tauri/src/lib.rs`; Help uses ⌘? and Send Feedback has no accelerator | `src/lib/shortcuts.ts` | adopted |
 | Feedback triage | `src-tauri/src/feedback.rs`, `src/reader/Popovers.tsx`, configured relay | `src-tauri/src/feedback.rs`, `feedback-relay/` | already present |
 | Opt-in crash reporting | `src/lib/crashReporting.ts`, Settings > General privacy controls | `src/lib/crashReporting.ts` | adopted |
 | Single-instance lock | `src-tauri/Cargo.toml`, `src-tauri/src/lib.rs` | `src-tauri/Cargo.toml`, `src-tauri/src/lib.rs` | adopted |

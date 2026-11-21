@@ -192,8 +192,11 @@ export type UpdateInfo = { version: string; notes?: string };
 /** What a check for updates found. `supported` is false where nothing can be swapped in: the browser preview and `tauri dev`. */
 export type UpdateCheck = { current: string; supported: boolean; update?: UpdateInfo };
 
-/** Download progress while an update installs; `installed` comes once, just before the app relaunches. */
-export type UpdateProgress = { type: "progress"; downloaded: number; total?: number | null } | { type: "installed" };
+/** Update-install events; `downloaded` marks a completed download and `installed` comes before relaunch. */
+export type UpdateProgress =
+  | { type: "progress"; downloaded: number; total?: number | null }
+  | { type: "downloaded" }
+  | { type: "installed" };
 
 export type DiagnosticsExport = { path: string; logFiles: number };
 

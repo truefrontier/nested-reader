@@ -8,6 +8,6 @@ export const DEFAULT_SHORTCUTS: ShortcutDef[] = [
   { id: "find", label: "Find", keys: "⌘F" },
   { id: "filter", label: "Filter files", keys: "⌘/" },
   { id: "settings", label: "Settings", keys: "⌘," },
-  { id: "feedback", label: "Send feedback", keys: "⌘⇧F" },
-  { id: "shortcuts", label: "Keyboard shortcuts", keys: "⌘/" },
+  { id: "fullscreen-pane", label: "Fullscreen pane", keys: "⌘⇧F" },
+  { id: "shortcuts", label: "Keyboard shortcuts", keys: "⌘?" },
 ];

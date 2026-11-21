@@ -562,8 +562,8 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
     let about = PredefinedMenuItem::about(app, Some("About Nested"), Some(AboutMetadata::default()))?;
     let check_update = MenuItemBuilder::with_id("check-update", "Check for Updates…").build(app)?;
     let settings = MenuItemBuilder::with_id("settings", "Settings…").accelerator("CmdOrCtrl+,").build(app)?;
-    let shortcuts = MenuItemBuilder::with_id("shortcuts", "Keyboard Shortcuts…").accelerator("CmdOrCtrl+/").build(app)?;
-    let feedback = MenuItemBuilder::with_id("feedback", "Send Feedback…").accelerator("CmdOrCtrl+Shift+F").build(app)?;
+    let shortcuts = MenuItemBuilder::with_id("shortcuts", "Keyboard Shortcuts…").accelerator("CmdOrCtrl+Shift+/").build(app)?;
+    let feedback = MenuItemBuilder::with_id("feedback", "Send Feedback…").build(app)?;
     let app_menu = SubmenuBuilder::new(app, "Nested")
         .item(&about)
         .item(&check_update)
