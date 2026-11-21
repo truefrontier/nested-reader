@@ -1,5 +1,6 @@
 mod ai;
 mod analytics;
+mod diagnostics;
 mod cli;
 #[cfg(target_os = "macos")]
 mod default_app;
@@ -28,6 +29,7 @@ use tauri::menu::{AboutMetadata, MenuBuilder, MenuItemBuilder, PredefinedMenuIte
 use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
+use tauri_plugin_log::{RotationStrategy, Target, TargetKind};
 
 #[derive(Default)]
 struct Streams(Mutex<HashMap<String, CancelToken>>);
@@ -450,6 +452,11 @@ async fn install_update(app: AppHandle, pending: State<'_, updater::Pending>, ch
     updater::install(&pending, channel, &app).await
 }
 
+#[tauri::command]
+async fn export_diagnostics(app: AppHandle) -> Result<Option<diagnostics::DiagnosticsExport>> {
+    diagnostics::export_diagnostics(app).await
+}
+
 /// Starts the app again, after an update has been installed.
 #[tauri::command]
 fn relaunch(app: AppHandle) {
@@ -555,6 +562,8 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
     let about = PredefinedMenuItem::about(app, Some("About Nested"), Some(AboutMetadata::default()))?;
     let check_update = MenuItemBuilder::with_id("check-update", "Check for Updates…").build(app)?;
     let settings = MenuItemBuilder::with_id("settings", "Settings…").accelerator("CmdOrCtrl+,").build(app)?;
+    let shortcuts = MenuItemBuilder::with_id("shortcuts", "Keyboard Shortcuts…").accelerator("CmdOrCtrl+/").build(app)?;
+    let feedback = MenuItemBuilder::with_id("feedback", "Send Feedback…").accelerator("CmdOrCtrl+Shift+F").build(app)?;
     let app_menu = SubmenuBuilder::new(app, "Nested")
         .item(&about)
         .item(&check_update)
@@ -624,9 +633,10 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
     let go_menu = SubmenuBuilder::new(app, "Go").item(&home).separator().item(&back).item(&forward).build()?;
 
     let window_menu = SubmenuBuilder::new(app, "Window").minimize().separator().close_window().build()?;
+    let help_menu = SubmenuBuilder::new(app, "Help").item(&shortcuts).item(&feedback).build()?;
 
     let menu = MenuBuilder::new(app)
-        .items(&[&app_menu, &file_menu, &edit_menu, &view_menu, &go_menu, &window_menu])
+        .items(&[&app_menu, &file_menu, &edit_menu, &view_menu, &go_menu, &window_menu, &help_menu])
         .build()?;
     app.set_menu(menu)?;
     Ok(())
@@ -635,6 +645,26 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default()
+        // Tauri requires this to be the first plugin: duplicate launches focus Nested.
+        .plugin(tauri_plugin_single_instance::init(|app, _arguments, _working_directory| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }))
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .level(log::LevelFilter::Info)
+                .max_file_size(diagnostics::MAX_LOG_FILE_SIZE)
+                .rotation_strategy(RotationStrategy::KeepSome(diagnostics::LOG_FILES_TO_KEEP))
+                .targets([
+                    Target::new(TargetKind::Stdout),
+                    Target::new(TargetKind::LogDir { file_name: Some(diagnostics::LOG_FILE_NAME.into()) })
+                        .filter(|metadata| metadata.target() == diagnostics::SUPPORT_LOG_TARGET),
+                ])
+                .build(),
+        )
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build());
@@ -656,6 +686,7 @@ pub fn run() {
         .setup(|app| {
             migrate::run(app.handle());
             build_menu(app.handle())?;
+            log::info!(target: diagnostics::SUPPORT_LOG_TARGET, "application_ready");
             app.on_menu_event(|app, event| {
                 let id = event.id().0.clone();
                 if id == "settings" {
@@ -729,6 +760,7 @@ pub fn run() {
             relaunch,
             open_settings,
             open_page_window,
+            export_diagnostics,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

@@ -43,6 +43,7 @@ pub struct UpdateCheck {
 pub enum UpdateProgress {
     #[serde(rename_all = "camelCase")]
     Progress { downloaded: u64, total: Option<u64> },
+    Downloaded,
     Installed,
 }
 
@@ -90,7 +91,7 @@ pub async fn install(pending: &Pending, channel: Channel<UpdateProgress>, app: &
                 let _ = channel.send(UpdateProgress::Progress { downloaded: so_far, total });
             },
             || {
-                let _ = channel.send(UpdateProgress::Installed);
+                let _ = channel.send(UpdateProgress::Downloaded);
             },
         )
         .await
@@ -98,6 +99,7 @@ pub async fn install(pending: &Pending, channel: Channel<UpdateProgress>, app: &
     pending.installing.store(false, Ordering::SeqCst);
     if result.is_ok() {
         *pending.update.lock().unwrap() = None;
+        let _ = channel.send(UpdateProgress::Installed);
         crate::analytics::track_update_installed(app, &from_version, &to_version);
     }
     result
@@ -143,6 +145,7 @@ mod tests {
         assert!(json.contains(r#""update":{"version":"0.2.0"}"#));
         let p = serde_json::to_string(&UpdateProgress::Progress { downloaded: 3, total: None }).unwrap();
         assert_eq!(p, r#"{"type":"progress","downloaded":3,"total":null}"#);
+        assert_eq!(serde_json::to_string(&UpdateProgress::Downloaded).unwrap(), r#"{"type":"downloaded"}"#);
         assert_eq!(serde_json::to_string(&UpdateProgress::Installed).unwrap(), r#"{"type":"installed"}"#);
     }
 
