@@ -15,16 +15,18 @@ src/                     React app (both windows)
     tauri.ts             invoke() bridge to the Rust commands
     mock.ts              in-memory backend for the browser (pnpm dev)
   state/store.ts         the reader store: every action lives here
-  lib/                   pure helpers: markdown, diff, front matter, tree, prompts (each with a *.test.ts)
+  lib/                   pure helpers: markdown, diff, front matter, tree, prompts (each with a *.test.ts); crashReporting.ts, shortcuts.ts
   reader/                Home, TopBar, Sidebar, Page, PageMenu, TopStrip, Popovers, SplitPane, MapOverlay
   settings/              the Settings window (General / Appearance / AI)
   styles/                design tokens, fonts, reader and settings CSS
 src-tauri/src/
-  lib.rs                 commands, menu bar, window creation
+  lib.rs                 commands, menu bar, window creation, single-instance lock
   files.rs               pages, session.json, versions (atomic writes)
   ai.rs                  streaming for OpenAI, Anthropic, Ollama and OpenAI-compatible APIs
   cli.rs                 plan access through the claude and codex command-line tools
+  analytics.rs           Aptabase events, gated on APTABASE_APP_KEY and analyticsEnabled
   feedback.rs            the Send feedback note, posted to the relay
+  diagnostics.rs         export_diagnostics: a local redacted zip, never uploaded
   updater.rs             check for, download and install a newer version
   tauri.release.conf.json  overlay for CI builds: turns on the signed updater bundle
 feedback-relay/          relay (Cloudflare Worker or Fly): files feedback as GitHub issues, serves app updates
@@ -57,7 +59,7 @@ Everything about a session stays inside the folder you opened.
 
 `.reader` and the folders the app writes into inside it (`trash`, `versions/<page>`) must be plain folders. If one is a link, `reader_subdir` in `files.rs` refuses it and nothing is read or written through it: a folder that ships `.reader -> ~/somewhere`, or `.reader/versions -> ..`, would otherwise get the app's files written there, or have a neighbouring folder moved into the trash by a delete. A folder with a linked `.reader` doesn't open until it is a plain folder again, and the toast says so. A snapshot (`vN.md`) that is a link is neither listed nor read, since it could point at any file on disk; the next snapshot replaces it.
 
-Settings are stored in the app config directory as `settings.json`, and the Home screen's list of recent sessions as `recents.json` beside it (folder, optional file, name, last opened, unread count, plus `folderId` / `fileId` Unix `dev:ino` and, on Mac, an `NSURL` bookmark for the folder). API keys are stored in the macOS Keychain under the service `app.nestedreader.nested`, the bundle identifier, one entry per provider. The app first shipped as `com.truefrontier.markdown-learner`; the first launch under the new identifier copies `settings.json`, `recents.json` and the keys across (`src-tauri/src/migrate.rs`) and leaves the old copies in place. The frontend never holds a key after saving it; Rust reads it when it makes a request.
+Settings are stored in the app config directory as `settings.json` (including `analyticsEnabled`, default true, and `crashReportingEnabled`, default false; older files that lack those keys read back with those defaults), and the Home screen's list of recent sessions as `recents.json` beside it (folder, optional file, name, last opened, unread count, plus `folderId` / `fileId` Unix `dev:ino` and, on Mac, an `NSURL` bookmark for the folder). API keys are stored in the macOS Keychain under the service `app.nestedreader.nested`, the bundle identifier, one entry per provider. The app first shipped as `com.truefrontier.markdown-learner`; the first launch under the new identifier copies `settings.json`, `recents.json` and the keys across (`src-tauri/src/migrate.rs`) and leaves the old copies in place. The frontend never holds a key after saving it; Rust reads it when it makes a request.
 
 ## Home and sessions
 
@@ -116,15 +118,33 @@ Diffing happens in TypeScript on the rendered text of each block (`src/lib/diff.
 
 ## Analytics
 
-Nested uses Aptabase for privacy-friendly desktop analytics (`analytics.rs`). All tracking becomes a no-op when `APTABASE_APP_KEY` is not set at compile time (or is empty), making development and local builds safe by default. Five events are tracked:
+Nested uses Aptabase for privacy-friendly desktop analytics (`analytics.rs`). Tracking is a no-op unless a non-empty `APTABASE_APP_KEY` is set at compile time **and** the user has not opted out, so development and local builds stay safe by default. Settings › General › Privacy stores that choice as `analyticsEnabled` in `settings.json` (default true). The preference is reread from that file for every event, so an opt-out takes effect without a restart. A missing `settings.json`, or a file with no `analyticsEnabled` key, is treated as on. If the config path cannot be resolved, the file cannot be read, the JSON is invalid, or the value is not a boolean, tracking stays off.
+
+Five events are tracked:
 
 - **app_opened**: on app launch (includes app version)
 - **feedback_sent**: after successful feedback submission (includes whether an email was provided: 0 or 1)
 - **update_checked**: after an update check settles (includes result: `latest`, `available`, `unsupported`, or `error`)
-- **update_installed**: after an update installs successfully (includes `from_version` and `to_version`)
+- **update_installed**: after an update installs successfully (includes `from_version` and `to_version`); this event is sent only after install succeeds
 - **ai_ask**: when an AI request starts streaming (includes `kind`: `quick_answer`, `new_page`, `deep_dive`, `refine`, or `summary`, the background indexing for the session map, one per batch of pages)
 
 No content, file paths, markdown, prompts, emails, API keys, model output, or user data is sent. The plugin is registered conditionally in `lib.rs` only when a key is present, and the ACL permission `freshjuice-tauri-aptabase:allow-track-event` is in `capabilities/default.json`. For release builds, the key is set in the GitHub Actions workflow as `APTABASE_APP_KEY` (from a secret of the same name).
+
+## Crash reporting
+
+Opt-in webview error reporting lives in `src/lib/crashReporting.ts` (Sentry's browser SDK). It is a no-op unless `VITE_CRASH_DSN` is set at build time. Settings › General › Privacy stores `crashReportingEnabled` (default false; older `settings.json` files that omit the key read back as off). `App` calls `configureCrashReporting` when that setting changes. Even with a DSN, Sentry is only initialized and events are only sent when the setting is on. Hooks listen for `window.error` and `unhandledrejection`. The client is initialized with no default integrations except dedupe, `sendDefaultPii: false`, `sendClientReports: false`, and `tracesSampleRate: 0`; `beforeSend` drops the payload when the setting is off and deletes `user` and `request`. Settings notes whether the running build has a crash-report destination.
+
+## Single instance
+
+`tauri-plugin-single-instance` is registered first in `run` (`lib.rs`). A second launch shows, unminimizes, and focuses the existing `main` window; the new process then exits.
+
+## Diagnostics
+
+`export_diagnostics` (`diagnostics.rs`) is the Settings › General › Diagnostics **Export diagnostics…** button. It opens a save dialog (default name `nested-diagnostics-{unix-time}.zip`) and writes only to the path the user picks; cancel returns `null`. Nothing is uploaded. The zip holds `manifest.json` (app name, version, identifier, OS, arch), `settings.redacted.json` (an allowlist: `theme`, `analyticsEnabled`, `crashReportingEnabled`, `openAtLaunch`, `readingFont`, `textSize`, plus a count of configured providers), a short `README.txt`, and up to three support log files (`logs/support-N.log`). Logs come from `tauri-plugin-log`, written under the app log directory with file name `nested`, only for the `nested_support` target, rotated to keep three files of at most 1,000,000 bytes; each exported log is capped at 2,000,000 bytes and run through redaction (secret-like keys, emails, and `/Users` or `/home` paths). Keychain data is never read. The browser mock returns a fake path and zero log files so `pnpm dev` still works.
+
+## Help menu
+
+`build_menu` in `lib.rs` adds a Help menu with **Keyboard Shortcuts…** (accelerator `CmdOrCtrl+Shift+/`) and **Send Feedback…** (no accelerator). The shortcuts item opens a sheet in `App.tsx` whose labels and keys come from `src/lib/shortcuts.ts`; that registry lists the shortcuts item as ⌘?, which is the same key as ⌘⇧/ on US layouts. The feedback item opens Nested's existing Send feedback box (`store.toggleFeedback`).
 
 ## AI
 
@@ -202,7 +222,7 @@ Feedback Triage reads text a stranger wrote, so Claude there only decides. Its t
 
 ## Updates
 
-The app updates itself through Tauri's updater plugin. `src-tauri/src/updater.rs` wraps it in two commands: `check_for_update` asks the endpoint in `tauri.conf.json` (`plugins.updater.endpoints`) for the newest release and keeps what it finds in a `Pending` state, so `install_update` needs no second lookup; it downloads the signed `.app.tar.gz`, verifies it against `plugins.updater.pubkey`, swaps the bundle in, and reports progress down a channel (`{ type: "progress", downloaded, total }`, then `{ type: "installed" }`). `relaunch` restarts the app. A debug build (`tauri dev`) reports `supported: false`, since a bare executable has nothing to swap; the bar then never appears and the menu item says updates arrive in the built app.
+The app updates itself through Tauri's updater plugin. `src-tauri/src/updater.rs` wraps it in two commands: `check_for_update` asks the endpoint in `tauri.conf.json` (`plugins.updater.endpoints`) for the newest release and keeps what it finds in a `Pending` state, so `install_update` needs no second lookup; it downloads the signed `.app.tar.gz`, verifies it against `plugins.updater.pubkey`, swaps the bundle in, and reports progress down a channel (`{ type: "progress", downloaded, total }`, then `{ type: "downloaded" }` when the download finishes, then `{ type: "installed" }` only after install succeeds). `relaunch` restarts the app. A debug build (`tauri dev`) reports `supported: false`, since a bare executable has nothing to swap; the bar then never appears and the menu item says updates arrive in the built app.
 
 On the frontend, `Platform.checkForUpdate`, `installUpdate` and `relaunch` map onto those commands; the mock pretends a release is out when the URL has `?update` (`?update=fail` makes the install fail part way) and reloads in place of the relaunch. The store keeps `update: { phase, current, version, notes, downloaded, total, message, dismissed }`. The main window checks four seconds after launch and every six hours; those checks are silent when nothing is newer or the server is unreachable. `check-update` from the menu (Nested › Check for Updates…) says "You're on the latest version" in the toast, shows the error in the bar when the check fails, and un-dismisses an update put off with Later. `UpdateBar` (`src/reader/UpdateBar.tsx`, `.update-bar`) sits at the foot of the window on Home and in a session: the offer with Update and relaunch / Later, the download with a percentage and a thin meter along the card's bottom edge, Installing, and the error with Try again. The Updates row in Settings › General talks to the platform directly, like the Markdown files row, since Settings is its own window: the running version with Check for updates, or the newer version with Update and relaunch.
 

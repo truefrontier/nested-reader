@@ -23,9 +23,11 @@ pnpm tauri dev
 
 `pnpm tauri build` produces the `.app` and `.dmg` under `src-tauri/target/release/bundle/`.
 
+The built app holds a single-instance lock: a second launch focuses the existing window.
+
 ## Analytics
 
-Nested uses [Aptabase](https://aptabase.com/) for privacy-friendly desktop analytics. Events are only tracked when the `APTABASE_APP_KEY` environment variable is set at compile time. Without a key, all tracking is a no-op.
+Nested uses [Aptabase](https://aptabase.com/) for privacy-friendly desktop analytics. Events are only tracked when the `APTABASE_APP_KEY` environment variable is set at compile time **and** the `analyticsEnabled` setting is on. Without a key, all tracking is a no-op. The setting lives under Settings › General › Privacy ("Share anonymous usage analytics") and is read for every event, so an opt-out takes effect without a restart. Older `settings.json` files that omit `analyticsEnabled` are treated as on, which is the default. If the settings file cannot be read, or the value is not a boolean, tracking stays off.
 
 To enable analytics in a release build, set the app key before building:
 
@@ -43,9 +45,13 @@ The tracked events are:
 
 No content, file paths, prompts, API keys, or user data is ever tracked.
 
+## Crash reporting
+
+Crash and error reports are opt-in and off by default. `src/lib/crashReporting.ts` is a no-op unless `VITE_CRASH_DSN` is set at build time. Even in a build that has a destination, nothing is sent unless Settings › General › Privacy › "Share crash and error reports (opt-in)" is on (`crashReportingEnabled`). Older `settings.json` files that omit that key are treated as off. Settings notes whether the running build has a crash-report destination.
+
 ## Install and update
 
-The newest build is always at **https://nested-feedback.fly.dev/updates/dmg**: open the `.dmg`, drag Nested to Applications. After that the app keeps itself current. A few seconds after it opens (and every few hours while it runs) it asks for a newer version; when there is one, a quiet card at the foot of the window says so, and **Update and relaunch** downloads it, swaps it in and starts the app again. **Later** puts it off until the next launch. To look right now, use **Nested › Check for Updates…** in the menu, or the Updates row in Settings › General, which also shows the version you are on. Under `pnpm tauri dev` nothing can be swapped in, so both say updates arrive in the built app.
+The newest build is always at **https://nested-feedback.fly.dev/updates/dmg**: open the `.dmg`, drag Nested to Applications. After that the app keeps itself current. A few seconds after it opens (and every few hours while it runs) it asks for a newer version; when there is one, a quiet card at the foot of the window says so, and **Update and relaunch** downloads it, swaps it in and starts the app again. The install reports progress, then a `downloaded` event when the file is in; `installed` is sent only after the swap succeeds. **Later** puts it off until the next launch. To look right now, use **Nested › Check for Updates…** in the menu, or the Updates row in Settings › General, which also shows the version you are on. Under `pnpm tauri dev` nothing can be swapped in, so both say updates arrive in the built app.
 
 Publishing a version is one command from a clean `main`:
 
@@ -67,7 +73,9 @@ PDF text extraction uses the `pdf-extract` crate and handles compressed PDFs pro
 
 ## Send feedback
 
-The quiet **Send feedback** link at the bottom of the tree opens a box for a bug, an idea, anything. ⌘↵ sends it (↵ makes a new line); an email address is optional and only used to reply. The note lands as an issue on this repository, labelled `feedback`, where a Claude workflow reads it against the code and leaves a triage note. The app never holds a GitHub token: it posts to the small relay in [`feedback-relay/`](feedback-relay/README.md), and the relay's URL is compiled in from `src-tauri/.cargo/config.toml`. Until that is set, the box says feedback is not set up in this build.
+The quiet **Send feedback** link at the bottom of the tree opens a box for a bug, an idea, anything. ⌘↵ sends it (↵ makes a new line); an email address is optional and only used to reply. The note lands as an issue on this repository, labelled `feedback`, where a Claude workflow reads it against the code and leaves a triage note. The app never holds a GitHub token: it posts to the small relay in [`feedback-relay/`](feedback-relay/README.md), and the relay's URL is compiled in from `src-tauri/.cargo/config.toml`. Until that is set, the box says feedback is not set up in this build. **Help › Send Feedback…** opens the same box; it has no keyboard accelerator.
+
+Settings › General › Diagnostics has **Export diagnostics…**, which writes a local redacted zip of support logs and a few safe settings to a path you choose. Nothing is uploaded.
 
 ## Set up a provider
 
@@ -103,6 +111,7 @@ The "Built in" provider is in the design but not connected to a service in this 
 | ⌘⇧O | Add a folder or file to the open session |
 | ⌘⇧H | Home (recent sessions) |
 | Esc | Dismiss, or leave Home |
+| ⌘? | Keyboard shortcuts sheet (Help › Keyboard Shortcuts…; the menu accelerator is ⌘⇧/) |
 
 Link clicks follow browser habits: click opens here, ⌘-click loads in the background, ⌘⇧-click opens here, ⌥-click opens beside.
 
